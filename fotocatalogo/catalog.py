@@ -189,12 +189,14 @@ class Catalog:
             for fn in filenames:
                 if fn.startswith("."):
                     continue
+                name = nfc(fn)
+                key = (rel, name)
+                # "presente" vale per qualsiasi file: una voce del catalogo con un'estensione
+                # non riconosciuta (es. importata da Lightroom) non deve risultare mancante
+                seen.add(key)
                 ext = fn.rsplit(".", 1)[-1].lower() if "." in fn else ""
                 if ext not in PHOTO_EXT:
                     continue
-                name = nfc(fn)
-                key = (rel, name)
-                seen.add(key)
                 count += 1
                 if job and count % 200 == 0:
                     job.update(count, f"Scansione: {rel or '/'} ({count} foto)")
@@ -262,6 +264,7 @@ class Catalog:
             root_id, root = r["id"], r["path"]
             if not os.path.isdir(root):
                 continue          # NAS non collegato: non tocchiamo nulla
+            res["ritrovate"] = res.get("ritrovate", 0) + self._recheck_missing(root_id, root)
             known = {row["rel_path"]: row["mtime"] for row in db.execute(
                 "SELECT rel_path, mtime FROM dir_state WHERE root_id=?", (root_id,))}
             seen = set()
@@ -301,13 +304,28 @@ class Catalog:
                     db.commit()
         return res
 
+    def _recheck_missing(self, root_id, root):
+        """Ricontrolla una per una le foto segnate come mancanti: se il file c'è, torna normale."""
+        rows = self.db.execute("""SELECT p.id, f.rel_path, p.filename FROM photos p
+                                  JOIN folders f ON f.id=p.folder_id
+                                  WHERE f.root_id=? AND p.missing=1""", (root_id,)).fetchall()
+        back = [r["id"] for r in rows
+                if os.path.exists(resolve_path(os.path.join(root, r["rel_path"], r["filename"])))]
+        if back:
+            with self.write_lock:
+                self.db.executemany("UPDATE photos SET missing=0 WHERE id=?", [(i,) for i in back])
+                self.db.commit()
+        return len(back)
+
     def _sync_dir(self, root_id, rel, dirpath, filenames):
         """Allinea il catalogo con il contenuto di una sola cartella (senza sottocartelle)."""
         db = self.db
         files = {}
+        present = set()          # tutti i file della cartella, qualunque estensione
         for fn in filenames:
             if fn.startswith("."):
                 continue
+            present.add(nfc(fn))
             ext = fn.rsplit(".", 1)[-1].lower() if "." in fn else ""
             if ext in PHOTO_EXT:
                 files[nfc(fn)] = (fn, ext)
@@ -327,10 +345,10 @@ class Catalog:
                 ex = read_meta(full, ext)
                 cap = ex.get("capture") or time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(st.st_mtime))
                 new.append((name, ext, st.st_size, st.st_mtime, cap, ex))
-            elif existing[name][1]:
-                back.append(existing[name][0])
         for name, (pid, miss) in existing.items():
-            if name not in files and not miss:
+            if name in present and miss:
+                back.append(pid)
+            elif name not in present and not miss:
                 gone.append(pid)
         if not (new or back or gone):
             return 0, 0

@@ -157,10 +157,9 @@ function makeCell(it, i) {
   const ft = fileType(it.x);
   const stars = it.r ? "★".repeat(it.r) : "";
   el.innerHTML = `<div class="im"><img loading="lazy" decoding="async" alt="" src="${thumbURL(it.id)}"></div>
-    ${ft && ft[0] === "video" ? `<span class="vbadge" title="${ft[1]}">▶ ${esc(it.x.toUpperCase())}</span>`
-      : ft ? `<span class="ftype ft-${ft[0]}" title="${ft[1]}"></span>` : ""}
+    ${ft && ft[0] !== "video" ? `<span class="ftype ft-${ft[0]}" title="${ft[1]}"></span>` : ""}
+    <div class="tl${ft && ft[0] !== "video" ? " after-tri" : ""}">${ft && ft[0] === "video" ? `<span class="vbadge" title="${ft[1]}">▶ ${esc(it.x.toUpperCase())}</span>` : ""}${it.m ? '<span class="miss" title="File non trovato">⚠ mancante</span>' : ""}</div>
     ${it.f === 1 ? '<span class="flag" title="Scelta">⚑</span>' : ""}
-    ${it.m ? '<span class="miss" title="File non trovato">⚠ mancante</span>' : ""}
     <div class="cap"${it.l ? ` title="Etichetta ${LABELS[it.l] || ""}"` : ""}><span class="fn" title="${esc(it.n)}">${esc(it.n)}</span><span class="stars">${stars}</span></div>`;
   const img = el.querySelector("img");
   img.onerror = () => { img.replaceWith(Object.assign(document.createElement("span"), {className: "ph", textContent: it.x || "?"})); };
@@ -1420,9 +1419,10 @@ async function onJobDone(j) {
   const r = j.result;
   if (r.dng) { await loadTree(); reload(true); return dngSummary(r); }
   if (r.quick) {
-    if (!r.new && !r.missing) return;
+    if (!r.new && !r.missing && !r.ritrovate) return;
     await loadTree(); reload(true);
-    const parts = [r.new && `${r.new.toLocaleString("it-IT")} foto nuove`, r.missing && `${r.missing.toLocaleString("it-IT")} non più trovate`].filter(Boolean);
+    const parts = [r.new && `${r.new.toLocaleString("it-IT")} foto nuove`, r.missing && `${r.missing.toLocaleString("it-IT")} non più trovate`,
+      r.ritrovate && `${r.ritrovate.toLocaleString("it-IT")} ritrovate`].filter(Boolean);
     return toast("Sincronizzazione: " + parts.join(", "));
   }
   await loadTree(); reload(true);
