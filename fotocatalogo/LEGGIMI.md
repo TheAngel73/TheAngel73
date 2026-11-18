@@ -26,18 +26,25 @@ i file sul NAS. Catalogo e miniature sono salvati sul Mac in
   bastano quelli, non serve installare nient'altro.
 - Il NAS montato nel Finder (di solito compare in `/Volumes/NomeCartella`).
 
-## Avvio
+## Installare l'app
 
 1. Scarica questa cartella `fotocatalogo` sul Mac (per esempio in Documenti).
-2. Fai doppio clic su **`Avvia FotoCatalogo.command`**.
-   La prima volta macOS potrebbe bloccarlo: in quel caso fai clic destro → **Apri** → **Apri**.
-3. Si apre una finestra del Terminale (lasciala aperta: è il «motore») e il browser
-   su `http://localhost:8765`.
+2. Fai doppio clic su **`Crea app.command`**. La prima volta macOS potrebbe bloccarlo:
+   in quel caso fai clic destro › **Apri** › **Apri**.
+   - Se mancano gli «strumenti per sviluppatori» di Apple (gratuiti), si apre la
+     finestra per installarli: conferma, attendi qualche minuto e rilancia `Crea app.command`.
+3. Lo script costruisce **FotoCatalogo.app**, la copia in **Applicazioni** e la apre.
+   Da lì puoi trascinarla nel Dock come qualsiasi altra app.
 
-In alternativa, da Terminale: `cd` nella cartella, poi `python3 server.py`.
+L'app ha la sua finestra, la barra dei menu di macOS (Libreria, Modifica, Foto,
+Vista…), i menu con il **tasto destro** e le finestre di scelta native del Mac.
+Il «motore» Python parte e si ferma da solo insieme all'app: non serve il Terminale.
 
-**Consiglio:** in Safari, con la pagina aperta, usa **File › Aggiungi al Dock**.
-FotoCatalogo diventa un'app con la sua icona e la sua finestra, senza le barre del browser.
+**Aggiornamenti:** quando il codice cambia, rilancia `Crea app.command` per
+ricostruire l'app. Il catalogo non viene toccato.
+
+**Senza app**, in alternativa: doppio clic su `Avvia FotoCatalogo.command`, che apre
+l'interfaccia nel browser (con le stesse funzioni, menu col tasto destro compresi).
 
 ## Passare da Lightroom
 
@@ -71,7 +78,8 @@ presenti non vengono duplicate.
 | Stelle / etichette / bandierine | **0–5** / **6 7 8 9** / **P X U** |
 | Vista ingrandita | doppio clic, **Spazio** o **Invio**, poi **← →** |
 | Selezionare tutto | **⌘A** |
-| Nuove foto sul NAS | **⟳** accanto alla cartella |
+| Nuove foto sul NAS | **⟳** accanto alla cartella, o tasto destro › Sincronizza su una sottocartella |
+| Tutte le altre azioni | **tasto destro** su foto, raccolte, cartelle e parole chiave |
 
 ## Backup
 
@@ -90,3 +98,4 @@ La cartella `miniature` accanto si può cancellare: viene ricreata automaticamen
 | `thumbs.py` | miniature (QuickLook/sips su macOS) |
 | `exif.py` | lettura della data di scatto da JPEG e RAW |
 | `static/` | interfaccia (HTML, CSS, JavaScript) |
+| `mac/` | app nativa per macOS (Swift) e script `crea_app.sh` |

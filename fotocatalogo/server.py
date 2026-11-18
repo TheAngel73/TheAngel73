@@ -205,7 +205,7 @@ def tree():
         "SELECT keyword_id, count(*) FROM photo_keywords GROUP BY keyword_id").fetchall())
     roots = [{"id": r["id"], "path": r["path"], "name": r["name"],
               "online": os.path.isdir(r["path"])} for r in db.execute("SELECT * FROM roots ORDER BY name")]
-    folders = [{"id": r["id"], "root": r["root_id"], "parent": r["parent_id"],
+    folders = [{"id": r["id"], "root": r["root_id"], "parent": r["parent_id"], "rel": r["rel_path"],
                 "name": os.path.basename(r["rel_path"]) if r["rel_path"] else None,
                 "count": fcount.get(r["id"], 0)}
                for r in db.execute("SELECT * FROM folders ORDER BY rel_path COLLATE NOCASE")]
@@ -293,7 +293,20 @@ def pick_path(kind):
     return r.stdout.strip() or None if r.returncode == 0 else None
 
 
-def open_photos(ids, how):
+def folder_path(fid):
+    r = cat.db.execute("""SELECT r.path, f.rel_path FROM folders f JOIN roots r ON r.id=f.root_id
+                          WHERE f.id=?""", (fid,)).fetchone()
+    return os.path.join(r["path"], r["rel_path"]) if r else None
+
+
+def open_photos(ids, how, folder=None):
+    if folder:
+        path = folder_path(int(folder))
+        if not path or not os.path.isdir(path):
+            raise ValueError("Cartella non trovata: il NAS è collegato?")
+        if sys.platform == "darwin":
+            subprocess.Popen(["open", path])
+        return {"paths": [path]}
     paths = [p for p in (cat.photo_path(i) for i in ids[:50]) if p and os.path.exists(p)]
     if not paths:
         raise ValueError("File non trovato: il NAS è collegato?")
@@ -480,15 +493,38 @@ class Handler(BaseHTTPRequestHandler):
         if route == "keywords":
             return edit_keywords(body)
         if route == "keywords/delete":
+            kid = int(body["id"])
             with cat.write_lock:
-                db.execute("DELETE FROM photo_keywords WHERE keyword_id=?", (int(body["id"]),))
-                db.execute("DELETE FROM keywords WHERE id=?", (int(body["id"]),))
+                parent = db.execute("SELECT parent_id FROM keywords WHERE id=?", (kid,)).fetchone()
+                # le parole chiave annidate salgono di un livello invece di sparire
+                db.execute("UPDATE OR IGNORE keywords SET parent_id=? WHERE parent_id=?",
+                           (parent[0] if parent else 0, kid))
+                db.execute("DELETE FROM photo_keywords WHERE keyword_id=?", (kid,))
+                db.execute("DELETE FROM keywords WHERE id=?", (kid,))
                 db.commit()
             return None
+        if route == "keywords/rename":
+            name = nfc(body.get("name", "").strip())
+            if not name:
+                raise ValueError("Nome mancante")
+            with cat.write_lock:
+                try:
+                    db.execute("UPDATE keywords SET name=? WHERE id=?", (name, int(body["id"])))
+                except Exception:
+                    raise ValueError("Esiste già una parola chiave con questo nome nello stesso livello")
+                db.commit()
+            return None
+        if parts[1] == "folders" and len(parts) == 4 and parts[3] == "rescan":
+            f = db.execute("SELECT root_id, rel_path FROM folders WHERE id=?", (int(parts[2]),)).fetchone()
+            if not f:
+                raise ValueError("Cartella sconosciuta")
+            label = os.path.basename(f["rel_path"]) or "cartella"
+            return start_job(f"Sincronizzazione {label}",
+                             lambda job: cat.scan_root(f["root_id"], job, f["rel_path"])).as_dict()
         if route == "pick":
             return {"path": pick_path(body.get("kind", "folder"))}
         if route == "open":
-            return open_photos(ids_of(body), body.get("how", "default"))
+            return open_photos(ids_of(body), body.get("how", "default"), body.get("folder"))
         if route == "roots/add":
             path = os.path.expanduser(body.get("path", "").strip())
             if not os.path.isdir(path):

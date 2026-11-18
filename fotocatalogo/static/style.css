@@ -149,3 +149,27 @@ dialog table td { padding: 3px 10px 3px 0; }
   border: 1px solid var(--line); padding: 8px 16px; border-radius: 8px; z-index: 99;
   box-shadow: 0 4px 20px rgba(0,0,0,.5); }
 #toast.error { background: #5a2626; }
+
+/* menu contestuale */
+#ctx { position: fixed; z-index: 120; }
+#ctx[hidden] { display: none; }
+.cm { min-width: 220px; background: rgba(44,44,47,.98); border: 1px solid #4a4a4e; border-radius: 7px; padding: 4px;
+  box-shadow: 0 10px 34px rgba(0,0,0,.55); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); }
+.cmi { position: relative; display: flex; align-items: center; gap: 6px; padding: 4px 10px 4px 4px; border-radius: 4px;
+  cursor: default; white-space: nowrap; }
+.cmi:hover { background: var(--accent); color: #fff; }
+.cmi.dis { color: #666; } .cmi.dis:hover { background: none; color: #666; }
+.cmi.danger { color: #ff8a80; } .cmi.danger:hover { color: #fff; background: #c4423b; }
+.cmi .ck { width: 14px; text-align: center; font-size: 11px; }
+.cmi .lb { flex: 1; }
+.cmi .kb { color: var(--dim); font-size: 12px; padding-left: 18px; }
+.cmi:hover .kb { color: #e6eefb; }
+.cm-sep { height: 1px; background: #4a4a4e; margin: 4px 6px; }
+.cmi > .cm { display: none; position: absolute; left: 100%; top: -5px; margin-left: 2px; }
+#ctx.flip .cmi > .cm { left: auto; right: 100%; margin: 0 2px 0 0; }
+.cmi.has-sub:hover > .cm { display: block; }
+
+/* dentro l'app per Mac: aspetto da applicazione */
+html.native .brand { display: none; }
+html.native body { -webkit-user-select: none; user-select: none; cursor: default; }
+html.native input, html.native .path, html.native td { -webkit-user-select: text; user-select: text; }

@@ -419,8 +419,8 @@ async function addToCollection(cid, ids) {
 }
 function rememberColl(cid) { store.set("recentColl", [cid, ...store.get("recentColl", []).filter(x => x !== cid)].slice(0, 8)); }
 
-async function newCollection(isSet, ids = []) {
-  const parent = (() => { const [k, v] = S.scope.split(":"); const c = k === "collection" && S.tree.collections.find(c => c.id == v); return c ? (c.set ? c.id : c.parent) : null; })();
+async function newCollection(isSet, ids = [], parentOverride) {
+  const parent = parentOverride !== undefined ? parentOverride : (() => { const [k, v] = S.scope.split(":"); const c = k === "collection" && S.tree.collections.find(c => c.id == v); return c ? (c.set ? c.id : c.parent) : null; })();
   const f = await dialog(isSet ? "Nuovo set di raccolte" : "Nuova raccolta", `
     <label>Nome</label><input type="text" name="name" required autofocus>
     <label>Dentro il set</label><select name="parent">${setOptions(parent)}</select>
@@ -620,12 +620,9 @@ document.addEventListener("keydown", async e => {
   const mod = e.metaKey || e.ctrlKey;
   if (e.key === "Escape") { if (loupe) $("#loupe").hidden = true; else { S.sel.clear(); selChanged(); } return; }
   if (loupe && (e.key === "ArrowRight" || e.key === "ArrowLeft")) { e.preventDefault(); return loupeStep(e.key === "ArrowRight" ? 1 : -1); }
-  if (mod && e.key.toLowerCase() === "a") {
-    e.preventDefault();
-    return safe(async () => { const r = await api(`/api/photos?${params({offset: 0, limit: 500000, ids_only: 1})}`); S.sel = new Set(r.ids); selChanged(); });
-  }
-  if (mod && e.key.toLowerCase() === "e") { e.preventDefault(); return safe(() => api("/api/open", {ids: [...S.sel], how: "photoshop"})); }
-  if (mod && e.key.toLowerCase() === "r") { e.preventDefault(); return safe(() => api("/api/open", {ids: [...S.sel], how: "finder"})); }
+  const shortcut = mod && {a: "selectAll", e: "photoshop", r: "finder", k: "keywords", d: "selectNone"}[e.key.toLowerCase()];
+  // nell'app per Mac queste scorciatoie arrivano dalla barra dei menu
+  if (shortcut && !NATIVE) { e.preventDefault(); return COMMANDS[shortcut](); }
   if (mod) return;
   if (/^[0-5]$/.test(e.key)) return setMeta({rating: +e.key});
   const lab = {"6": "red", "7": "yellow", "8": "green", "9": "blue"}[e.key];
@@ -664,6 +661,7 @@ function dialog(title, html, okLabel = "OK", setup) {
 }
 
 async function pickInto(input, kind) {
+  if (NATIVE) { const path = await nativePick(kind); if (path) input.value = path; return; }
   const r = await safe(() => api("/api/pick", {kind}));
   if (r && r.path) input.value = r.path;
   else if (r) toast("Scrivi il percorso a mano (la finestra di scelta funziona solo su Mac)");
@@ -714,7 +712,8 @@ function helpDialog() {
     ["Frecce", "Spostati tra le foto"], ["Invio, Spazio, doppio clic", "Vista ingrandita"], ["0 – 5", "Stelle"],
     ["6 7 8 9", "Etichetta rossa, gialla, verde, blu"], ["P / X / U", "Scelta / Scartata / Togli bandierina"],
     ["C oppure B", "Aggiungi a raccolta…"], ["⌫ Backspace", "Togli dalla raccolta corrente"], ["⌘E", "Apri in Photoshop"],
-    ["⌘R", "Mostra nel Finder"], ["Esc", "Chiudi vista / deseleziona"]];
+    ["⌘R", "Mostra nel Finder"], ["⌘K", "Aggiungi parole chiave"], ["⌘D / Esc", "Deseleziona"],
+    ["Tasto destro", "Menu con tutte le azioni"]];
   dialog("Scorciatoie da tastiera", `<table>${rows.map(([k, v]) => `<tr><td><kbd>${k}</kbd></td><td>${v}</td></tr>`).join("")}</table>
     <p>Trascina le foto su una raccolta per aggiungerle. Trascina una raccolta su un set per spostarla.</p>`, null);
 }
@@ -728,11 +727,241 @@ $("#menu-library").addEventListener("click", e => {
   if (a === "import-lr") importLrDialog();
   if (a === "relocate") relocateDialog();
   if (a === "help") helpDialog();
-  if (a === "pregen") safe(async () => {
+  if (a === "pregen") COMMANDS.pregen();
+});
+
+// ================================================================ comandi (tastiera, menu dell'app, tasto destro)
+const NATIVE = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.fc);
+if (NATIVE) document.documentElement.classList.add("native");
+const selIds = () => [...S.sel];
+const needSel = fn => () => S.sel.size ? fn() : toast("Seleziona prima una o più foto");
+const openWith = how => needSel(() => safe(() => api("/api/open", {ids: selIds(), how})));
+
+const COMMANDS = {
+  addFolder: addFolderDialog, importLr: importLrDialog, relocate: relocateDialog, help: helpDialog,
+  pregen: () => safe(async () => {
     await api("/api/thumbs/pregenerate", Object.fromEntries(new URLSearchParams(params())));
     toast("Generazione anteprime avviata in background"); pollJobs();
+  }),
+  newColl: () => newCollection(false, selIds()), newSet: () => newCollection(true),
+  selectAll: () => {
+    const a = document.activeElement;
+    if (a && a.matches("input, textarea")) return a.select();
+    return safe(async () => { const r = await api(`/api/photos?${params({offset: 0, limit: 1000000, ids_only: 1})}`); S.sel = new Set(r.ids); selChanged(); });
+  },
+  selectNone: () => { S.sel.clear(); selChanged(); },
+  find: () => $("#search").focus(),
+  photoshop: openWith("photoshop"), finder: openWith("finder"), openDefault: openWith("default"),
+  loupe: needSel(() => { if (S.cursor >= 0) openLoupe(S.cursor); }),
+  addToColl: needSel(() => pickCollection(selIds())),
+  removeFromColl: () => removeFromCurrentCollection(),
+  keywords: needSel(() => keywordDialog()),
+  zoomIn: () => { $("#zoom").value = +$("#zoom").value + 40; $("#zoom").dispatchEvent(new Event("input")); },
+  zoomOut: () => { $("#zoom").value = +$("#zoom").value - 40; $("#zoom").dispatchEvent(new Event("input")); },
+};
+
+// ponte con l'app per Mac (FotoCatalogo.app): i menu nativi chiamano fc.cmd("...")
+const pickWaiters = new Map();
+let pickSeq = 0;
+function nativePick(kind) {
+  return new Promise(res => {
+    const id = ++pickSeq; pickWaiters.set(id, res);
+    window.webkit.messageHandlers.fc.postMessage({cmd: "pick", kind, id});
   });
+}
+window.fc = {
+  cmd(name) { if ($("#dlg").open && !["selectAll"].includes(name)) return; COMMANDS[name]?.(); },
+  pickResult(id, path) { pickWaiters.get(id)?.(path); pickWaiters.delete(id); },
+};
+// file trascinati dal Finder: non devono far "navigare" la finestra
+for (const ev of ["dragover", "drop"]) document.addEventListener(ev, e => {
+  if (e.dataTransfer && [...e.dataTransfer.types].includes("Files")) e.preventDefault();
 });
+
+async function keywordDialog() {
+  const n = S.sel.size;
+  const f = await dialog(`Parole chiave per ${n === 1 ? "la foto" : n + " foto"}`, `
+    <label>Aggiungi (separa con la virgola)</label><input type="text" name="kw" list="kw-list" autocomplete="off" required>`, "Aggiungi");
+  if (!f) return;
+  const names = f.kw.value.split(",").map(s => s.trim()).filter(Boolean);
+  await safe(async () => { await api("/api/keywords", {ids: selIds(), add: names}); await loadTree(); showInfo(true); toast("Parole chiave aggiunte"); });
+}
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); }
+  catch {
+    const ta = Object.assign(document.createElement("textarea"), {value: text});
+    document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove();
+  }
+  toast("Percorso copiato");
+}
+function folderFullPath(fid) {
+  const f = S.tree.folders.find(f => f.id === fid); if (!f) return "";
+  const r = S.tree.roots.find(r => r.id === f.root);
+  return r.path + (f.rel ? "/" + f.rel : "");
+}
+
+// ---------------------------------------------------------------- menu contestuale
+const ctx = Object.assign(document.createElement("div"), {id: "ctx", hidden: true});
+document.body.appendChild(ctx);
+
+function buildMenu(items) {
+  const m = document.createElement("div"); m.className = "cm";
+  for (const it of items) {
+    if (!it) continue;
+    if (it === "-") { if (m.lastChild && m.lastChild.className !== "cm-sep") m.appendChild(Object.assign(document.createElement("div"), {className: "cm-sep"})); continue; }
+    const row = document.createElement("div");
+    row.className = "cmi" + (it.disabled ? " dis" : "") + (it.sub ? " has-sub" : "") + (it.danger ? " danger" : "");
+    row.innerHTML = `<span class="ck">${it.checked ? "✓" : ""}</span>${it.swatch ? `<span class="dot lbl-${it.swatch}"></span>` : ""}` +
+      `<span class="lb">${esc(it.label)}</span><span class="kb">${esc(it.key || "")}${it.sub ? "▸" : ""}</span>`;
+    if (it.sub) { if (!it.sub.filter(Boolean).length) continue; row.appendChild(buildMenu(it.sub)); }
+    else if (!it.disabled) row.addEventListener("click", e => { e.stopPropagation(); hideMenu(); it.run(); });
+    m.appendChild(row);
+  }
+  while (m.lastChild && m.lastChild.className === "cm-sep") m.lastChild.remove();
+  return m;
+}
+function showMenu(x, y, items) {
+  ctx.innerHTML = ""; ctx.appendChild(buildMenu(items)); ctx.hidden = false;
+  const r = ctx.firstChild.getBoundingClientRect();
+  const left = Math.min(x, innerWidth - r.width - 6), top = Math.min(y, innerHeight - r.height - 6);
+  ctx.style.left = Math.max(4, left) + "px"; ctx.style.top = Math.max(4, top) + "px";
+  ctx.classList.toggle("flip", left + r.width + 220 > innerWidth);
+}
+function hideMenu() { ctx.hidden = true; }
+document.addEventListener("mousedown", e => { if (!ctx.contains(e.target)) hideMenu(); }, true);
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !ctx.hidden) { e.stopImmediatePropagation(); hideMenu(); } }, true);
+window.addEventListener("blur", hideMenu);
+scroller.addEventListener("scroll", hideMenu);
+
+document.addEventListener("contextmenu", async e => {
+  if (e.target.closest("input, textarea")) return;   // menu di sistema (copia/incolla)
+  e.preventDefault();
+  hideMenu();
+  const items = await menuFor(e.target);
+  if (items) showMenu(e.clientX, e.clientY, items);
+});
+
+async function menuFor(t) {
+  if (t.closest("#dlg, #ctx")) return null;
+  const cell = t.closest(".cell");
+  if (cell) {
+    const i = +cell.dataset.i, it = itemAt(i);
+    if (!it) return null;
+    if (!S.sel.has(it.id)) await clickCell(i, {});
+    return photoMenu();
+  }
+  const chip = t.closest(".chip[data-goto]");
+  if (chip) {
+    const [k, v] = chip.dataset.goto.split(":");
+    if (k === "collection") return collMenu(+v, true);
+    if (k === "keyword") return kwMenu(+v, true);
+  }
+  if (t.closest("#info")) return S.sel.size ? photoMenu() : null;
+  if (t.closest("#loupe")) return photoMenu();
+  const li = t.closest("#sidebar li[data-scope]");
+  if (li) {
+    if (li.dataset.coll) return collMenu(+li.dataset.coll);
+    if (li.dataset.folder) return folderMenu(+li.dataset.folder);
+    if (li.dataset.scope.startsWith("keyword:")) return kwMenu(+li.dataset.scope.split(":")[1]);
+    return [{label: "Apri", run: () => setScope(li.dataset.scope)}];
+  }
+  if (t.closest("#coll-tree") || t.closest("#sidebar h3")?.textContent.startsWith("Raccolte"))
+    return [{label: "Nuova raccolta…", run: () => newCollection(false, [], null)}, {label: "Nuovo set di raccolte…", run: () => newCollection(true, [], null)}];
+  if (t.closest("#grid-scroll")) return [
+    {label: "Seleziona tutte", key: "⌘A", run: COMMANDS.selectAll},
+    {label: "Deseleziona", key: "⌘D", run: COMMANDS.selectNone, disabled: !S.sel.size},
+    "-", {label: "Genera anteprime di questa vista", run: COMMANDS.pregen},
+    {label: "Miniature", sub: [{label: "Più grandi", key: "⌘+", run: COMMANDS.zoomIn}, {label: "Più piccole", key: "⌘−", run: COMMANDS.zoomOut}]},
+  ];
+  return null;
+}
+
+async function photoMenu() {
+  const n = S.sel.size, one = n === 1;
+  let d = null;
+  if (one) d = (S.detail && S.sel.has(S.detail.id)) ? S.detail : await api(`/api/photo/${selIds()[0]}`).catch(() => null);
+  const [k, v] = S.scope.split(":");
+  const cur = k === "collection" && S.tree.collections.find(c => c.id == v && !c.set);
+  const recent = store.get("recentColl", []).map(id => S.tree.collections.find(c => c.id === id)).filter(c => c && !c.set);
+  const what = one ? "la foto" : `${n.toLocaleString("it-IT")} foto`;
+  return [
+    {label: one ? "Apri in Photoshop" : `Apri ${Math.min(n, 50)} foto in Photoshop`, key: "⌘E", run: COMMANDS.photoshop},
+    {label: "Apri con l'app predefinita", run: COMMANDS.openDefault},
+    {label: "Mostra nel Finder", key: "⌘R", run: COMMANDS.finder},
+    one && $("#loupe").hidden && {label: "Vista ingrandita", key: "Spazio", run: COMMANDS.loupe},
+    "-",
+    {label: `Aggiungi ${what} a una raccolta…`, key: "C", run: COMMANDS.addToColl},
+    recent.length && {label: "Aggiungi a raccolta recente", sub: recent.map(c => ({label: c.name, run: () => addToCollection(c.id, selIds())}))},
+    {label: `Nuova raccolta con ${one ? "questa foto" : "queste foto"}…`, run: () => newCollection(false, selIds())},
+    cur && {label: `Togli da «${cur.name}»`, key: "⌫", run: COMMANDS.removeFromColl},
+    d && d.collections.length && {label: `Raccolte di questa foto (${d.collections.length})`, sub: d.collections.map(c => ({label: c.name, run: () => setScope("collection:" + c.id)}))},
+    "-",
+    {label: "Valutazione", sub: [0, 1, 2, 3, 4, 5].map(r => ({label: r ? "★".repeat(r) : "Nessuna stella", key: String(r), checked: d && d.rating === r, run: () => setMeta({rating: r})}))},
+    {label: "Etichetta colore", sub: [...Object.entries(LABELS).map(([lk, name], i) => ({label: name, swatch: lk, key: i < 4 ? String(6 + i) : "", checked: d && d.label === lk, run: () => setMeta({label: lk})})),
+      "-", {label: "Nessuna etichetta", checked: d && !d.label, run: () => setMeta({label: null})}]},
+    {label: "Bandierina", sub: [{label: "Scelta", key: "P", checked: d && d.flag === 1, run: () => setMeta({flag: 1})},
+      {label: "Scartata", key: "X", checked: d && d.flag === -1, run: () => setMeta({flag: -1})},
+      {label: "Nessuna", key: "U", checked: d && !d.flag, run: () => setMeta({flag: 0})}]},
+    {label: "Aggiungi parole chiave…", key: "⌘K", run: COMMANDS.keywords},
+    d && d.keywords.length && {label: "Togli parola chiave", sub: d.keywords.map(kw => ({label: kw.name, run: () => safe(async () => { await api("/api/keywords", {ids: selIds(), remove: [kw.id]}); await loadTree(); showInfo(true); })}))},
+    "-",
+    d && {label: "Vai alla cartella", run: () => setScope("folder:" + d.folder_id)},
+    d && {label: "Copia percorso del file", run: () => copyText(d.path)},
+  ];
+}
+
+function collMenu(cid, fromChip = false) {
+  const c = S.tree.collections.find(c => c.id === cid); if (!c) return null;
+  const n = S.sel.size;
+  return [
+    {label: c.set ? "Mostra tutte le foto del set" : "Apri raccolta", run: () => setScope("collection:" + cid)},
+    !c.set && n && !fromChip && {label: `Aggiungi le ${n.toLocaleString("it-IT")} foto selezionate`, run: () => addToCollection(cid, selIds())},
+    !c.set && n && fromChip && {label: n === 1 ? "Togli la foto da questa raccolta" : "Togli le foto da questa raccolta",
+      run: () => safe(async () => { await api(`/api/collections/${cid}/remove`, {ids: selIds()}); await loadTree(); if (S.scope === "collection:" + cid) reload(true); showInfo(true); })},
+    "-",
+    c.set && {label: "Nuova raccolta in questo set…", run: () => newCollection(false, [], cid)},
+    c.set && {label: "Nuovo set in questo set…", run: () => newCollection(true, [], cid)},
+    {label: "Rinomina o sposta…", run: () => editCollection(cid)},
+    "-",
+    {label: c.set ? "Elimina set…" : "Elimina raccolta…", danger: true, run: () => deleteCollection(cid)},
+  ];
+}
+
+function folderMenu(fid) {
+  const f = S.tree.folders.find(f => f.id === fid); if (!f) return null;
+  const root = S.tree.roots.find(r => r.id === f.root);
+  const isRoot = f.parent == null;
+  return [
+    {label: "Mostra le foto", run: () => setScope("folder:" + fid)},
+    {label: "Apri nel Finder", run: () => safe(() => api("/api/open", {folder: fid}))},
+    {label: "Copia percorso", run: () => copyText(folderFullPath(fid))},
+    "-",
+    {label: `Sincronizza «${isRoot ? root.name : f.name}»`, run: () => safe(async () => { await api(`/api/folders/${fid}/rescan`, {}); pollJobs(); })},
+    {label: "Genera anteprime di questa cartella", run: () => safe(async () => { await api("/api/thumbs/pregenerate", {scope: "folder:" + fid, deep: "1"}); toast("Generazione anteprime avviata"); pollJobs(); })},
+    isRoot && "-",
+    isRoot && {label: "Cambia percorso del NAS…", run: COMMANDS.relocate},
+    isRoot && {label: "Rimuovi dal catalogo…", danger: true, run: () => removeRoot(root.id)},
+  ];
+}
+
+function kwMenu(kid, fromChip = false) {
+  const k = S.tree.keywords.find(k => k.id === kid); if (!k) return null;
+  const n = S.sel.size;
+  return [
+    {label: "Mostra le foto", run: () => setScope("keyword:" + kid)},
+    n && !fromChip && {label: `Aggiungi alle ${n.toLocaleString("it-IT")} foto selezionate`, run: () => safe(async () => { await api("/api/keywords", {ids: selIds(), add: [k.name]}); await loadTree(); showInfo(true); toast("Parola chiave aggiunta"); })},
+    n && {label: "Togli dalle foto selezionate", run: () => safe(async () => { await api("/api/keywords", {ids: selIds(), remove: [kid]}); await loadTree(); showInfo(true); })},
+    "-",
+    {label: "Rinomina…", run: async () => {
+      const f = await dialog("Rinomina parola chiave", `<label>Nome</label><input type="text" name="name" value="${esc(k.name)}" required>`, "Rinomina");
+      if (f) safe(async () => { await api("/api/keywords/rename", {id: kid, name: f.name.value}); await loadTree(); showInfo(true); });
+    }},
+    {label: "Elimina parola chiave…", danger: true, run: async () => {
+      const f = await dialog("Elimina parola chiave", `<p>Eliminare «${esc(k.name)}»? Verrà tolta da ${k.count.toLocaleString("it-IT")} foto. Le foto non vengono toccate.</p>`, "Elimina");
+      if (f) safe(async () => { await api("/api/keywords/delete", {id: kid}); if (S.scope === "keyword:" + kid) setScope("all"); await loadTree(); showInfo(true); });
+    }},
+  ];
+}
 
 // ================================================================ filtri
 let searchT;

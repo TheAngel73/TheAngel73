@@ -132,21 +132,25 @@ class Catalog:
         return fid
 
     # ---------- scansione ----------
-    def scan_root(self, root_id, job=None):
+    def scan_root(self, root_id, job=None, sub=""):
+        """Sincronizza una cartella radice, oppure solo la sottocartella `sub`."""
         root = self.root_path(root_id)
-        if not root or not os.path.isdir(root):
-            raise RuntimeError(f"Cartella non raggiungibile (NAS collegato?): {root}")
+        start = resolve_path(os.path.join(root, sub)) if sub else root
+        if not root or not os.path.isdir(start):
+            raise RuntimeError(f"Cartella non raggiungibile (NAS collegato?): {start}")
         db = self.db
         known = {}
         for r in db.execute(
                 """SELECT p.id, p.filename, p.size, p.mtime, p.capture_time, f.rel_path
                    FROM photos p JOIN folders f ON f.id=p.folder_id WHERE f.root_id=?""",
                 (root_id,)):
+            if sub and r["rel_path"] != sub and not r["rel_path"].startswith(sub + "/"):
+                continue
             known[(r["rel_path"], r["filename"])] = r
         seen = set()
         new_rows, updates = [], []
         count = 0
-        for dirpath, dirnames, filenames in os.walk(root):
+        for dirpath, dirnames, filenames in os.walk(start):
             dirnames[:] = sorted(d for d in dirnames
                                  if not d.startswith(".") and d not in SKIP_DIRS)
             rel = nfc(os.path.relpath(dirpath, root))
