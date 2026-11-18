@@ -292,6 +292,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         cmd(lib, "Aggiungi cartella di foto…", "addFolder", "o", [.command, .shift])
         cmd(lib, "Importa catalogo Lightroom…", "importLr", "i", [.command, .shift])
         lib.addItem(.separator())
+        cmd(lib, "Trova duplicati…", "findDups")
         cmd(lib, "Genera anteprime della vista corrente", "pregen")
         cmd(lib, "Cambia percorso del NAS…", "relocate")
 
@@ -319,6 +320,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         cmd(photo, "Aggiungi parole chiave…", "keywords", "k")
         photo.addItem(.separator())
         cmd(photo, "Converti (RAW → DNG, PNG → JPEG)…", "convertDng")
+        cmd(photo, "Elimina dal disco…", "deleteFiles", "\u{8}")
 
         let view = submenu("Vista")
         cmd(view, "Miniature più grandi", "zoomIn", "+")

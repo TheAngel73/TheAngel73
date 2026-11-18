@@ -99,6 +99,25 @@ Converti tutti (RAW e PNG)…**, oppure menu **Foto** dell'app.
 - Se esiste già un file con lo stesso nome di destinazione, l'originale viene saltato.
 - Si può interrompere con **Interrompi** nella barra in basso; al termine compare un riepilogo.
 
+## Duplicati ed eliminazione
+
+**Libreria › Trova duplicati…** (anche dal menu dell'app):
+
+- confronta le foto con lo stesso nome in cartelle diverse e ne verifica il **contenuto**
+  (impronta SHA-1): sono duplicati solo i file identici byte per byte;
+- trova anche i **file vuoti** (0 byte) che hanno una copia integra altrove, tipici di uno
+  spostamento interrotto;
+- nella revisione ogni gruppo ha una copia proposta **da tenere**: mai vuota o nascosta,
+  poi quella nella **cartella preferita** (se l'hai indicata), poi quella con più
+  informazioni di catalogo, poi quella nella cartella creata più di recente.
+  Clic su una copia per tenerla, «Salta» per lasciare il gruppo com'è;
+- prima di eliminare, raccolte, parole chiave, stelle, etichetta e bandierina delle copie
+  eliminate vengono **riunite sulla copia che resta**.
+
+**Elimina dal disco**: tasto destro › Elimina dal disco… (⌘⌫). Cancella i file (e i loro
+`.xmp`) e li toglie dal catalogo, con conferma esplicita. Sul NAS finiscono nel cestino di
+rete, se attivo; non passano dal Cestino del Mac.
+
 ## Sincronizzazione automatica
 
 All'apertura di un catalogo parte una **sincronizzazione rapida**, in background: controlla
@@ -170,5 +189,6 @@ che se ne occupi Time Machine. Un catalogo protetto resta cifrato anche nel back
 | `thumbs.py` | miniature (QuickLook/sips su macOS) |
 | `exif.py` | lettura della data di scatto da JPEG e RAW |
 | `conversione.py` | conversione RAW → DNG e PNG → JPEG |
+| `gestione_file.py` | ricerca duplicati ed eliminazione dal disco |
 | `static/` | interfaccia (HTML, CSS, JavaScript) |
 | `mac/` | app nativa per macOS (Swift), convertitore `fcimg` e script `crea_app.sh` |

@@ -783,6 +783,10 @@ function loupeKeyZoom(f) {
 // ================================================================ tastiera
 document.addEventListener("keydown", async e => {
   if (e.target.matches("input, select, textarea") || $("#dlg").open) return;
+  if (!$("#dupscreen").hidden || !$("#catscreen").hidden) {      // schermate a tutta pagina: niente tasti della griglia
+    if (e.key === "Escape" && !$("#dupscreen").hidden) { e.preventDefault(); $("#dupscreen").hidden = true; }
+    return;
+  }
   const loupe = !$("#loupe").hidden;
   const mod = e.metaKey || e.ctrlKey;
   if (e.key === "Escape") {
@@ -800,7 +804,7 @@ document.addEventListener("keydown", async e => {
     if (e.key === "-") { e.preventDefault(); return loupeKeyZoom(1 / 1.5); }
   }
   if (loupe && (e.key === "ArrowRight" || e.key === "ArrowLeft")) { e.preventDefault(); return loupeStep(e.key === "ArrowRight" ? 1 : -1); }
-  const shortcut = mod && {a: "selectAll", e: "photoshop", r: "finder", k: "keywords", d: "selectNone"}[e.key.toLowerCase()];
+  const shortcut = mod && {a: "selectAll", e: "photoshop", r: "finder", k: "keywords", d: "selectNone", backspace: "deleteFiles"}[e.key.toLowerCase()];
   // nell'app per Mac queste scorciatoie arrivano dalla barra dei menu
   if (shortcut && !NATIVE) { e.preventDefault(); return COMMANDS[shortcut](); }
   if (mod) return;
@@ -912,6 +916,7 @@ $("#menu-library").addEventListener("click", e => {
   if (a === "relocate") relocateDialog();
   if (a === "help") helpDialog();
   if (a === "pregen") COMMANDS.pregen();
+  if (a === "dups") COMMANDS.findDups();
 });
 
 // ================================================================ comandi (tastiera, menu dell'app, tasto destro)
@@ -942,6 +947,8 @@ const COMMANDS = {
   keywords: needSel(() => keywordDialog()),
   switchCatalog: () => showCatalogScreen(null, false),
   convertDng: needSel(() => convertDng(selIds())),
+  deleteFiles: needSel(() => deleteFiles(selIds())),
+  findDups: () => openDuplicates(),
   lockCatalog: () => lockCatalog(),
   zoomIn: () => { $("#zoom").value = +$("#zoom").value + 40; $("#zoom").dispatchEvent(new Event("input")); },
   zoomOut: () => { $("#zoom").value = +$("#zoom").value - 40; $("#zoom").dispatchEvent(new Event("input")); },
@@ -1097,7 +1104,8 @@ async function photoMenu() {
       {label: "Nessuna", key: "U", checked: d && !d.flag, run: () => setMeta({flag: 0})}]},
     {label: "Aggiungi parole chiave…", key: "⌘K", run: COMMANDS.keywords},
     rawInSelection() && {label: "Converti (RAW → DNG, PNG → JPEG)…", run: COMMANDS.convertDng},
-    missingInSelection() && "-",
+    "-",
+    {label: `Elimina ${one ? "il file" : n.toLocaleString("it-IT") + " file"} dal disco…`, key: "⌘⌫", danger: true, run: COMMANDS.deleteFiles},
     missingInSelection() && {label: "Rimuovi dal catalogo (file mancanti)…", danger: true, run: () => removeMissing(selIds())},
     d && d.keywords.length && {label: "Togli parola chiave", sub: d.keywords.map(kw => ({label: kw.name, run: () => safe(async () => { await api("/api/keywords", {ids: selIds(), remove: [kw.id]}); await loadTree(); showInfo(true); })}))},
     "-",
@@ -1375,6 +1383,146 @@ async function removeMissing(ids) {
 }
 $("#btn-remove-missing").onclick = () => removeMissing(null);
 
+// ================================================================ elimina dal disco
+const fmtBytes = b => b >= 1e9 ? (b / 1e9).toFixed(1).replace(".", ",") + " GB" : b >= 1e6 ? Math.round(b / 1e6) + " MB" : Math.round(b / 1e3) + " KB";
+async function deleteFiles(ids) {
+  if (!ids.length) return;
+  const n = ids.length.toLocaleString("it-IT");
+  const f = await dialog(`Elimina ${n} file dal disco`, `
+    <p>Stai per <b>cancellare dal disco ${ids.length === 1 ? "il file selezionato" : `${n} file`}</b> (e gli eventuali .xmp),
+    che verranno tolti anche dal catalogo, con le loro raccolte e parole chiave.</p>
+    <p class="warn">Sul NAS i file finiscono nel cestino di rete, se è attivo. Non passano dal Cestino del Mac.</p>
+    <label class="check"><input type="checkbox" name="ok" required> Ho capito, elimina i file</label>`, `Elimina ${n} file`);
+  if (!f) return;
+  await safe(async () => { await api("/api/photos/delete", {ids}); closeLoupe(); S.sel.clear(); selChanged(); toast("Eliminazione avviata"); pollJobs(); });
+}
+function deleteSummary(r) {
+  const msg = `Eliminati ${r.eliminati.toLocaleString("it-IT")} file (${fmtBytes(r.byte)})`;
+  if (!r.errori.length && !r.interrotta) return toast(msg);
+  dialog(r.interrotta ? "Eliminazione interrotta" : "Eliminazione completata", `<p>${msg}.</p>
+    ${r.errori.length ? `<h4>Non eliminati (${r.errori.length})</h4><div class="list">${r.errori.slice(0, 200).map(([nm, why]) =>
+      `<div><b>${esc(nm)}</b> <span class="setname">${esc(why)}</span></div>`).join("")}</div>` : ""}`, "OK");
+}
+
+// ================================================================ duplicati
+// Revisione a gruppi: una copia per gruppo è proposta "da tenere". Regola della proposta:
+// mai un file vuoto o nascosto › cartella preferita › più informazioni di catalogo ›
+// cartella creata più di recente (la destinazione di uno spostamento) .
+const DUP = {data: null, pref: "", choice: new Map(), skip: new Set(), emptiesOn: true, orphansOn: false, tab: "dup", shown: 60};
+async function openDuplicates() {
+  const d = await safe(() => api("/api/duplicates"));
+  if (!d) return;
+  if (!d.groups) {
+    const f = await dialog("Trova duplicati", `
+      <p>Cerco le foto con lo stesso nome in cartelle diverse e ne confronto il <b>contenuto</b>:
+      sono duplicati solo i file identici byte per byte.</p>
+      <p>Trovo anche i <b>file vuoti</b> (0 byte) che hanno una copia integra altrove, tipici di uno spostamento interrotto.</p>
+      <p>La ricerca legge i file sul NAS: con molte foto può richiedere qualche minuto. Al termine si apre la revisione: nulla viene eliminato senza la tua conferma.</p>`, "Cerca");
+    if (!f) return;
+    return safe(async () => { await api("/api/duplicates/find", {}); toast("Ricerca duplicati avviata"); pollJobs(); });
+  }
+  DUP.data = d; DUP.pref = store.get("dupPref", ""); DUP.choice.clear(); DUP.skip.clear(); DUP.shown = 60;
+  DUP.tab = d.groups.length ? "dup" : "empty";
+  renderDup();
+  $("#dupscreen").hidden = false;
+}
+function inPref(m) { const p = DUP.pref.replace(/\/+$/, ""); return !!p && (m.path === p || m.path.startsWith(p + "/")); }
+function suggestKeep(ms) {
+  const ok = m => m.size > 0 && !m.hidden;
+  const score = m => m.nc + m.nk + (m.rating ? 1 : 0) + (m.label ? 1 : 0) + (m.flag ? 1 : 0);
+  return [...ms].sort((a, b) => (ok(b) - ok(a)) || (inPref(b) - inPref(a)) || (score(b) - score(a))
+    || (b.fbirth - a.fbirth) || (b.id - a.id))[0].id;
+}
+const keepOf = g => DUP.choice.get(g.gid) ?? suggestKeep(g.members);
+function dupPlan() {
+  const d = DUP.data, plan = [];
+  let files = 0, bytes = 0;
+  for (const g of d.groups) {
+    if (DUP.skip.has(g.gid)) continue;
+    const keep = keepOf(g), remove = g.members.filter(m => m.id !== keep);
+    plan.push({keep, remove: remove.map(m => m.id)}); files += remove.length; bytes += remove.length * g.size;
+  }
+  if (DUP.emptiesOn) for (const e of d.empties) { plan.push({keep: e.good.id, remove: [e.empty.id]}); files++; }
+  if (DUP.orphansOn && d.orphans.length) { plan.push({keep: null, remove: d.orphans.map(m => m.id)}); files += d.orphans.length; }
+  return {plan, files, bytes};
+}
+function memberHTML(m, keep) {
+  const info = [m.nc && `${m.nc} raccolte`, m.nk && `${m.nk} parole chiave`, m.rating && "★".repeat(m.rating)].filter(Boolean).join(" · ");
+  return `<div class="dup-m ${keep ? "keep" : "del"}" data-pick="${m.id}" title="${esc(m.path)}">
+    <div class="dup-th"><img loading="lazy" src="${thumbURL(m.id)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'ph',textContent:'${m.size ? "" : "vuoto"}'}))"></div>
+    <div class="dup-tag">${keep ? "✓ TIENI" : "ELIMINA"}</div>
+    <div class="dup-folder">${esc(m.folder)}</div>
+    <div class="dup-meta">${fmtSize(m.size)}${m.hidden ? " · <b>nascosto</b>" : ""}${inPref(m) ? " · <b>cartella preferita</b>" : ""}</div>
+    <div class="dup-meta">${info || "nessuna informazione di catalogo"}</div></div>`;
+}
+function renderDup() {
+  const d = DUP.data, el = $("#dupscreen");
+  const {files, bytes} = dupPlan();
+  const tabs = `<div class="dup-tabs">
+    <button data-tab="dup" class="${DUP.tab === "dup" ? "on" : ""}">Duplicati identici (${d.groups.length.toLocaleString("it-IT")} gruppi)</button>
+    <button data-tab="empty" class="${DUP.tab === "empty" ? "on" : ""}">File vuoti (${(d.empties.length + d.orphans.length).toLocaleString("it-IT")})</button></div>`;
+  let body = "";
+  if (DUP.tab === "dup") {
+    body = d.groups.slice(0, DUP.shown).map(g => {
+      const keep = keepOf(g), skip = DUP.skip.has(g.gid);
+      return `<div class="dup-g${skip ? " skipped" : ""}" data-g="${g.gid}">
+        <div class="dup-head"><b>${esc(g.members[0].name)}</b> · ${g.members.length} copie identiche · ${fmtSize(g.size)}
+          <label class="check"><input type="checkbox" data-skip="${g.gid}" ${skip ? "checked" : ""}> Salta</label></div>
+        <div class="dup-ms">${g.members.map(m => memberHTML(m, !skip && m.id === keep)).join("")}</div></div>`;
+    }).join("") || `<p class="empty">Nessun duplicato identico.</p>`;
+    if (d.groups.length > DUP.shown) body += `<button class="dup-more" data-more>Mostra altri ${Math.min(60, d.groups.length - DUP.shown)} gruppi…</button>`;
+  } else {
+    body = `<label class="check dup-all"><input type="checkbox" data-empties ${DUP.emptiesOn ? "checked" : ""}>
+      Elimina i <b>${d.empties.length.toLocaleString("it-IT")}</b> file vuoti che hanno una copia integra (le informazioni passano alla copia integra)</label>
+      <div class="list">${d.empties.slice(0, 500).map(e => `<div><b>${esc(e.empty.name)}</b>
+        <span class="setname">vuoto in ${esc(e.empty.folder)} → resta ${esc(e.good.folder)}</span></div>`).join("")}</div>`;
+    if (d.orphans.length) body += `<label class="check dup-all"><input type="checkbox" data-orphans ${DUP.orphansOn ? "checked" : ""}>
+      Elimina anche i <b>${d.orphans.length.toLocaleString("it-IT")}</b> file vuoti <b>senza</b> copia integra (non contengono nulla, ma si perdono le loro informazioni di catalogo)</label>
+      <div class="list">${d.orphans.slice(0, 500).map(m => `<div><b>${esc(m.name)}</b> <span class="setname">${esc(m.folder)}</span></div>`).join("")}</div>`;
+  }
+  el.innerHTML = `<div class="dup-box">
+    <div class="dup-top"><h1>Duplicati</h1><span style="flex:1"></span>
+      <button data-again>Cerca di nuovo</button><button data-close>Chiudi</button></div>
+    <div class="dup-pref"><span>Cartella preferita:</span>
+      <input id="dup-pref" value="${esc(DUP.pref)}" placeholder="nessuna: si tiene la copia con più informazioni di catalogo; a parità, quella nella cartella più recente">
+      <button data-pickpref>Scegli…</button>${DUP.pref ? "<button data-nopref>✕</button>" : ""}</div>
+    <p class="small">Clic su una copia per tenerla. Prima di eliminare, raccolte, parole chiave, stelle ed etichette
+      delle copie eliminate vengono riunite su quella che resta.</p>
+    ${tabs}<div class="dup-list">${body}</div>
+    <div class="dup-foot"><span>Verranno eliminati <b>${files.toLocaleString("it-IT")}</b> file${bytes ? ` (${fmtBytes(bytes)})` : ""}.
+      I file finiscono nel cestino di rete del NAS, se attivo.</span><span style="flex:1"></span>
+      <button class="primary danger" data-apply ${files ? "" : "disabled"}>Elimina ${files.toLocaleString("it-IT")} file…</button></div></div>`;
+}
+$("#dupscreen").addEventListener("click", async e => {
+  const t = e.target;
+  const m = t.closest("[data-pick]");
+  if (m) { const g = t.closest("[data-g]").dataset.g; DUP.choice.set(g, +m.dataset.pick); DUP.skip.delete(g); return renderDup(); }
+  if (t.dataset.tab) { DUP.tab = t.dataset.tab; return renderDup(); }
+  if (t.dataset.skip) { t.checked ? DUP.skip.add(t.dataset.skip) : DUP.skip.delete(t.dataset.skip); return renderDup(); }
+  if (t.hasAttribute("data-empties")) { DUP.emptiesOn = t.checked; return renderDup(); }
+  if (t.hasAttribute("data-orphans")) { DUP.orphansOn = t.checked; return renderDup(); }
+  if (t.hasAttribute("data-more")) { DUP.shown += 60; return renderDup(); }
+  if (t.hasAttribute("data-close")) { $("#dupscreen").hidden = true; return; }
+  if (t.hasAttribute("data-nopref")) { DUP.pref = ""; store.set("dupPref", ""); DUP.choice.clear(); return renderDup(); }
+  if (t.hasAttribute("data-pickpref")) {
+    const inp = $("#dup-pref"); await pickInto(inp, "folder");
+    DUP.pref = inp.value.trim(); store.set("dupPref", DUP.pref); DUP.choice.clear(); return renderDup();
+  }
+  if (t.hasAttribute("data-again")) { $("#dupscreen").hidden = true; return safe(async () => { await api("/api/duplicates/find", {}); toast("Ricerca duplicati avviata"); pollJobs(); }); }
+  if (t.hasAttribute("data-apply")) {
+    const {plan, files, bytes} = dupPlan();
+    const f = await dialog("Elimina duplicati", `<p>Verranno eliminati <b>${files.toLocaleString("it-IT")}</b> file${bytes ? ` (${fmtBytes(bytes)})` : ""},
+      tenendo una copia per gruppo. Le informazioni di catalogo delle copie eliminate passano a quella che resta.</p>
+      <p>Prima di ogni eliminazione la copia da tenere viene ricontrollata. Sul NAS i file finiscono nel cestino di rete, se attivo.</p>
+      <label class="check"><input type="checkbox" name="ok" required> Ho capito, elimina le copie</label>`, `Elimina ${files.toLocaleString("it-IT")} file`);
+    if (!f) return;
+    await safe(async () => { await api("/api/duplicates/apply", {plan}); $("#dupscreen").hidden = true; toast("Eliminazione duplicati avviata"); pollJobs(); });
+  }
+});
+$("#dupscreen").addEventListener("change", e => {
+  if (e.target.id === "dup-pref") { DUP.pref = e.target.value.trim(); store.set("dupPref", DUP.pref); DUP.choice.clear(); renderDup(); }
+});
+
 // ================================================================ filtri
 let searchT;
 // filtri attivi evidenziati in colore, con ✕ per toglierli tutti
@@ -1418,6 +1566,12 @@ async function onJobDone(j) {
   if (j.status !== "done" || !j.result) return;
   const r = j.result;
   if (r.dng) { await loadTree(); reload(true); return dngSummary(r); }
+  if (r.duplicates) {
+    if (r.interrotta) return;
+    if (!r.gruppi && !r.vuoti && !r.orfani) return toast("Nessun duplicato trovato 🎉");
+    return openDuplicates();
+  }
+  if (r.dupapply || r.deleted) { await loadTree(); reload(true); return deleteSummary(r); }
   if (r.quick) {
     if (!r.new && !r.missing && !r.ritrovate) return;
     await loadTree(); reload(true);

@@ -26,6 +26,7 @@ from catalog import nfc, now  # noqa: E402
 from lightroom import import_lrcat  # noqa: E402
 import catalogs  # noqa: E402
 import conversione  # noqa: E402
+import gestione_file  # noqa: E402
 import thumbs  # noqa: E402
 
 PORT = int(os.environ.get("FOTOCAT_PORT", "8765"))
@@ -114,6 +115,7 @@ def open_catalog(path, password=None):
         close_current()
         CURRENT, cat, THUMB_DIR = oc, oc.cat, oc.thumb_dir
         JOBS.clear()
+        gestione_file.LAST.clear()
         catalogs.remember(path)
         start_quick_sync()
         return oc.info()
@@ -664,6 +666,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(d) if d else self.not_found()
             if u.path == "/api/jobs":
                 return self.send_json([j.as_dict() for j in JOBS.values()])
+            if u.path == "/api/duplicates":
+                return self.send_json(gestione_file.LAST)
             if u.path == "/api/years":
                 return self.send_json([r[0] for r in cat.db.execute(
                     "SELECT DISTINCT substr(capture_time,1,4) y FROM photos WHERE y IS NOT NULL ORDER BY y DESC")])
@@ -727,6 +731,20 @@ class Handler(BaseHTTPRequestHandler):
                         db.execute("UPDATE collections SET parent_id=? WHERE id=?", (parent, cid))
                     db.commit()
                 return None
+        if route == "duplicates/find":
+            job = start_job("Ricerca duplicati", lambda job: gestione_file.find(cat, job))
+            job.cancellable = True
+            return job.as_dict()
+        if route == "duplicates/apply":
+            plan, tdir = body.get("plan", []), THUMB_DIR
+            job = start_job("Eliminazione duplicati", lambda job: gestione_file.apply(cat, tdir, plan, job))
+            job.cancellable = True
+            return job.as_dict()
+        if route == "photos/delete":
+            ids, tdir = ids_of(body), THUMB_DIR
+            job = start_job("Eliminazione dal disco", lambda job: gestione_file.delete(cat, tdir, ids, job))
+            job.cancellable = True
+            return job.as_dict()
         if route == "photos/remove-missing":
             return remove_missing(ids_of(body) if "ids" in body else None)
         if route == "meta":
