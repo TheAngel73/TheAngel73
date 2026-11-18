@@ -128,17 +128,31 @@ function render() {
   }
 }
 
+// tipo di file -> triangolino nell'angolo
+const RAW_PROP = new Set(["nef", "nrw", "cr2", "cr3", "crw", "arw", "srf", "sr2", "raf", "orf", "rw2", "pef", "srw",
+  "x3f", "3fr", "iiq", "erf", "mos", "mrw", "raw", "rwl", "kdc", "dcr", "mef"]);
+function fileType(x) {
+  x = (x || "").toLowerCase();
+  if (x === "jpg" || x === "jpeg" || x === "jpe") return ["jpg", "JPEG"];
+  if (x === "psd" || x === "psb") return ["psd", "Photoshop (" + x.toUpperCase() + ")"];
+  if (RAW_PROP.has(x)) return ["raw", "RAW proprietario (" + x.toUpperCase() + ") da convertire"];
+  return null;
+}
+
 function makeCell(it, i) {
   const el = document.createElement("div");
   el.className = "cell"; el.dataset.i = i;
   if (!it) { el.innerHTML = `<div class="im"></div>`; return el; }
   el.draggable = true;
   if (it.f === -1) { el.classList.add("rejected"); el.title = "Scartata"; }
+  if (it.l) el.classList.add("lab", "lab-" + it.l);
+  const ft = fileType(it.x);
   const stars = it.r ? "★".repeat(it.r) : "";
   el.innerHTML = `<div class="im"><img loading="lazy" decoding="async" alt="" src="${thumbURL(it.id)}"></div>
+    ${ft ? `<span class="ftype ft-${ft[0]}" title="${ft[1]}"></span>` : ""}
     ${it.f === 1 ? '<span class="flag" title="Scelta">⚑</span>' : ""}
     ${it.m ? '<span class="miss" title="File non trovato">⚠ mancante</span>' : ""}
-    <div class="cap">${it.l ? `<span class="dot lbl-${it.l}"></span>` : ""}<span class="fn" title="${esc(it.n)}">${esc(it.n)}</span><span class="stars">${stars}</span></div>`;
+    <div class="cap"${it.l ? ` title="Etichetta ${LABELS[it.l] || ""}"` : ""}><span class="fn" title="${esc(it.n)}">${esc(it.n)}</span><span class="stars">${stars}</span></div>`;
   const img = el.querySelector("img");
   img.onerror = () => { img.replaceWith(Object.assign(document.createElement("span"), {className: "ph", textContent: it.x || "?"})); };
   return el;
@@ -247,7 +261,7 @@ function setScope(scope) {
 }
 function scopeTitle(scope) {
   const [k, v] = scope.split(":"); const t = S.tree; if (!t) return "";
-  const fixed = {all: "Tutte le foto", nocoll: "Foto senza raccolta", missing: "File mancanti", recent: "Importazione più recente"};
+  const fixed = {all: "Tutte le foto", nocoll: "Foto senza raccolta", toconvert: "Da convertire (non DNG, JPEG o PSD)", missing: "File mancanti", recent: "Importazione più recente"};
   if (fixed[k]) return fixed[k];
   if (k === "collection") { const c = t.collections.find(c => c.id == v); return c ? (c.set ? "Set: " : "Raccolta: ") + c.name : "?"; }
   if (k === "keyword") { const c = t.keywords.find(c => c.id == v); return c ? "Parola chiave: " + c.name : "?"; }
@@ -265,7 +279,8 @@ function renderSidebar() {
   const t = S.tree; if (!t) return;
   // catalogo
   const cat = [["all", "▦", "Tutte le foto", t.stats.total], ["recent", "◷", "Importazione più recente", null],
-    ["nocoll", "◌", "Senza raccolta", t.stats.nocoll]];
+    ["nocoll", "◌", "Senza raccolta", t.stats.nocoll],
+    ["toconvert", "◭", "Da convertire", t.stats.toconvert]];
   if (t.stats.missing) cat.push(["missing", "⚠", "File mancanti", t.stats.missing]);
   $("#catalog-list").innerHTML = cat.map(([s, icon, name, count]) =>
     `<li data-scope="${s}">${nodeHTML({icon, name, count, active: S.scope === s})}</li>`).join("");

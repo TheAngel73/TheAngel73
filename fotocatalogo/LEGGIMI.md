@@ -78,7 +78,15 @@ presenti non vengono duplicate.
 | Vista ingrandita | doppio clic, **Spazio** o **Invio**, poi **← →** |
 | Selezionare tutto | **⌘A** |
 | Nuove foto sul NAS | **⟳** accanto alla cartella, o tasto destro › Sincronizza su una sottocartella |
+| Vedere i file ancora da convertire | **Catalogo › Da convertire** (tutto ciò che non è DNG, JPEG o PSD) |
 | Tutte le altre azioni | **tasto destro** su foto, raccolte, cartelle e parole chiave |
+
+## Come leggere le miniature
+
+- **Triangolino in alto a sinistra**: verde = JPEG, giallo = PSD, rosso = RAW proprietario
+  (ARW, NEF, CR2…) da convertire. I DNG non hanno il triangolino.
+- **Striscia colorata sotto la foto**: l'etichetta colore.
+- ⚑ in alto a destra: foto scelta. Foto sbiadita con il nome barrato: scartata.
 
 ## Cataloghi
 

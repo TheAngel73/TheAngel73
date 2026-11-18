@@ -35,6 +35,8 @@ THUMB_DIR = None
 switch_lock = threading.Lock()
 STATIC = os.path.join(HERE, "static")
 LABELS = ("red", "yellow", "green", "blue", "purple")
+# formati "definitivi": tutto il resto finisce in "Da convertire"
+FINAL_EXT = ("dng", "jpg", "jpeg", "jpe", "psd", "psb")
 
 
 # ---------------------------------------------------------------- lavori in background
@@ -206,6 +208,8 @@ def scope_filter(scope, deep=True):
                 f"({','.join(map(str, ids))}))", [])
     if kind == "keyword":
         return "p.id IN (SELECT photo_id FROM photo_keywords WHERE keyword_id=?)", [int(val)]
+    if kind == "toconvert":
+        return f"COALESCE(p.ext,'') NOT IN ({','.join(repr(e) for e in FINAL_EXT)})", []
     if kind == "nocoll":
         return "NOT EXISTS (SELECT 1 FROM collection_photos cp WHERE cp.photo_id=p.id)", []
     if kind == "missing":
@@ -319,9 +323,11 @@ def tree():
              for r in db.execute("SELECT * FROM collections ORDER BY is_set DESC, name COLLATE NOCASE")]
     kws = [{"id": r["id"], "name": r["name"], "parent": r["parent_id"], "count": kcount.get(r["id"], 0)}
            for r in db.execute("SELECT * FROM keywords ORDER BY name COLLATE NOCASE")]
-    stats = db.execute("""SELECT count(*) AS total, sum(missing) AS missing,
+    stats = db.execute(f"""SELECT count(*) AS total, sum(missing) AS missing,
         (SELECT count(*) FROM photos p WHERE NOT EXISTS
-           (SELECT 1 FROM collection_photos cp WHERE cp.photo_id=p.id)) AS nocoll
+           (SELECT 1 FROM collection_photos cp WHERE cp.photo_id=p.id)) AS nocoll,
+        (SELECT count(*) FROM photos p WHERE COALESCE(p.ext,'') NOT IN
+           ({','.join(repr(e) for e in FINAL_EXT)})) AS toconvert
         FROM photos""").fetchone()
     return {"roots": roots, "folders": folders, "collections": colls, "keywords": kws,
             "stats": dict(stats)}
