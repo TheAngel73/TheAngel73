@@ -635,7 +635,7 @@ function openLoupe(i) {
   limg.hidden = L.video;
   $("#loupe").classList.toggle("is-video", L.video);
   $("#loupe-hint").textContent = L.video ? "spazio: avvia/ferma · ← → scorri · Esc chiudi"
-    : "clic: adatta/100% · rotellina: zoom · ← → scorri · Esc chiudi";
+    : "clic: adatta/100% · doppio clic: griglia · rotellina: zoom · ← →";
   if (L.video) {
     $("#loupe-name").textContent = `${it.n} · ${fmtDate(it.t)} ${it.r ? "· " + "★".repeat(it.r) : ""}`;
     $("#loupe-zoom").textContent = "Video";
@@ -757,9 +757,17 @@ stage.addEventListener("pointerup", e => {
   const r = stage.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top;
   const ir = limg.getBoundingClientRect();
   const onImage = e.clientX >= ir.left && e.clientX <= ir.right && e.clientY >= ir.top && e.clientY <= ir.bottom;
-  if (!onImage && Math.abs(L.z - 1) < 0.01) return closeLoupe();   // clic sul fondo scuro: chiude
-  loupeToggle(px, py);
+  // doppio clic: torna alla griglia (come Lightroom). Il clic singolo aspetta un attimo
+  // per capire se arriva il secondo, poi alterna adatta/100%.
+  if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; return closeLoupe(); }
+  clickTimer = setTimeout(() => {
+    clickTimer = null;
+    if ($("#loupe").hidden) return;
+    if (!onImage && Math.abs(L.z - 1) < 0.01) return closeLoupe();   // clic sul fondo scuro: chiude
+    loupeToggle(px, py);
+  }, 240);
 });
+let clickTimer = null;
 window.addEventListener("resize", () => { if (!$("#loupe").hidden) loupeLayout(); });
 function loupeKeyZoom(f) {
   const W = stage.clientWidth, H = stage.clientHeight;
@@ -772,7 +780,11 @@ document.addEventListener("keydown", async e => {
   if (e.target.matches("input, select, textarea") || $("#dlg").open) return;
   const loupe = !$("#loupe").hidden;
   const mod = e.metaKey || e.ctrlKey;
-  if (e.key === "Escape") { if (loupe) closeLoupe(); else { S.sel.clear(); selChanged(); } return; }
+  if (e.key === "Escape") {
+    if (loupe) { e.preventDefault(); closeLoupe(); }
+    else if (S.sel.size) { e.preventDefault(); S.sel.clear(); selChanged(); }
+    return;            // niente da fare: il Mac emette il normale suono di avviso
+  }
   if (loupe && L.video && e.key === " ") {      // nei video la barra spaziatrice avvia/ferma
     e.preventDefault(); const v = $("#loupe-video"); if (!v.hidden) v.paused ? v.play() : v.pause(); return;
   }
@@ -873,7 +885,7 @@ async function removeRoot(rid) {
 function helpDialog() {
   const rows = [["Clic / ⌘-clic / ⇧-clic", "Seleziona / aggiungi alla selezione / intervallo"], ["⌘A", "Seleziona tutte le foto della vista"],
     ["Frecce", "Spostati tra le foto"], ["Invio, Spazio, doppio clic", "Vista ingrandita"],
-    ["Nella vista ingrandita", "clic o Z: adatta / 100% · rotellina o + −: zoom · trascina per spostarti"], ["0 – 5", "Stelle"],
+    ["Nella vista ingrandita", "clic o Z: adatta / 100% · doppio clic: torna alla griglia · rotellina o + −: zoom · trascina per spostarti"], ["0 – 5", "Stelle"],
     ["6 7 8 9", "Etichetta rossa, gialla, verde, blu"], ["P / X / U", "Scelta / Scartata / Togli bandierina"],
     ["C oppure B", "Aggiungi a raccolta…"], ["⌫ Backspace", "Togli dalla raccolta corrente"], ["⌘E", "Apri in Photoshop"],
     ["⌘R", "Mostra nel Finder"], ["⌘K", "Aggiungi parole chiave"], ["⌘D / Esc", "Deseleziona"],
@@ -999,7 +1011,7 @@ function showMenu(x, y, items) {
 }
 function hideMenu() { ctx.hidden = true; }
 document.addEventListener("mousedown", e => { if (!ctx.contains(e.target)) hideMenu(); }, true);
-document.addEventListener("keydown", e => { if (e.key === "Escape" && !ctx.hidden) { e.stopImmediatePropagation(); hideMenu(); } }, true);
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !ctx.hidden) { e.preventDefault(); e.stopImmediatePropagation(); hideMenu(); } }, true);
 window.addEventListener("blur", hideMenu);
 scroller.addEventListener("scroll", hideMenu);
 
@@ -1253,7 +1265,7 @@ async function showCatalogScreen(cs, startup) {
     if (e.target.id === "cs-open") go();
   };
   el.ondblclick = e => { const it = e.target.closest(".cs-item"); if (it && !(sel.protected && !sel.open)) go(); };
-  el.onkeydown = e => { if (e.key === "Enter") go(); if (e.key === "Escape" && !startup) el.hidden = true; };
+  el.onkeydown = e => { if (e.key === "Enter") go(); if (e.key === "Escape" && !startup) { e.preventDefault(); el.hidden = true; } };
   async function go() {
     if (!sel) return;
     const wantDef = $("#cs-def").checked;

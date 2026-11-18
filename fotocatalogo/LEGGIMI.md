@@ -76,7 +76,7 @@ presenti non vengono duplicate.
 | Togliere foto dalla raccolta aperta | **⌫ Backspace** |
 | Stelle / etichette / bandierine | **0–5** / **6 7 8 9** / **P X U** |
 | Vista ingrandita | doppio clic, **Spazio** o **Invio**, poi **← →** |
-| Zoom nella vista ingrandita | **clic** (o **Z**): adatta ↔ 100% · **rotellina** o pizzico sul trackpad · **+ −** · trascina per spostarti |
+| Zoom nella vista ingrandita | **clic** (o **Z**): adatta ↔ 100% · **doppio clic** o **Esc**: torna alla griglia · **rotellina** o pizzico sul trackpad · **+ −** · trascina per spostarti |
 | Selezionare tutto | **⌘A** |
 | Nuove foto sul NAS | trovate da sole all'apertura del catalogo; in qualsiasi momento: **⟳** o tasto destro › Sincronizza |
 | Vedere i file ancora da convertire | **Catalogo › Da convertire** (tutto ciò che non è DNG, JPEG o PSD) |
