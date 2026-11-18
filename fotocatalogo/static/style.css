@@ -173,3 +173,26 @@ dialog table td { padding: 3px 10px 3px 0; }
 html.native .brand { display: none; }
 html.native body { -webkit-user-select: none; user-select: none; cursor: default; }
 html.native input, html.native .path, html.native td { -webkit-user-select: text; user-select: text; }
+
+/* cataloghi */
+#btn-catalog { font-weight: 600; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#catscreen { position: fixed; inset: 0; z-index: 90; background: var(--bg); display: flex; align-items: center; justify-content: center; }
+#catscreen[hidden] { display: none; }
+.cs-box { width: 480px; max-width: calc(100% - 32px); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 12px; padding: 24px; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
+.cs-box h1 { margin: 0 0 4px; font-size: 20px; font-weight: 600; }
+.cs-box label { display: block; margin: 12px 0 4px; color: var(--dim); }
+.cs-box input[type=password] { width: 100%; }
+.cs-box .btns { display: flex; gap: 8px; margin-top: 18px; align-items: center; }
+.cs-list { margin-top: 14px; border: 1px solid var(--line); border-radius: 8px; background: #1b1b1d; max-height: 320px; overflow: auto; }
+.cs-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; cursor: default; }
+.cs-item + .cs-item { border-top: 1px solid #2a2a2d; }
+.cs-item.on { background: var(--sel); color: #fff; }
+.cs-ic { width: 20px; text-align: center; }
+.cs-name { flex: 1; font-size: 14px; }
+.cs-badge { font-size: 11px; color: var(--dim); border: 1px solid var(--line); border-radius: 9px; padding: 1px 7px; }
+.cs-item.on .cs-badge { color: #dde; border-color: #8aa; }
+.cs-err { color: var(--red); }
+label.check { display: flex !important; gap: 6px; align-items: center; color: var(--text) !important; }
+dialog .warn { color: var(--yellow); }
+dialog input[type=password] { width: 100%; }

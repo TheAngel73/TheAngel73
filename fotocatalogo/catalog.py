@@ -69,21 +69,41 @@ class Catalog:
     def __init__(self, db_path):
         self.db_path = db_path
         self._local = threading.local()
+        self._conns = []
+        self.closed = False
         self.write_lock = threading.RLock()
         with self.write_lock:
             self.db.executescript(SCHEMA)
 
     @property
     def db(self):
+        if self.closed:
+            raise RuntimeError("Il catalogo è stato chiuso")
         c = getattr(self._local, "conn", None)
         if c is None:
-            c = sqlite3.connect(self.db_path, timeout=60)
+            c = sqlite3.connect(self.db_path, timeout=60, check_same_thread=False)
+            self._conns.append(c)
             c.row_factory = sqlite3.Row
             c.execute("PRAGMA journal_mode=WAL")
             c.execute("PRAGMA synchronous=NORMAL")
             c.execute("PRAGMA foreign_keys=OFF")
             self._local.conn = c
         return c
+
+    def close(self):
+        """Chiude tutte le connessioni (necessario prima di bloccare un catalogo protetto)."""
+        with self.write_lock:
+            self.closed = True
+            for c in self._conns:
+                try:
+                    c.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                except Exception:
+                    pass
+                try:
+                    c.close()
+                except Exception:
+                    pass
+            self._conns.clear()
 
     # ---------- percorsi ----------
     def root_path(self, root_id):

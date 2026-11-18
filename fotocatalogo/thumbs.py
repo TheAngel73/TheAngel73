@@ -22,6 +22,13 @@ _locks = {}
 _locks_guard = threading.Lock()
 
 
+def reset():
+    """Da chiamare quando si cambia catalogo (gli id delle foto ricominciano)."""
+    _failed.clear()
+    with _locks_guard:
+        _locks.clear()
+
+
 def thumb_file(cache_dir, photo_id, size):
     return os.path.join(cache_dir, str(photo_id % 1000).zfill(3), f"{photo_id}_{size}.jpg")
 

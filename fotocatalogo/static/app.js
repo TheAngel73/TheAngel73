@@ -9,6 +9,7 @@ async function api(url, body) {
   const opt = body === undefined ? {} : {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)};
   const r = await fetch(url, opt);
   const data = await r.json().catch(() => ({}));
+  if (data.nocatalog && CAT) { location.reload(); throw new Error("Catalogo chiuso"); }
   if (!r.ok || data.error) throw new Error(data.error || `Errore ${r.status}`);
   return data;
 }
@@ -18,9 +19,15 @@ function toast(msg, isError = false) {
   clearTimeout(toast._t); toast._t = setTimeout(() => t.hidden = true, isError ? 6000 : 2500);
 }
 async function safe(fn) { try { return await fn(); } catch (e) { toast(e.message, true); } }
+// catalogo aperto: {path, name, protected, uid}. Le preferenze di vista sono per catalogo.
+let CAT = null;
+const GLOBAL_KEYS = new Set(["zoom", "sort"]);
+const skey = k => "fc:" + (GLOBAL_KEYS.has(k) || !CAT ? "" : CAT.uid + ":") + k;
+const thumbURL = id => `/thumb/${id}?c=${CAT ? CAT.uid : ""}`;
+const previewURL = id => `/preview/${id}?c=${CAT ? CAT.uid : ""}`;
 const store = {
-  get(k, d) { try { const v = localStorage.getItem("fc:" + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
-  set(k, v) { try { localStorage.setItem("fc:" + k, JSON.stringify(v)); } catch {} },
+  get(k, d) { try { const v = localStorage.getItem(skey(k)); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(skey(k), JSON.stringify(v)); } catch {} },
 };
 function fmtDate(t) {
   if (!t) return "—";
@@ -35,10 +42,10 @@ function fmtSize(b) {
 
 // ================================================================ stato
 const S = {
-  tree: null, scope: store.get("scope", "all"),
+  tree: null, scope: "all",
   total: 0, pages: new Map(), loading: new Set(), version: 0,
   sel: new Set(), anchor: -1, cursor: -1,
-  expanded: new Set(store.get("expanded", [])),
+  expanded: new Set(),
   cols: 1, cw: 180, ch: 200,
   detail: null,
 };
@@ -128,7 +135,7 @@ function makeCell(it, i) {
   el.draggable = true;
   if (it.f === -1) { el.classList.add("rejected"); el.title = "Scartata"; }
   const stars = it.r ? "★".repeat(it.r) : "";
-  el.innerHTML = `<div class="im"><img loading="lazy" decoding="async" alt="" src="/thumb/${it.id}"></div>
+  el.innerHTML = `<div class="im"><img loading="lazy" decoding="async" alt="" src="${thumbURL(it.id)}"></div>
     ${it.f === 1 ? '<span class="flag" title="Scelta">⚑</span>' : ""}
     ${it.m ? '<span class="miss" title="File non trovato">⚠ mancante</span>' : ""}
     <div class="cap">${it.l ? `<span class="dot lbl-${it.l}"></span>` : ""}<span class="fn" title="${esc(it.n)}">${esc(it.n)}</span><span class="stars">${stars}</span></div>`;
@@ -511,13 +518,13 @@ async function showInfo(refresh = false) {
   }
   if (S.sel.size > 1) return showMulti(box);
   const id = [...S.sel][0];
-  if (!refresh || !S.detail || S.detail.id !== id) box.innerHTML = `<div class="prev"><img src="/thumb/${id}" alt=""></div>`;
+  if (!refresh || !S.detail || S.detail.id !== id) box.innerHTML = `<div class="prev"><img src="${thumbURL(id)}" alt=""></div>`;
   const d = await api(`/api/photo/${id}`).catch(() => null);
   if (!d || !S.sel.has(id) || S.sel.size !== 1) return;
   S.detail = d;
   const folder = d.rel_path ? d.rel_path : "(radice)";
   box.innerHTML = `
-    <div class="prev"><img src="/thumb/${id}" alt="" onerror="this.remove()"></div>
+    <div class="prev"><img src="${thumbURL(id)}" alt="" onerror="this.remove()"></div>
     <div class="fname">${esc(d.filename)}</div>
     <div class="path">${esc(d.path)}</div>
     ${rateBars(d.rating, d.label, d.flag)}
@@ -597,10 +604,10 @@ function openLoupe(i) {
   const it = itemAt(i); if (!it) return;
   loupeIdx = i; S.cursor = i; S.sel.clear(); S.sel.add(it.id); selChanged();
   const img = $("#loupe-img");
-  img.src = `/thumb/${it.id}`;
+  img.src = thumbURL(it.id);
   const big = new Image();
   big.onload = () => { if (loupeIdx === i) img.src = big.src; };
-  big.src = `/preview/${it.id}`;
+  big.src = previewURL(it.id);
   $("#loupe-name").textContent = `${it.n} · ${fmtDate(it.t)} ${it.r ? "· " + "★".repeat(it.r) : ""}`;
   $("#loupe").hidden = false;
 }
@@ -756,6 +763,8 @@ const COMMANDS = {
   addToColl: needSel(() => pickCollection(selIds())),
   removeFromColl: () => removeFromCurrentCollection(),
   keywords: needSel(() => keywordDialog()),
+  switchCatalog: () => showCatalogScreen(null, false),
+  lockCatalog: () => lockCatalog(),
   zoomIn: () => { $("#zoom").value = +$("#zoom").value + 40; $("#zoom").dispatchEvent(new Event("input")); },
   zoomOut: () => { $("#zoom").value = +$("#zoom").value - 40; $("#zoom").dispatchEvent(new Event("input")); },
 };
@@ -770,7 +779,11 @@ function nativePick(kind) {
   });
 }
 window.fc = {
-  cmd(name) { if ($("#dlg").open && !["selectAll"].includes(name)) return; COMMANDS[name]?.(); },
+  cmd(name) {
+    if ($("#dlg").open && !["selectAll"].includes(name)) return;
+    if (!CAT && !["selectAll", "help"].includes(name)) return;   // c'è già la schermata dei cataloghi
+    COMMANDS[name]?.();
+  },
   pickResult(id, path) { pickWaiters.get(id)?.(path); pickWaiters.delete(id); },
 };
 // file trascinati dal Finder: non devono far "navigare" la finestra
@@ -963,6 +976,140 @@ function kwMenu(kid, fromChip = false) {
   ];
 }
 
+// ================================================================ cataloghi
+function updateCatalogButton() {
+  const b = $("#btn-catalog");
+  b.innerHTML = `${CAT.protected ? "🔒 " : ""}${esc(CAT.name)} ▾`;
+  b.title = CAT.path;
+}
+
+$("#btn-catalog").onclick = async e => {
+  e.stopPropagation();
+  const r = e.currentTarget.getBoundingClientRect();
+  const cs = await api("/api/catalogs");
+  const others = cs.catalogs.filter(c => !c.open);
+  showMenu(r.left, r.bottom + 4, [
+    {label: CAT.name, checked: true, disabled: true},
+    ...others.map(c => ({label: (c.protected ? "🔒 " : "") + c.name, run: () => openCatalogFlow(c)})),
+    "-",
+    {label: "Gestisci cataloghi…", key: NATIVE ? "⌥⌘O" : "", run: () => showCatalogScreen(cs, false)},
+    {label: "Nuovo catalogo…", run: () => newCatalogDialog()},
+    "-",
+    {label: "Apri questo catalogo all'avvio", checked: cs.default === CAT.path,
+      run: () => safe(async () => { await api("/api/catalogs/default", {path: cs.default === CAT.path ? null : CAT.path}); toast(cs.default === CAT.path ? "All'avvio si aprirà l'ultimo catalogo usato" : `All'avvio si aprirà «${CAT.name}»`); })},
+    CAT.protected ? {label: "Blocca catalogo", key: NATIVE ? "⌘L" : "", run: lockCatalog} : {label: "Proteggi con password…", run: protectDialog},
+    CAT.protected && {label: "Cambia password…", run: passwordDialog},
+  ]);
+};
+
+async function openCatalogFlow(c) {
+  let password = null;
+  if (c.protected) {
+    const f = await dialog(`🔒 ${c.name}`, `<p>Questo catalogo è protetto.</p>
+      <label>Password</label><input type="password" name="pw" required autofocus>`, "Sblocca");
+    if (!f) return;
+    password = f.pw.value;
+  }
+  await safe(async () => { await api("/api/catalogs/open", {path: c.path, password}); location.reload(); });
+}
+
+async function lockCatalog() {
+  if (!CAT || !CAT.protected) return;
+  await safe(async () => { await api("/api/catalogs/lock", {}); CAT = null; location.reload(); });
+}
+
+async function newCatalogDialog() {
+  const f = await dialog("Nuovo catalogo", `
+    <p>Il catalogo verrà salvato in <code>Documenti/FotoCatalogo</code>.</p>
+    <label>Nome</label><input type="text" name="name" required autofocus placeholder="es. Personale">
+    <label class="check"><input type="checkbox" name="prot"> Proteggi con password (catalogo cifrato)</label>
+    <div class="pw" hidden>
+      <label>Password</label><input type="password" name="pw" autocomplete="new-password">
+      <label>Ripeti la password</label><input type="password" name="pw2" autocomplete="new-password">
+      <p class="warn">Se dimentichi la password il catalogo non è recuperabile: annotala in un posto sicuro.</p>
+    </div>
+    <label class="check"><input type="checkbox" name="def"> Apri questo catalogo all'avvio</label>`, "Crea e apri", form => {
+      form.prot.onchange = () => { form.querySelector(".pw").hidden = !form.prot.checked; form.pw.required = form.pw2.required = form.prot.checked; };
+    });
+  if (!f) return;
+  await safe(async () => {
+    await api("/api/catalogs/create", {name: f.name.value, password: f.prot.checked ? f.pw.value : null,
+      password2: f.prot.checked ? f.pw2.value : null, default: f.def.checked});
+    location.reload();
+  });
+}
+
+async function protectDialog() {
+  const f = await dialog(`Proteggi «${CAT.name}» con password`, `
+    <p>Il catalogo verrà spostato in un'<b>immagine disco cifrata</b> di macOS (AES-256), insieme alle sue miniature.
+    Senza password nessuno potrà vederne raccolte, parole chiave e anteprime, nemmeno aprendo i file con altri programmi.</p>
+    <p>La copia non cifrata viene cancellata dopo aver verificato che il trasferimento è riuscito. Con un catalogo grande può richiedere qualche minuto.</p>
+    <label>Password</label><input type="password" name="pw" required autofocus autocomplete="new-password">
+    <label>Ripeti la password</label><input type="password" name="pw2" required autocomplete="new-password">
+    <p class="warn">Se dimentichi la password il catalogo non è recuperabile.</p>
+    <p>Nota: le foto sul NAS restano accessibili come prima. La password protegge il catalogo, non i file sul NAS.</p>`, "Proteggi");
+  if (!f) return;
+  toast("Protezione in corso… non chiudere l'app");
+  await safe(async () => { await api("/api/catalogs/protect", {password: f.pw.value, password2: f.pw2.value}); location.reload(); });
+}
+
+async function passwordDialog() {
+  const f = await dialog(`Cambia password di «${CAT.name}»`, `
+    <label>Password attuale</label><input type="password" name="old" required autofocus>
+    <label>Nuova password</label><input type="password" name="new" required autocomplete="new-password">
+    <label>Ripeti la nuova password</label><input type="password" name="new2" required autocomplete="new-password">`, "Cambia");
+  if (!f) return;
+  await safe(async () => { await api("/api/catalogs/password", {old: f.old.value, new: f.new.value, new2: f.new2.value}); toast("Password cambiata"); });
+}
+
+// Schermata di scelta: all'avvio (catalogo protetto da sbloccare) o da "Gestisci cataloghi"
+async function showCatalogScreen(cs, startup) {
+  cs = cs || await api("/api/catalogs").catch(() => null);
+  if (!cs) { document.body.innerHTML = `<div class="empty">Il motore non risponde.</div>`; return; }
+  const el = $("#catscreen");
+  let sel = cs.catalogs.find(c => c.path === (startup ? cs.startup : (cs.current?.path || cs.startup))) || cs.catalogs[0];
+  const draw = (err = "") => {
+    el.innerHTML = `<div class="cs-box">
+      <h1>${startup ? "FotoCatalogo" : "Cataloghi"}</h1>
+      <p class="small">Cartella: <code>${esc(cs.base)}</code></p>
+      <div class="cs-list">${cs.catalogs.map(c => `<div class="cs-item${c === sel ? " on" : ""}" data-path="${esc(c.path)}">
+        <span class="cs-ic">${c.protected ? "🔒" : "▦"}</span><span class="cs-name">${esc(c.name)}</span>
+        ${c.default ? '<span class="cs-badge">all\'avvio</span>' : ""}${c.open ? '<span class="cs-badge open">aperto</span>' : ""}</div>`).join("")
+        || '<p class="small">Nessun catalogo.</p>'}</div>
+      ${sel && sel.protected && !sel.open ? `<label>Password di «${esc(sel.name)}»</label><input type="password" id="cs-pw" autofocus>` : ""}
+      ${err ? `<p class="cs-err">${esc(err)}</p>` : ""}
+      <label class="check"><input type="checkbox" id="cs-def" ${sel && sel.default ? "checked" : ""}> Apri questo catalogo all'avvio</label>
+      <div class="btns">
+        <button type="button" id="cs-new">Nuovo catalogo…</button>
+        <span style="flex:1"></span>
+        ${startup ? "" : '<button type="button" id="cs-cancel">Annulla</button>'}
+        <button type="button" class="primary" id="cs-open" ${sel ? "" : "disabled"}>${sel && sel.protected && !sel.open ? "Sblocca e apri" : "Apri"}</button>
+      </div></div>`;
+    el.hidden = false;
+    $("#cs-pw")?.focus();
+  };
+  el.onclick = e => {
+    const it = e.target.closest(".cs-item");
+    if (it) { sel = cs.catalogs.find(c => c.path === it.dataset.path); draw(); return; }
+    if (e.target.id === "cs-cancel") { el.hidden = true; return; }
+    if (e.target.id === "cs-new") { el.hidden = true; newCatalogDialog().then(() => { if (!CAT) el.hidden = false; }); return; }
+    if (e.target.id === "cs-open") go();
+  };
+  el.ondblclick = e => { const it = e.target.closest(".cs-item"); if (it && !(sel.protected && !sel.open)) go(); };
+  el.onkeydown = e => { if (e.key === "Enter") go(); if (e.key === "Escape" && !startup) el.hidden = true; };
+  async function go() {
+    if (!sel) return;
+    const wantDef = $("#cs-def").checked;
+    try {
+      if (wantDef !== sel.default) await api("/api/catalogs/default", {path: wantDef ? sel.path : null});
+      if (sel.open) { el.hidden = true; return; }
+      await api("/api/catalogs/open", {path: sel.path, password: $("#cs-pw")?.value || null});
+      location.reload();
+    } catch (err) { draw(err.message); }
+  }
+  draw();
+}
+
 // ================================================================ filtri
 let searchT;
 $("#search").addEventListener("input", () => { clearTimeout(searchT); searchT = setTimeout(() => reload(), 300); });
@@ -1011,6 +1158,14 @@ async function onJobDone(j) {
 
 // ================================================================ avvio
 (async () => {
+  const cs = await api("/api/catalogs").catch(() => null);
+  if (!cs || !cs.current) return showCatalogScreen(cs, true);
+  CAT = cs.current;
+  document.title = CAT.name;
+  updateCatalogButton();
+  S.scope = store.get("scope", "all");
+  S.expanded = new Set(store.get("expanded", []));
+  $("#zoom").value = store.get("zoom", 180);
   for (const j of await api("/api/jobs").catch(() => [])) if (j.status !== "running") seenDone.add(j.id);
   await safe(loadTree);
   if (!scopeTitle(S.scope) || scopeTitle(S.scope) === "?") S.scope = "all";

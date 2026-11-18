@@ -16,8 +16,7 @@ catalogazione.
 - Pensato per grandi archivi (oltre 170 000 foto): la griglia carica solo ciò che vedi
 
 **Le foto non vengono mai modificate, spostate o cancellate.** L'app legge soltanto
-i file sul NAS. Catalogo e miniature sono salvati sul Mac in
-`~/Library/Application Support/FotoCatalogo/`.
+i file sul NAS. I cataloghi sono salvati sul Mac in **`Documenti/FotoCatalogo/`**.
 
 ## Requisiti
 
@@ -81,12 +80,44 @@ presenti non vengono duplicate.
 | Nuove foto sul NAS | **⟳** accanto alla cartella, o tasto destro › Sincronizza su una sottocartella |
 | Tutte le altre azioni | **tasto destro** su foto, raccolte, cartelle e parole chiave |
 
+## Cataloghi
+
+Come in Lightroom, puoi avere più cataloghi. Stanno tutti in `Documenti/FotoCatalogo/`:
+
+```
+Documenti/FotoCatalogo/
+├── Catalogo principale/          ← catalogo normale: una cartella
+│   ├── catalogo.db               ← raccolte, parole chiave, stelle… (il file importante)
+│   └── miniature/                ← si possono cancellare, vengono ricreate
+└── Personale.sparsebundle        ← catalogo protetto: immagine disco cifrata
+```
+
+- **Cambiare catalogo:** pulsante con il nome del catalogo in alto a sinistra,
+  oppure **Libreria › Cambia catalogo…** (⌥⌘O).
+- **Catalogo all'avvio:** dallo stesso menu, «Apri questo catalogo all'avvio».
+  Se non ne scegli uno, si apre l'ultimo usato. Se è protetto, all'avvio viene chiesta la password.
+- **Nuovo catalogo:** scegli se proteggerlo con password al momento della creazione.
+- **Proteggere un catalogo esistente:** aprilo e scegli «Proteggi con password…».
+  Viene copiato in un'immagine cifrata e la copia non cifrata viene cancellata.
+
+**Cataloghi protetti.** Usano la cifratura AES-256 di macOS, la stessa delle immagini
+disco cifrate di Utility Disco. Finché il catalogo è bloccato, raccolte, parole chiave
+e miniature non sono leggibili, nemmeno aprendo i file con altri programmi.
+Si richiude da solo quando passi a un altro catalogo o chiudi l'app, oppure subito con
+**Blocca catalogo** (⌘L). Tieni presente che:
+- **se dimentichi la password il catalogo non è recuperabile**;
+- la password protegge il *catalogo*, non le foto sul NAS: chi accede al NAS vede i file
+  come prima.
+
+La prima volta macOS chiede il permesso di accedere alla cartella Documenti: concedilo.
+
+Alla prima apertura di questa versione, il catalogo creato con la versione precedente
+viene spostato automaticamente in `Documenti/FotoCatalogo/Catalogo principale`.
+
 ## Backup
 
-Tutto il lavoro di catalogazione sta in un unico file:
-`~/Library/Application Support/FotoCatalogo/catalogo.db`.
-Includilo in Time Machine o copialo ogni tanto sul NAS.
-La cartella `miniature` accanto si può cancellare: viene ricreata automaticamente.
+Basta copiare la cartella `Documenti/FotoCatalogo` (con l'app chiusa), oppure lasciare
+che se ne occupi Time Machine. Un catalogo protetto resta cifrato anche nel backup.
 
 ## Struttura del codice
 
@@ -94,6 +125,7 @@ La cartella `miniature` accanto si può cancellare: viene ricreata automaticamen
 |---|---|
 | `server.py` | server web locale e API |
 | `catalog.py` | database SQLite e scansione delle cartelle |
+| `catalogs.py` | più cataloghi, cataloghi protetti (immagini cifrate) |
 | `lightroom.py` | importazione da `.lrcat` |
 | `thumbs.py` | miniature (QuickLook/sips su macOS) |
 | `exif.py` | lettura della data di scatto da JPEG e RAW |

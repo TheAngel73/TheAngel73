@@ -6,6 +6,7 @@ Solo libreria standard di Python: non serve installare nulla.
 """
 import json
 import os
+import signal
 import subprocess
 import sys
 import threading
@@ -20,20 +21,18 @@ from urllib.parse import parse_qs, urlparse
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-from catalog import Catalog, nfc, now  # noqa: E402
+from catalog import nfc, now  # noqa: E402
 from lightroom import import_lrcat  # noqa: E402
+import catalogs  # noqa: E402
 import thumbs  # noqa: E402
 
 PORT = int(os.environ.get("FOTOCAT_PORT", "8765"))
-if sys.platform == "darwin":
-    DEFAULT_DATA = os.path.expanduser("~/Library/Application Support/FotoCatalogo")
-else:
-    DEFAULT_DATA = os.path.expanduser("~/.fotocatalogo")
-DATA_DIR = os.environ.get("FOTOCAT_DATA", DEFAULT_DATA)
-THUMB_DIR = os.path.join(DATA_DIR, "miniature")
-os.makedirs(THUMB_DIR, exist_ok=True)
 
-cat = Catalog(os.path.join(DATA_DIR, "catalogo.db"))
+# Catalogo aperto in questo momento (None = nessuno, es. in attesa della password)
+CURRENT = None
+cat = None
+THUMB_DIR = None
+switch_lock = threading.Lock()
 STATIC = os.path.join(HERE, "static")
 LABELS = ("red", "yellow", "green", "blue", "purple")
 
@@ -62,6 +61,112 @@ class Job:
 
 
 JOBS = {}
+
+
+# ---------------------------------------------------------------- cataloghi
+def jobs_running():
+    return any(j.status == "running" for j in JOBS.values())
+
+
+def close_current():
+    global CURRENT, cat, THUMB_DIR
+    if CURRENT:
+        old = CURRENT
+        CURRENT, cat, THUMB_DIR = None, None, None
+        old.close()
+    thumbs.reset()
+
+
+def open_catalog(path, password=None):
+    global CURRENT, cat, THUMB_DIR
+    with switch_lock:
+        if jobs_running():
+            raise ValueError("Attendi la fine dei lavori in corso prima di cambiare catalogo")
+        if CURRENT and CURRENT.path == path:
+            return CURRENT.info()
+        oc = catalogs.OpenCatalog(path, password)   # se la password è errata, resta aperto il precedente
+        close_current()
+        CURRENT, cat, THUMB_DIR = oc, oc.cat, oc.thumb_dir
+        JOBS.clear()
+        catalogs.remember(path)
+        return oc.info()
+
+
+def catalogs_state():
+    s = catalogs.load_settings()
+    default = s.get("default")
+    return {
+        "current": CURRENT.info() if CURRENT else None,
+        "default": default,
+        "base": catalogs.BASE,
+        "startup": catalogs.startup_catalog(),
+        "catalogs": [{"path": p, "name": catalogs.display_name(p), "protected": catalogs.is_protected(p),
+                      "default": p == default, "open": bool(CURRENT and CURRENT.path == p)}
+                     for p in catalogs.list_catalogs()],
+    }
+
+
+def catalogs_post(action, body):
+    if action == "open":
+        return open_catalog(body["path"], body.get("password"))
+    if action == "create":
+        pw = body.get("password") or None
+        if pw and pw != body.get("password2"):
+            raise ValueError("Le due password non coincidono")
+        path = catalogs.create(body.get("name"), pw)
+        if body.get("default"):
+            s = catalogs.load_settings(); s["default"] = path; catalogs.save_settings(s)
+        return open_catalog(path, pw)
+    if action == "default":
+        s = catalogs.load_settings()
+        s["default"] = body.get("path") or None
+        catalogs.save_settings(s)
+        return None
+    if action == "lock":
+        with switch_lock:
+            if jobs_running():
+                raise ValueError("Attendi la fine dei lavori in corso")
+            close_current()
+        return None
+    if action == "protect":
+        pw = body.get("password") or ""
+        if pw != body.get("password2"):
+            raise ValueError("Le due password non coincidono")
+        with switch_lock:
+            if not CURRENT or CURRENT.protected:
+                raise ValueError("Apri prima il catalogo da proteggere")
+            if jobs_running():
+                raise ValueError("Attendi la fine dei lavori in corso")
+            if len(pw) < 4:
+                raise ValueError("La password deve avere almeno 4 caratteri")
+            oc = CURRENT
+            close_current()
+            try:
+                new_path = catalogs.protect_existing(oc, pw)
+            except Exception:
+                reopen = catalogs.OpenCatalog(oc.path)   # torna al catalogo originale, intatto
+                globals().update(CURRENT=reopen, cat=reopen.cat, THUMB_DIR=reopen.thumb_dir)
+                raise
+        return open_catalog(new_path, pw)
+    if action == "password":
+        if body.get("new") != body.get("new2"):
+            raise ValueError("Le due nuove password non coincidono")
+        with switch_lock:
+            if not CURRENT or not CURRENT.protected:
+                raise ValueError("Il catalogo aperto non è protetto")
+            if not CURRENT.check_password(body.get("old")):
+                raise ValueError("Password attuale errata")
+            if jobs_running():
+                raise ValueError("Attendi la fine dei lavori in corso")
+            path = CURRENT.path
+            close_current()
+        try:
+            catalogs.change_password(path, body.get("old", ""), body.get("new", ""))
+        except Exception:
+            open_catalog(path, body.get("old", ""))
+            raise
+        return open_catalog(path, body.get("new"))
+    raise ValueError("Comando sconosciuto")
 
 
 def start_job(label, fn):
@@ -393,13 +498,14 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def send_file(self, path, ctype, cache=True):
+    def send_file(self, path, ctype, cache=True, private=False):
         with open(path, "rb") as f:
             data = f.read()
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
-        self.send_header("Cache-Control", "max-age=86400" if cache else "no-cache")
+        # le miniature dei cataloghi protetti non devono finire nella cache del disco
+        self.send_header("Cache-Control", "no-store" if private else "max-age=86400" if cache else "no-cache")
         self.end_headers()
         self.wfile.write(data)
 
@@ -420,9 +526,14 @@ class Handler(BaseHTTPRequestHandler):
                 ctype = {"js": "text/javascript", "css": "text/css", "svg": "image/svg+xml"}.get(
                     p.rsplit(".", 1)[-1], "application/octet-stream")
                 return self.send_file(p, ctype + "; charset=utf-8", False) if os.path.isfile(p) else self.not_found()
+            if u.path == "/api/catalogs":
+                return self.send_json(catalogs_state())
+            if cat is None:
+                return self.send_json({"error": "Nessun catalogo aperto", "nocatalog": True}, 409)
             if parts[0] in ("thumb", "preview") and len(parts) == 2:
-                path = thumbs.get_thumb(cat, THUMB_DIR, int(parts[1]), "m" if parts[0] == "thumb" else "l")
-                return self.send_file(path, "image/jpeg") if path else self.not_found()
+                c, tdir, private = cat, THUMB_DIR, CURRENT.protected
+                path = thumbs.get_thumb(c, tdir, int(parts[1]), "m" if parts[0] == "thumb" else "l")
+                return self.send_file(path, "image/jpeg", private=private) if path else self.not_found()
             if u.path == "/api/tree":
                 return self.send_json(tree())
             if u.path == "/api/photos":
@@ -448,6 +559,13 @@ class Handler(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(ln) or b"{}") if ln else {}
         parts = u.path.strip("/").split("/")
         try:
+            if parts[:2] == ["api", "catalogs"] and len(parts) == 3:
+                res = catalogs_post(parts[2], body)
+                return self.send_json(res if res is not None else {"ok": True})
+            if parts[:2] == ["api", "pick"]:
+                return self.send_json({"path": pick_path(body.get("kind", "folder"))})
+            if cat is None:
+                return self.send_json({"error": "Nessun catalogo aperto", "nocatalog": True}, 409)
             res = self.post(parts, body)
             self.send_json(res if res is not None else {"ok": True})
         except Exception as e:  # noqa: BLE001
@@ -521,8 +639,6 @@ class Handler(BaseHTTPRequestHandler):
             label = os.path.basename(f["rel_path"]) or "cartella"
             return start_job(f"Sincronizzazione {label}",
                              lambda job: cat.scan_root(f["root_id"], job, f["rel_path"])).as_dict()
-        if route == "pick":
-            return {"path": pick_path(body.get("kind", "folder"))}
         if route == "open":
             return open_photos(ids_of(body), body.get("how", "default"), body.get("folder"))
         if route == "roots/add":
@@ -556,12 +672,36 @@ class Handler(BaseHTTPRequestHandler):
         raise ValueError("Comando sconosciuto")
 
 
+def shutdown(*_):
+    """Chiusura (anche quando l'app per Mac termina): blocca il catalogo protetto."""
+    try:
+        close_current()
+    finally:
+        os._exit(0)
+
+
+def startup():
+    catalogs.lock_leftovers()
+    moved = catalogs.migrate_old()
+    if moved:
+        print(f"Catalogo spostato in: {moved}")
+    path = catalogs.startup_catalog()
+    if path is None:
+        path = catalogs.create("Catalogo principale")
+        s = catalogs.load_settings(); s["default"] = path; catalogs.save_settings(s)
+    if not catalogs.is_protected(path):
+        open_catalog(path)
+    print(f"Cataloghi in: {catalogs.BASE}")
+    print(f"Catalogo aperto: {CURRENT.path if CURRENT else '(protetto, in attesa della password)'}")
+
+
 def main():
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     srv.daemon_threads = True
+    signal.signal(signal.SIGTERM, shutdown)
+    startup()
     url = f"http://localhost:{PORT}/"
     print(f"FotoCatalogo attivo su {url}")
-    print(f"Catalogo: {cat.db_path}")
     print("Per chiudere: Ctrl+C (o chiudi questa finestra)")
     if "--no-browser" not in sys.argv:
         threading.Timer(0.8, lambda: webbrowser.open(url)).start()
@@ -569,6 +709,7 @@ def main():
         srv.serve_forever()
     except KeyboardInterrupt:
         print("\nChiuso.")
+        shutdown()
 
 
 if __name__ == "__main__":

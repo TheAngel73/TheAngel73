@@ -54,6 +54,9 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>NSPrincipalClass</key><string>NSApplication</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSHumanReadableCopyright</key><string>Catalogo foto personale</string>
+  <key>NSDocumentsFolderUsageDescription</key><string>FotoCatalogo salva i cataloghi nella cartella Documenti/FotoCatalogo.</string>
+  <key>NSNetworkVolumesUsageDescription</key><string>FotoCatalogo legge le foto dal NAS per creare le miniature. I file non vengono mai modificati.</string>
+  <key>NSRemovableVolumesUsageDescription</key><string>FotoCatalogo legge le foto dai dischi esterni per creare le miniature.</string>
   <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
 </dict></plist>
 PLIST

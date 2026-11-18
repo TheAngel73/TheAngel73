@@ -24,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     var webView: WKWebView!
     var server: Process?
     var quitting = false
+    var titleObserver: NSKeyValueObservation?
 
     // MARK: avvio
 
@@ -37,6 +38,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = false
         if #available(macOS 13.3, *) { webView.isInspectable = true }
+        // il titolo della finestra mostra il catalogo aperto
+        titleObserver = webView.observe(\.title, options: [.new]) { [weak self] wv, _ in
+            guard let self = self else { return }
+            let t = wv.title ?? ""
+            self.window?.title = (t.isEmpty || t == "FotoCatalogo") ? "FotoCatalogo" : "FotoCatalogo — \(t)"
+        }
 
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1440, height: 900),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -232,8 +239,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     }
 
     @objc func showDataFolder(_ sender: Any?) {
-        let dir = (NSHomeDirectory() as NSString).appendingPathComponent("Library/Application Support/FotoCatalogo")
-        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: dir)])
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let dir = docs.appendingPathComponent("FotoCatalogo")
+        NSWorkspace.shared.open(dir)
     }
 
     func buildMainMenu() {
@@ -265,7 +273,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         let app = submenu("FotoCatalogo")
         sys(app, "Informazioni su FotoCatalogo", #selector(NSApplication.orderFrontStandardAboutPanel(_:)))
         app.addItem(.separator())
-        sys(app, "Mostra cartella del catalogo", #selector(showDataFolder(_:)), target: self)
+        sys(app, "Mostra cartella dei cataloghi", #selector(showDataFolder(_:)), target: self)
         app.addItem(.separator())
         sys(app, "Nascondi FotoCatalogo", #selector(NSApplication.hide(_:)), "h")
         sys(app, "Nascondi altre", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option])
@@ -274,6 +282,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         sys(app, "Esci da FotoCatalogo", #selector(NSApplication.terminate(_:)), "q")
 
         let lib = submenu("Libreria")
+        cmd(lib, "Cambia catalogo…", "switchCatalog", "o", [.command, .option])
+        cmd(lib, "Blocca catalogo protetto", "lockCatalog", "l")
+        lib.addItem(.separator())
         cmd(lib, "Nuova raccolta…", "newColl", "n")
         cmd(lib, "Nuovo set di raccolte…", "newSet", "n", [.command, .shift])
         lib.addItem(.separator())
