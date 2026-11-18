@@ -318,7 +318,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         cmd(photo, "Togli dalla raccolta corrente", "removeFromColl")
         cmd(photo, "Aggiungi parole chiave…", "keywords", "k")
         photo.addItem(.separator())
-        cmd(photo, "Converti in DNG…", "convertDng")
+        cmd(photo, "Converti (RAW → DNG, PNG → JPEG)…", "convertDng")
 
         let view = submenu("Vista")
         cmd(view, "Miniature più grandi", "zoomIn", "+")

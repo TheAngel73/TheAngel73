@@ -1055,7 +1055,7 @@ async function menuFor(t) {
     {label: "Seleziona tutte", key: "⌘A", run: COMMANDS.selectAll},
     {label: "Deseleziona", key: "⌘D", run: COMMANDS.selectNone, disabled: !S.sel.size},
     "-", {label: "Genera anteprime di questa vista", run: COMMANDS.pregen},
-    S.scope === "toconvert" && S.total && {label: "Converti tutti i RAW in DNG…", run: convertAll},
+    S.scope === "toconvert" && S.total && {label: "Converti tutti (RAW e PNG)…", run: convertAll},
     {label: "Miniature", sub: [{label: "Più grandi", key: "⌘+", run: COMMANDS.zoomIn}, {label: "Più piccole", key: "⌘−", run: COMMANDS.zoomOut}]},
   ];
   return null;
@@ -1088,7 +1088,7 @@ async function photoMenu() {
       {label: "Scartata", key: "X", checked: d && d.flag === -1, run: () => setMeta({flag: -1})},
       {label: "Nessuna", key: "U", checked: d && !d.flag, run: () => setMeta({flag: 0})}]},
     {label: "Aggiungi parole chiave…", key: "⌘K", run: COMMANDS.keywords},
-    rawInSelection() && {label: "Converti in DNG…", run: COMMANDS.convertDng},
+    rawInSelection() && {label: "Converti (RAW → DNG, PNG → JPEG)…", run: COMMANDS.convertDng},
     d && d.keywords.length && {label: "Togli parola chiave", sub: d.keywords.map(kw => ({label: kw.name, run: () => safe(async () => { await api("/api/keywords", {ids: selIds(), remove: [kw.id]}); await loadTree(); showInfo(true); })}))},
     "-",
     d && {label: "Vai alla cartella", run: () => setScope("folder:" + d.folder_id)},
@@ -1284,9 +1284,10 @@ async function showCatalogScreen(cs, startup) {
 }
 
 // ================================================================ conversione in DNG
+const convertible = x => RAW_PROP.has((x || "").toLowerCase()) || (x || "").toLowerCase() === "png";
 function rawInSelection() {
-  if (S.detail && S.sel.size === 1 && S.sel.has(S.detail.id)) return RAW_PROP.has((S.detail.ext || "").toLowerCase());
-  for (const pg of S.pages.values()) for (const it of pg) if (S.sel.has(it.id) && RAW_PROP.has((it.x || "").toLowerCase())) return true;
+  if (S.detail && S.sel.size === 1 && S.sel.has(S.detail.id)) return convertible(S.detail.ext);
+  for (const pg of S.pages.values()) for (const it of pg) if (S.sel.has(it.id) && convertible(it.x)) return true;
   return false;
 }
 async function convertAll() {
@@ -1294,33 +1295,40 @@ async function convertAll() {
   if (r) convertDng(r.ids);
 }
 async function convertDng(ids) {
-  const st = await safe(() => api("/api/dng"));
-  if (!st) return;
-  if (!st.available) return dialog("Adobe DNG Converter non trovato", `
-    <p>Per convertire i RAW in DNG serve <b>Adobe DNG Converter</b>, gratuito, installato nella cartella Applicazioni.</p>
-    <p>Lo trovi sul sito Adobe cercando «Adobe DNG Converter».</p>`, null);
-  let raws = null;
   const known = new Map();
-  for (const pg of S.pages.values()) for (const it of pg) known.set(it.id, it.x);
-  if (ids.every(id => known.has(id))) raws = ids.filter(id => RAW_PROP.has((known.get(id) || "").toLowerCase())).length;
-  const what = raws != null ? `${raws.toLocaleString("it-IT")} file RAW` : "i file RAW selezionati";
-  if (raws === 0) return toast("Nella selezione non ci sono RAW proprietari da convertire");
-  const f = await dialog("Converti in DNG", `
-    <p>Verranno convertiti in DNG ${what}, con le impostazioni predefinite di Lightroom
-    (compressione senza perdita, anteprima media).</p>
-    <p>Ogni DNG viene salvato nella stessa cartella e <b>prende il posto del RAW nel catalogo</b>,
+  for (const pg of S.pages.values()) for (const it of pg) known.set(it.id, (it.x || "").toLowerCase());
+  if (S.detail) known.set(S.detail.id, (S.detail.ext || "").toLowerCase());
+  const allKnown = ids.every(id => known.has(id));
+  const raws = allKnown ? ids.filter(id => RAW_PROP.has(known.get(id))).length : null;
+  const pngs = allKnown ? ids.filter(id => known.get(id) === "png").length : null;
+  if (allKnown && !raws && !pngs) return toast("Nella selezione non ci sono RAW o PNG da convertire");
+  if (raws !== 0) {
+    const st = await safe(() => api("/api/dng"));
+    if (!st) return;
+    if (!st.available && !pngs) return dialog("Adobe DNG Converter non trovato", `
+      <p>Per convertire i RAW in DNG serve <b>Adobe DNG Converter</b>, gratuito, installato nella cartella Applicazioni.</p>
+      <p>Lo trovi sul sito Adobe cercando «Adobe DNG Converter».</p>`, null);
+  }
+  const n = v => v.toLocaleString("it-IT");
+  const lines = allKnown
+    ? [raws && `<li><b>${n(raws)}</b> RAW → <b>DNG</b> (impostazioni predefinite di Lightroom)</li>`,
+       pngs && `<li><b>${n(pngs)}</b> PNG → <b>JPEG</b> (qualità 92%, parti trasparenti su fondo bianco)</li>`].filter(Boolean).join("")
+    : `<li>RAW → <b>DNG</b> (impostazioni predefinite di Lightroom)</li><li>PNG → <b>JPEG</b> (qualità 92%, parti trasparenti su fondo bianco)</li>`;
+  const f = await dialog("Converti", `
+    <p>Verranno convertiti:</p><ul>${lines}</ul>
+    <p>Ogni nuovo file viene salvato nella stessa cartella e <b>prende il posto dell'originale nel catalogo</b>,
     mantenendo raccolte, parole chiave, stelle ed etichette.</p>
-    <p class="warn">Dopo una conversione riuscita e verificata, il RAW originale (e il suo eventuale .xmp)
+    <p class="warn">Dopo una conversione riuscita e verificata, l'originale (e il suo eventuale .xmp)
     viene <b>cancellato</b>: sul NAS finisce nel cestino di rete, se attivo.</p>
     <p>Puoi interrompere in qualsiasi momento dalla barra in basso.</p>`, "Converti");
   if (!f) return;
-  await safe(async () => { await api("/api/convert/dng", {ids}); toast("Conversione avviata"); pollJobs(); });
+  await safe(async () => { await api("/api/convert", {ids}); toast("Conversione avviata"); pollJobs(); });
 }
 function dngSummary(r) {
   const list = (title, rows) => rows.length ? `<h4>${title} (${rows.length})</h4><div class="list">${rows.slice(0, 200).map(([n, why]) =>
     `<div><b>${esc(n)}</b> <span class="setname">${esc(why)}</span></div>`).join("")}</div>` : "";
   if (!r.saltate.length && !r.errori.length && !r.avvisi.length && !r.interrotta)
-    return toast(`Convertiti in DNG: ${r.convertite.toLocaleString("it-IT")} file`);
+    return toast(`File convertiti: ${r.convertite.toLocaleString("it-IT")}`);
   dialog(r.interrotta ? "Conversione interrotta" : "Conversione completata", `
     <p>Convertiti: <b>${r.convertite.toLocaleString("it-IT")}</b> su ${r.da_convertire.toLocaleString("it-IT")}.</p>
     ${list("Con avvisi", r.avvisi)}${list("Saltati", r.saltate)}${list("Non riusciti (originale intatto)", r.errori)}`, "OK");

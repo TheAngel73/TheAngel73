@@ -24,7 +24,7 @@ sys.path.insert(0, HERE)
 from catalog import nfc, now  # noqa: E402
 from lightroom import import_lrcat  # noqa: E402
 import catalogs  # noqa: E402
-import dng  # noqa: E402
+import conversione  # noqa: E402
 import thumbs  # noqa: E402
 
 PORT = int(os.environ.get("FOTOCAT_PORT", "8765"))
@@ -605,7 +605,7 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/catalogs":
                 return self.send_json(catalogs_state())
             if u.path == "/api/dng":
-                return self.send_json({"available": bool(dng.find_converter())})
+                return self.send_json({"available": bool(conversione.find_converter())})
             if cat is None:
                 return self.send_json({"error": "Nessun catalogo aperto", "nocatalog": True}, 409)
             if parts[0] == "full" and len(parts) == 2:
@@ -753,11 +753,9 @@ class Handler(BaseHTTPRequestHandler):
             return start_job("Importazione Lightroom", lambda job: import_lrcat(cat, path, job)).as_dict()
         if route == "thumbs/pregenerate":
             return pregenerate(body).as_dict()
-        if route == "convert/dng":
-            if not dng.find_converter():
-                raise ValueError("Adobe DNG Converter non trovato: installalo nella cartella Applicazioni")
+        if route in ("convert", "convert/dng"):
             ids, tdir = ids_of(body), THUMB_DIR
-            job = start_job("Conversione in DNG", lambda job: dng.convert(cat, ids, tdir, job))
+            job = start_job("Conversione", lambda job: conversione.convert(cat, ids, tdir, job))
             job.cancellable = True
             return job.as_dict()
         if parts[1] == "jobs" and len(parts) == 4 and parts[3] == "cancel":

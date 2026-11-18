@@ -20,6 +20,8 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/app/static"
 swiftc -O -swift-version 5 -o "$APP/Contents/MacOS/FotoCatalogo" FotoCatalogo.swift \
   -framework Cocoa -framework WebKit
+mkdir -p "$APP/Contents/Resources/bin"
+swiftc -O -swift-version 5 -o "$APP/Contents/Resources/bin/fcimg" fcimg.swift
 
 echo "› Copio il motore e l'interfaccia…"
 cp "$SRC"/*.py "$APP/Contents/Resources/app/"
