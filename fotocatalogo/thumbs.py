@@ -14,6 +14,8 @@ import sys
 import tempfile
 import threading
 
+from catalog import VIDEO_EXT  # noqa: E402
+
 SIZES = {"m": 480, "l": 2048}
 IS_MAC = sys.platform == "darwin"
 _gen_slots = threading.Semaphore(4)
@@ -82,8 +84,8 @@ def get_full(cat, cache_dir, photo_id):
     src = cat.photo_path(photo_id)
     if not src or not os.path.exists(src):
         return None
-    if src.rsplit(".", 1)[-1].lower() in WEB_EXT:
-        return src
+    if src.rsplit(".", 1)[-1].lower() in WEB_EXT | VIDEO_EXT:
+        return src            # i video si riproducono direttamente dal NAS
     folder = os.path.join(cache_dir, "_piena_risoluzione")
     dst = os.path.join(folder, f"{photo_id}.jpg")
     if os.path.exists(dst):

@@ -37,6 +37,10 @@ STATIC = os.path.join(HERE, "static")
 LABELS = ("red", "yellow", "green", "blue", "purple")
 # formati "definitivi": tutto il resto finisce in "Da convertire"
 FINAL_EXT = ("dng", "jpg", "jpeg", "jpe", "psd", "psb")
+from catalog import VIDEO_EXT  # noqa: E402
+NOT_TO_CONVERT = FINAL_EXT + tuple(sorted(VIDEO_EXT))
+VIDEO_TYPES = {"mp4": "video/mp4", "m4v": "video/x-m4v", "mov": "video/quicktime", "3gp": "video/3gpp",
+               "webm": "video/webm"}
 
 
 # ---------------------------------------------------------------- lavori in background
@@ -232,7 +236,9 @@ def scope_filter(scope, deep=True):
     if kind == "keyword":
         return "p.id IN (SELECT photo_id FROM photo_keywords WHERE keyword_id=?)", [int(val)]
     if kind == "toconvert":
-        return f"COALESCE(p.ext,'') NOT IN ({','.join(repr(e) for e in FINAL_EXT)})", []
+        return f"COALESCE(p.ext,'') NOT IN ({','.join(repr(e) for e in NOT_TO_CONVERT)})", []
+    if kind == "video":
+        return f"p.ext IN ({','.join(repr(e) for e in sorted(VIDEO_EXT))})", []
     if kind == "nocoll":
         return "NOT EXISTS (SELECT 1 FROM collection_photos cp WHERE cp.photo_id=p.id)", []
     if kind == "missing":
@@ -350,7 +356,9 @@ def tree():
         (SELECT count(*) FROM photos p WHERE NOT EXISTS
            (SELECT 1 FROM collection_photos cp WHERE cp.photo_id=p.id)) AS nocoll,
         (SELECT count(*) FROM photos p WHERE COALESCE(p.ext,'') NOT IN
-           ({','.join(repr(e) for e in FINAL_EXT)})) AS toconvert
+           ({','.join(repr(e) for e in NOT_TO_CONVERT)})) AS toconvert,
+        (SELECT count(*) FROM photos p WHERE p.ext IN
+           ({','.join(repr(e) for e in sorted(VIDEO_EXT))})) AS video
         FROM photos""").fetchone()
     return {"roots": roots, "folders": folders, "collections": colls, "keywords": kws,
             "stats": dict(stats)}
@@ -538,6 +546,43 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def send_range(self, path, ctype, private=False):
+        """Invio a pezzi con supporto 'Range': serve per riprodurre e scorrere i video."""
+        size = os.path.getsize(path)
+        start, end = 0, size - 1
+        rng = self.headers.get("Range", "")
+        partial = rng.startswith("bytes=")
+        if partial:
+            a, _, b = rng[6:].split(",")[0].partition("-")
+            if a.strip():
+                start = int(a)
+                end = min(int(b), size - 1) if b.strip() else size - 1
+            else:
+                start = max(0, size - int(b))
+            if start > end or start >= size:
+                self.send_response(416)
+                self.send_header("Content-Range", f"bytes */{size}")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+        self.send_response(206 if partial else 200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(end - start + 1))
+        if partial:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        self.send_header("Cache-Control", "no-store" if private else "no-cache")
+        self.end_headers()
+        with open(path, "rb") as f:
+            f.seek(start)
+            left = end - start + 1
+            while left > 0:
+                chunk = f.read(min(1024 * 1024, left))
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                left -= len(chunk)
+
     def not_found(self):
         self.send_response(404)
         self.send_header("Content-Length", "0")
@@ -565,6 +610,8 @@ class Handler(BaseHTTPRequestHandler):
                 if not path:
                     return self.not_found()
                 ext = path.rsplit(".", 1)[-1].lower()
+                if ext in VIDEO_EXT:
+                    return self.send_range(path, VIDEO_TYPES.get(ext, "application/octet-stream"), private)
                 ctype = {"png": "image/png", "gif": "image/gif", "webp": "image/webp"}.get(ext, "image/jpeg")
                 return self.send_file(path, ctype, private=private)
             if parts[0] in ("thumb", "preview") and len(parts) == 2:

@@ -8,7 +8,7 @@ import threading
 import time
 import unicodedata
 
-from exif import read_exif
+from exif import read_exif, read_video_date
 
 PHOTO_EXT = {
     "jpg", "jpeg", "jpe", "png", "tif", "tiff", "psd", "psb", "heic", "heif",
@@ -21,6 +21,9 @@ PHOTO_EXT = {
 # Cartelle di sistema dei NAS da ignorare (Synology, QNAP, macOS)
 SKIP_DIRS = {"@eaDir", "#recycle", "@Recycle", ".@__thumb", "#snapshot",
              ".Trashes", ".Spotlight-V100", ".fseventsd", "@Recently-Snapshot"}
+VIDEO_EXT = {"mov", "mp4", "m4v", "avi", "mkv", "mts", "m2ts", "3gp", "mpg", "mpeg", "wmv", "webm"}
+QT_EXT = {"mov", "mp4", "m4v", "3gp"}      # formati con data leggibile (QuickTime/MPEG-4)
+PHOTO_EXT |= VIDEO_EXT
 EXIF_EXT = {"jpg", "jpeg", "jpe", "tif", "tiff", "nef", "nrw", "cr2", "arw",
             "srf", "sr2", "dng", "orf", "rw2", "pef", "srw", "erf", "3fr",
             "iiq", "mos", "kdc", "dcr", "mef", "rwl"}
@@ -211,7 +214,7 @@ class Catalog:
             for i, (rel, name, ext, size, mtime, full) in enumerate(new_rows):
                 if job and i % 100 == 0:
                     job.update(count, f"Aggiunta nuove foto: {i}/{len(new_rows)}")
-                ex = read_exif(full) if ext in EXIF_EXT else {}
+                ex = read_meta(full, ext)
                 cap = ex.get("capture") or time.strftime("%Y-%m-%dT%H:%M:%S",
                                                          time.localtime(mtime))
                 fid = self.ensure_folder(root_id, rel, cache)
@@ -222,8 +225,8 @@ class Catalog:
                     (fid, name, ext, size, mtime, cap, ex.get("width"), ex.get("height"),
                      ex.get("orientation"), now()))
             for size, mtime, pid, cap, full, ext in updates:
-                if not cap and ext in EXIF_EXT:
-                    cap = read_exif(full).get("capture")
+                if not cap:
+                    cap = read_meta(full, ext).get("capture")
                 db.execute("UPDATE photos SET size=?, mtime=?, missing=0, capture_time=? WHERE id=?",
                            (size, mtime, cap, pid))
             missing = [r["id"] for k, r in known.items() if k not in seen]
@@ -321,7 +324,7 @@ class Catalog:
                     st = os.stat(full)
                 except OSError:
                     continue
-                ex = read_exif(full) if ext in EXIF_EXT else {}
+                ex = read_meta(full, ext)
                 cap = ex.get("capture") or time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(st.st_mtime))
                 new.append((name, ext, st.st_size, st.st_mtime, cap, ex))
             elif existing[name][1]:
@@ -343,6 +346,14 @@ class Catalog:
             db.executemany("UPDATE photos SET missing=1 WHERE id=?", [(i,) for i in gone])
             db.commit()
         return len(new), len(gone)
+
+
+def read_meta(full, ext):
+    if ext in EXIF_EXT:
+        return read_exif(full)
+    if ext in QT_EXT:
+        return {"capture": read_video_date(full)}
+    return {}
 
 
 def resolve_path(path):

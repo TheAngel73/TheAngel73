@@ -98,6 +98,9 @@ collegato, non tocca nulla.
 - **Triangolino in alto a sinistra**: verde = JPEG, giallo = PSD, rosso = RAW proprietario
   (ARW, NEF, CR2…) da convertire. I DNG non hanno il triangolino.
 - **Striscia colorata sotto la foto**: l'etichetta colore.
+- **▶ MOV / MP4…** in alto a sinistra: video. Si riproducono nella vista ingrandita
+  (MP4, MOV, M4V); gli altri formati si aprono con l'app predefinita. Li trovi tutti in
+  **Catalogo › Video**.
 - ⚑ in alto a destra: foto scelta. Foto sbiadita con il nome barrato: scartata.
 
 ## Cataloghi

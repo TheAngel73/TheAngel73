@@ -46,6 +46,7 @@
     <option value="psd,psb">PSD</option>
     <option value="tif,tiff">TIFF</option>
     <option value="dng">DNG</option>
+    <option value="mov,mp4,m4v,avi,mkv,mts,m2ts,3gp,mpg,mpeg,wmv,webm">Video</option>
     <option value="nef,nrw,cr2,cr3,crw,arw,srf,sr2,raf,orf,rw2,pef,srw,x3f,3fr,iiq,erf,mos,mrw,raw,rwl,kdc,dcr,mef">RAW proprietari</option>
   </select>
   <select id="sort" title="Ordina">
@@ -95,9 +96,12 @@
 <footer id="jobs"></footer>
 
 <div id="loupe" hidden>
-  <div id="loupe-stage"><img id="loupe-img" alt="" draggable="false"></div>
+  <div id="loupe-stage"><img id="loupe-img" alt="" draggable="false">
+    <video id="loupe-video" controls playsinline preload="metadata" hidden></video>
+    <div id="loupe-novideo" hidden><p>Questo formato video non si può riprodurre qui.</p>
+      <button type="button" class="primary">Apri con l'app predefinita</button></div></div>
   <div id="loupe-bar"><span id="loupe-name"></span><span id="loupe-zoom"></span>
-    <span class="hint">clic: adatta/100% · rotellina: zoom · ← → scorri · Esc chiudi</span></div>
+    <span class="hint" id="loupe-hint">clic: adatta/100% · rotellina: zoom · ← → scorri · Esc chiudi</span></div>
   <button id="loupe-prev" class="nav">‹</button>
   <button id="loupe-next" class="nav">›</button>
 </div>

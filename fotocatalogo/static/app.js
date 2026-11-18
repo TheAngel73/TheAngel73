@@ -73,7 +73,7 @@ async function loadPage(p) {
     if (v !== S.version) return;
     S.total = data.total;
     S.pages.set(p, data.items);
-    $("#view-count").textContent = `· ${data.total.toLocaleString("it-IT")} foto`;
+    $("#view-count").textContent = `· ${data.total.toLocaleString("it-IT")} ${S.scope === "video" ? "video" : "foto"}`;
     layout();
   } catch (e) { toast(e.message, true); }
   finally { S.loading.delete(p); }
@@ -131,8 +131,12 @@ function render() {
 // tipo di file -> triangolino nell'angolo
 const RAW_PROP = new Set(["nef", "nrw", "cr2", "cr3", "crw", "arw", "srf", "sr2", "raf", "orf", "rw2", "pef", "srw",
   "x3f", "3fr", "iiq", "erf", "mos", "mrw", "raw", "rwl", "kdc", "dcr", "mef"]);
+const VIDEO_EXT = new Set(["mov", "mp4", "m4v", "avi", "mkv", "mts", "m2ts", "3gp", "mpg", "mpeg", "wmv", "webm"]);
+const VIDEO_PLAYABLE = new Set(["mov", "mp4", "m4v", "3gp"]);   // riproducibili dal Mac senza altre app
+const isVideo = x => VIDEO_EXT.has((x || "").toLowerCase());
 function fileType(x) {
   x = (x || "").toLowerCase();
+  if (VIDEO_EXT.has(x)) return ["video", "Video " + x.toUpperCase()];
   if (x === "jpg" || x === "jpeg" || x === "jpe") return ["jpg", "JPEG"];
   if (x === "psd" || x === "psb") return ["psd", "Photoshop (" + x.toUpperCase() + ")"];
   if (RAW_PROP.has(x)) return ["raw", "RAW proprietario (" + x.toUpperCase() + ") da convertire"];
@@ -149,7 +153,8 @@ function makeCell(it, i) {
   const ft = fileType(it.x);
   const stars = it.r ? "★".repeat(it.r) : "";
   el.innerHTML = `<div class="im"><img loading="lazy" decoding="async" alt="" src="${thumbURL(it.id)}"></div>
-    ${ft ? `<span class="ftype ft-${ft[0]}" title="${ft[1]}"></span>` : ""}
+    ${ft && ft[0] === "video" ? `<span class="vbadge" title="${ft[1]}">▶ ${esc(it.x.toUpperCase())}</span>`
+      : ft ? `<span class="ftype ft-${ft[0]}" title="${ft[1]}"></span>` : ""}
     ${it.f === 1 ? '<span class="flag" title="Scelta">⚑</span>' : ""}
     ${it.m ? '<span class="miss" title="File non trovato">⚠ mancante</span>' : ""}
     <div class="cap"${it.l ? ` title="Etichetta ${LABELS[it.l] || ""}"` : ""}><span class="fn" title="${esc(it.n)}">${esc(it.n)}</span><span class="stars">${stars}</span></div>`;
@@ -261,7 +266,7 @@ function setScope(scope) {
 }
 function scopeTitle(scope) {
   const [k, v] = scope.split(":"); const t = S.tree; if (!t) return "";
-  const fixed = {all: "Tutte le foto", nocoll: "Foto senza raccolta", toconvert: "Da convertire (non DNG, JPEG o PSD)", missing: "File mancanti", recent: "Importazione più recente"};
+  const fixed = {all: "Tutte le foto", nocoll: "Foto senza raccolta", toconvert: "Da convertire (non DNG, JPEG, PSD o video)", video: "Video", missing: "File mancanti", recent: "Importazione più recente"};
   if (fixed[k]) return fixed[k];
   if (k === "collection") { const c = t.collections.find(c => c.id == v); return c ? (c.set ? "Set: " : "Raccolta: ") + c.name : "?"; }
   if (k === "keyword") { const c = t.keywords.find(c => c.id == v); return c ? "Parola chiave: " + c.name : "?"; }
@@ -281,6 +286,7 @@ function renderSidebar() {
   const cat = [["all", "▦", "Tutte le foto", t.stats.total], ["recent", "◷", "Importazione più recente", null],
     ["nocoll", "◌", "Senza raccolta", t.stats.nocoll],
     ["toconvert", "◭", "Da convertire", t.stats.toconvert]];
+  if (t.stats.video) cat.push(["video", "▶", "Video", t.stats.video]);
   if (t.stats.missing) cat.push(["missing", "⚠", "File mancanti", t.stats.missing]);
   $("#catalog-list").innerHTML = cat.map(([s, icon, name, count]) =>
     `<li data-scope="${s}">${nodeHTML({icon, name, count, active: S.scope === s})}</li>`).join("");
@@ -624,7 +630,23 @@ let loupeIdx = -1;
 function openLoupe(i) {
   const it = itemAt(i); if (!it) return;
   loupeIdx = i; S.cursor = i; S.sel.clear(); S.sel.add(it.id); selChanged();
-  Object.assign(L, {i, id: it.id, z: 1, tx: 0, ty: 0, natW: 0, full: "no"});
+  Object.assign(L, {i, id: it.id, z: 1, tx: 0, ty: 0, natW: 0, full: "no", video: isVideo(it.x)});
+  stopVideo();
+  limg.hidden = L.video;
+  $("#loupe").classList.toggle("is-video", L.video);
+  $("#loupe-hint").textContent = L.video ? "spazio: avvia/ferma · ← → scorri · Esc chiudi"
+    : "clic: adatta/100% · rotellina: zoom · ← → scorri · Esc chiudi";
+  if (L.video) {
+    $("#loupe-name").textContent = `${it.n} · ${fmtDate(it.t)} ${it.r ? "· " + "★".repeat(it.r) : ""}`;
+    $("#loupe-zoom").textContent = "Video";
+    $("#loupe").hidden = false;
+    if (VIDEO_PLAYABLE.has(it.x.toLowerCase())) {
+      const v = $("#loupe-video");
+      v.hidden = false; v.poster = previewURL(it.id); v.src = fullURL(it.id);
+      v.onerror = () => { v.hidden = true; $("#loupe-novideo").hidden = false; };
+    } else $("#loupe-novideo").hidden = false;
+    return;
+  }
   limg.onload = () => loupeLayout();
   limg.src = thumbURL(it.id);
   const big = new Image();
@@ -634,7 +656,15 @@ function openLoupe(i) {
   $("#loupe").hidden = false;
   loupeLayout();
 }
-function closeLoupe() { $("#loupe").hidden = true; L.id = null; }
+function stopVideo() {
+  const v = $("#loupe-video");
+  v.pause(); v.removeAttribute("src"); v.removeAttribute("poster"); v.load(); v.hidden = true;
+  $("#loupe-novideo").hidden = true;
+}
+function closeLoupe() { stopVideo(); $("#loupe").hidden = true; L.id = null; }
+$("#loupe-novideo").addEventListener("click", e => {
+  if (e.target.closest("button")) safe(() => api("/api/open", {ids: [L.id], how: "default"}));
+});
 
 function loupeLayout() {
   if (!limg.naturalWidth) return;
@@ -700,6 +730,7 @@ $("#loupe-prev").onclick = () => loupeStep(-1);
 $("#loupe-next").onclick = () => loupeStep(1);
 
 stage.addEventListener("wheel", e => {
+  if (L.video) return;
   e.preventDefault();
   if (!L.fitW) return;
   const r = stage.getBoundingClientRect();
@@ -710,7 +741,7 @@ stage.addEventListener("wheel", e => {
 
 let drag = null;
 stage.addEventListener("pointerdown", e => {
-  if (e.button !== 0) return;
+  if (e.button !== 0 || L.video) return;
   drag = {x: e.clientX, y: e.clientY, tx: L.tx, ty: L.ty, moved: false};
   stage.setPointerCapture(e.pointerId);
 });
@@ -742,7 +773,10 @@ document.addEventListener("keydown", async e => {
   const loupe = !$("#loupe").hidden;
   const mod = e.metaKey || e.ctrlKey;
   if (e.key === "Escape") { if (loupe) closeLoupe(); else { S.sel.clear(); selChanged(); } return; }
-  if (loupe && !mod) {
+  if (loupe && L.video && e.key === " ") {      // nei video la barra spaziatrice avvia/ferma
+    e.preventDefault(); const v = $("#loupe-video"); if (!v.hidden) v.paused ? v.play() : v.pause(); return;
+  }
+  if (loupe && !mod && !L.video) {
     const kz = e.key.toLowerCase();
     if (kz === "z") { e.preventDefault(); return loupeToggle(stage.clientWidth / 2, stage.clientHeight / 2); }
     if (e.key === "+" || e.key === "=") { e.preventDefault(); return loupeKeyZoom(1.5); }
