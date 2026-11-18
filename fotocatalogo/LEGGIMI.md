@@ -80,6 +80,7 @@ presenti non vengono duplicate.
 | Selezionare tutto | **⌘A** |
 | Nuove foto sul NAS | trovate da sole all'apertura del catalogo; in qualsiasi momento: **⟳** o tasto destro › Sincronizza |
 | Vedere i file ancora da convertire | **Catalogo › Da convertire** (tutto ciò che non è DNG, JPEG o PSD) |
+| Togliere dal catalogo foto cancellate | **Catalogo › File mancanti › Rimuovi tutte dal catalogo…**, oppure tasto destro › Rimuovi dal catalogo (o ⌫ in quella vista) |
 | Tutte le altre azioni | **tasto destro** su foto, raccolte, cartelle e parole chiave |
 
 ## Conversione (RAW → DNG, PNG → JPEG)

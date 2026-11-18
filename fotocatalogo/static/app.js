@@ -23,8 +23,11 @@ async function safe(fn) { try { return await fn(); } catch (e) { toast(e.message
 let CAT = null;
 const GLOBAL_KEYS = new Set(["zoom", "sort"]);
 const skey = k => "fc:" + (GLOBAL_KEYS.has(k) || !CAT ? "" : CAT.uid + ":") + k;
-const thumbURL = id => `/thumb/${id}?c=${CAT ? CAT.uid : ""}`;
-const previewURL = id => `/preview/${id}?c=${CAT ? CAT.uid : ""}`;
+// "v" cambia quando cambia il file: così il browser non mostra miniature vecchie
+const VERS = new Map();
+const qv = id => `?c=${CAT ? CAT.uid : ""}&v=${VERS.get(id) || ""}`;
+const thumbURL = id => `/thumb/${id}${qv(id)}`;
+const previewURL = id => `/preview/${id}${qv(id)}`;
 const store = {
   get(k, d) { try { const v = localStorage.getItem(skey(k)); return v == null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem(skey(k), JSON.stringify(v)); } catch {} },
@@ -72,6 +75,7 @@ async function loadPage(p) {
     const data = await api(`/api/photos?${params({offset: p * PAGE, limit: PAGE})}`);
     if (v !== S.version) return;
     S.total = data.total;
+    for (const it of data.items) VERS.set(it.id, it.v);
     S.pages.set(p, data.items);
     $("#view-count").textContent = `· ${data.total.toLocaleString("it-IT")} ${S.scope === "video" ? "video" : "foto"}`;
     layout();
@@ -263,6 +267,7 @@ function setScope(scope) {
   S.scope = scope; store.set("scope", scope);
   $("#view-title").textContent = scopeTitle(scope);
   $("#btn-convert-all").hidden = scope !== "toconvert";
+  $("#btn-remove-missing").hidden = scope !== "missing";
   renderSidebar(); reload();
 }
 function scopeTitle(scope) {
@@ -623,7 +628,7 @@ async function addKeywords() {
 // ================================================================ vista ingrandita (con zoom)
 // Clic: alterna "adatta allo schermo" / 100%. Rotellina (o pizzico sul trackpad): zoom.
 // Trascinando ci si sposta nell'immagine ingrandita.
-const fullURL = id => `/full/${id}?c=${CAT ? CAT.uid : ""}`;
+const fullURL = id => `/full/${id}${qv(id)}`;
 const L = {i: -1, id: null, fitW: 0, fitH: 0, bx: 0, by: 0, z: 1, tx: 0, ty: 0, natW: 0, full: "no"};
 const stage = $("#loupe-stage"), limg = $("#loupe-img");
 let loupeIdx = -1;
@@ -809,7 +814,10 @@ document.addEventListener("keydown", async e => {
   if (k === "u") return setMeta({flag: 0});
   if (k === "c" || k === "b") { e.preventDefault(); return pickCollection([...S.sel]); }
   if (e.key === "Enter" || e.key === " ") { if (S.cursor >= 0) { e.preventDefault(); loupe ? closeLoupe() : openLoupe(S.cursor); } return; }
-  if (e.key === "Backspace" || e.key === "Delete") { e.preventDefault(); return removeFromCurrentCollection(); }
+  if (e.key === "Backspace" || e.key === "Delete") {
+    e.preventDefault();
+    return S.scope === "missing" ? removeMissing(selIds()) : removeFromCurrentCollection();
+  }
   const moves = {ArrowRight: 1, ArrowLeft: -1, ArrowDown: S.cols, ArrowUp: -S.cols};
   if (moves[e.key] && S.total) {
     e.preventDefault();
@@ -1056,6 +1064,7 @@ async function menuFor(t) {
     {label: "Deseleziona", key: "⌘D", run: COMMANDS.selectNone, disabled: !S.sel.size},
     "-", {label: "Genera anteprime di questa vista", run: COMMANDS.pregen},
     S.scope === "toconvert" && S.total && {label: "Converti tutti (RAW e PNG)…", run: convertAll},
+    S.scope === "missing" && S.total && {label: "Rimuovi tutte dal catalogo…", danger: true, run: () => removeMissing(null)},
     {label: "Miniature", sub: [{label: "Più grandi", key: "⌘+", run: COMMANDS.zoomIn}, {label: "Più piccole", key: "⌘−", run: COMMANDS.zoomOut}]},
   ];
   return null;
@@ -1089,6 +1098,8 @@ async function photoMenu() {
       {label: "Nessuna", key: "U", checked: d && !d.flag, run: () => setMeta({flag: 0})}]},
     {label: "Aggiungi parole chiave…", key: "⌘K", run: COMMANDS.keywords},
     rawInSelection() && {label: "Converti (RAW → DNG, PNG → JPEG)…", run: COMMANDS.convertDng},
+    missingInSelection() && "-",
+    missingInSelection() && {label: "Rimuovi dal catalogo (file mancanti)…", danger: true, run: () => removeMissing(selIds())},
     d && d.keywords.length && {label: "Togli parola chiave", sub: d.keywords.map(kw => ({label: kw.name, run: () => safe(async () => { await api("/api/keywords", {ids: selIds(), remove: [kw.id]}); await loadTree(); showInfo(true); })}))},
     "-",
     d && {label: "Vai alla cartella", run: () => setScope("folder:" + d.folder_id)},
@@ -1339,6 +1350,32 @@ $("#jobs").addEventListener("click", e => {
   if (b) safe(async () => { await api(`/api/jobs/${b.dataset.cancelJob}/cancel`, {}); pollJobs(); });
 });
 
+// ================================================================ foto mancanti
+function missingInSelection() {
+  if (S.detail && S.sel.size === 1 && S.sel.has(S.detail.id)) return !!S.detail.missing;
+  for (const pg of S.pages.values()) for (const it of pg) if (S.sel.has(it.id) && it.m) return true;
+  return false;
+}
+// ids = null: tutte le foto mancanti del catalogo
+async function removeMissing(ids) {
+  if (ids && !ids.length) return;
+  const how = ids ? "le foto selezionate il cui file non esiste più" : `tutte le ${S.tree.stats.missing.toLocaleString("it-IT")} foto il cui file non esiste più`;
+  const f = await dialog("Rimuovi dal catalogo", `
+    <p>Verranno tolte dal catalogo ${how}, insieme alle loro raccolte e parole chiave.
+    Le foto selezionate che esistono ancora non vengono toccate.</p>
+    <p>Nessun file viene cancellato.</p>
+    <p class="warn">Se le hai solo spostate o rinominate, o se il NAS non è collegato, non rimuoverle:
+    ricollega il NAS e usa ⟳ Sincronizza.</p>`, "Rimuovi");
+  if (!f) return;
+  await safe(async () => {
+    const r = await api("/api/photos/remove-missing", ids ? {ids} : {});
+    toast(`Rimosse dal catalogo: ${r.removed.toLocaleString("it-IT")}`);
+    S.sel.clear(); await loadTree();
+    if (S.scope === "missing" && !S.tree.stats.missing) setScope("all"); else reload();
+  });
+}
+$("#btn-remove-missing").onclick = () => removeMissing(null);
+
 // ================================================================ filtri
 let searchT;
 // filtri attivi evidenziati in colore, con ✕ per toglierli tutti
@@ -1416,6 +1453,7 @@ async function onJobDone(j) {
   if (!scopeTitle(S.scope) || scopeTitle(S.scope) === "?") S.scope = "all";
   $("#view-title").textContent = scopeTitle(S.scope);
   $("#btn-convert-all").hidden = S.scope !== "toconvert";
+  $("#btn-remove-missing").hidden = S.scope !== "missing";
   renderSidebar();
   await reload();
   pollJobs();

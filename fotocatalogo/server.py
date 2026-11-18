@@ -6,6 +6,7 @@ Solo libreria standard di Python: non serve installare nulla.
 """
 import json
 import os
+import zlib
 import signal
 import subprocess
 import sys
@@ -310,12 +311,43 @@ def list_photos(q):
         return {"ids": [r[0] for r in rows]}
     total = db.execute(f"SELECT count(*) FROM photos p WHERE {where}", args).fetchone()[0]
     rows = db.execute(
-        f"""SELECT p.id, p.filename, p.ext, p.capture_time, p.rating, p.label, p.flag, p.missing
+        f"""SELECT p.id, p.filename, p.ext, p.capture_time, p.rating, p.label, p.flag, p.missing,
+                   p.added_at, p.mtime
             FROM photos p WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?""",
         args + [limit, offset]).fetchall()
     return {"total": total, "offset": offset, "items": [
         {"id": r["id"], "n": r["filename"], "x": r["ext"], "t": r["capture_time"],
-         "r": r["rating"], "l": r["label"], "f": r["flag"], "m": r["missing"]} for r in rows]}
+         "r": r["rating"], "l": r["label"], "f": r["flag"], "m": r["missing"], "v": version(r)} for r in rows]}
+
+
+def version(r):
+    """Cambia quando cambia il file (es. dopo una conversione): evita miniature vecchie in cache."""
+    return format(zlib.crc32(f"{r['added_at']}|{r['mtime']}".encode()), "x")
+
+
+def remove_missing(ids):
+    """Toglie dal catalogo le foto il cui file non esiste più. I file non vengono toccati."""
+    with cat.write_lock:
+        db = cat.db
+        if ids is None:
+            ids = [r[0] for r in db.execute("SELECT id FROM photos WHERE missing=1")]
+        else:
+            ids = [r[0] for i in range(0, len(ids), 900) for r in db.execute(
+                f"SELECT id FROM photos WHERE missing=1 AND id IN ({','.join('?' * len(ids[i:i + 900]))})",
+                ids[i:i + 900])]
+        for i in range(0, len(ids), 900):
+            chunk = ",".join(map(str, ids[i:i + 900]))
+            db.execute(f"DELETE FROM collection_photos WHERE photo_id IN ({chunk})")
+            db.execute(f"DELETE FROM photo_keywords WHERE photo_id IN ({chunk})")
+            db.execute(f"DELETE FROM photos WHERE id IN ({chunk})")
+        db.commit()
+    for pid in ids:
+        for size in ("m", "l"):
+            try:
+                os.remove(thumbs.thumb_file(THUMB_DIR, pid, size))
+            except OSError:
+                pass
+    return {"removed": len(ids)}
 
 
 def photo_detail(pid):
@@ -327,6 +359,7 @@ def photo_detail(pid):
         return None
     d = dict(p)
     d["path"] = os.path.join(p["root"], p["rel_path"], p["filename"])
+    d["v"] = version(p)
     d["collections"] = [dict(r) for r in db.execute(
         """SELECT c.id, c.name, c.parent_id FROM collection_photos cp
            JOIN collections c ON c.id=cp.collection_id WHERE cp.photo_id=? ORDER BY c.name""", (pid,))]
@@ -694,6 +727,8 @@ class Handler(BaseHTTPRequestHandler):
                         db.execute("UPDATE collections SET parent_id=? WHERE id=?", (parent, cid))
                     db.commit()
                 return None
+        if route == "photos/remove-missing":
+            return remove_missing(ids_of(body) if "ids" in body else None)
         if route == "meta":
             return set_meta(body)
         if route == "keywords":
