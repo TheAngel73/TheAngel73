@@ -224,3 +224,7 @@ dialog input[type=password] { width: 100%; }
   justify-content: center; gap: 8px; color: var(--dim); }
 #loupe-novideo[hidden] { display: none; }
 #loupe.is-video #loupe-stage { cursor: default; }
+
+#btn-convert-all { margin-left: 12px; padding: 1px 10px; font-size: 12px; }
+#btn-convert-all[hidden] { display: none; }
+dialog h4 { margin: 14px 0 4px; font-size: 12px; color: var(--dim); }

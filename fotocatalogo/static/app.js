@@ -262,6 +262,7 @@ async function loadTree() {
 function setScope(scope) {
   S.scope = scope; store.set("scope", scope);
   $("#view-title").textContent = scopeTitle(scope);
+  $("#btn-convert-all").hidden = scope !== "toconvert";
   renderSidebar(); reload();
 }
 function scopeTitle(scope) {
@@ -933,6 +934,7 @@ const COMMANDS = {
   removeFromColl: () => removeFromCurrentCollection(),
   keywords: needSel(() => keywordDialog()),
   switchCatalog: () => showCatalogScreen(null, false),
+  convertDng: needSel(() => convertDng(selIds())),
   lockCatalog: () => lockCatalog(),
   zoomIn: () => { $("#zoom").value = +$("#zoom").value + 40; $("#zoom").dispatchEvent(new Event("input")); },
   zoomOut: () => { $("#zoom").value = +$("#zoom").value - 40; $("#zoom").dispatchEvent(new Event("input")); },
@@ -1053,6 +1055,7 @@ async function menuFor(t) {
     {label: "Seleziona tutte", key: "⌘A", run: COMMANDS.selectAll},
     {label: "Deseleziona", key: "⌘D", run: COMMANDS.selectNone, disabled: !S.sel.size},
     "-", {label: "Genera anteprime di questa vista", run: COMMANDS.pregen},
+    S.scope === "toconvert" && S.total && {label: "Converti tutti i RAW in DNG…", run: convertAll},
     {label: "Miniature", sub: [{label: "Più grandi", key: "⌘+", run: COMMANDS.zoomIn}, {label: "Più piccole", key: "⌘−", run: COMMANDS.zoomOut}]},
   ];
   return null;
@@ -1085,6 +1088,7 @@ async function photoMenu() {
       {label: "Scartata", key: "X", checked: d && d.flag === -1, run: () => setMeta({flag: -1})},
       {label: "Nessuna", key: "U", checked: d && !d.flag, run: () => setMeta({flag: 0})}]},
     {label: "Aggiungi parole chiave…", key: "⌘K", run: COMMANDS.keywords},
+    rawInSelection() && {label: "Converti in DNG…", run: COMMANDS.convertDng},
     d && d.keywords.length && {label: "Togli parola chiave", sub: d.keywords.map(kw => ({label: kw.name, run: () => safe(async () => { await api("/api/keywords", {ids: selIds(), remove: [kw.id]}); await loadTree(); showInfo(true); })}))},
     "-",
     d && {label: "Vai alla cartella", run: () => setScope("folder:" + d.folder_id)},
@@ -1279,6 +1283,54 @@ async function showCatalogScreen(cs, startup) {
   draw();
 }
 
+// ================================================================ conversione in DNG
+function rawInSelection() {
+  if (S.detail && S.sel.size === 1 && S.sel.has(S.detail.id)) return RAW_PROP.has((S.detail.ext || "").toLowerCase());
+  for (const pg of S.pages.values()) for (const it of pg) if (S.sel.has(it.id) && RAW_PROP.has((it.x || "").toLowerCase())) return true;
+  return false;
+}
+async function convertAll() {
+  const r = await safe(() => api(`/api/photos?${params({offset: 0, limit: 1000000, ids_only: 1})}`));
+  if (r) convertDng(r.ids);
+}
+async function convertDng(ids) {
+  const st = await safe(() => api("/api/dng"));
+  if (!st) return;
+  if (!st.available) return dialog("Adobe DNG Converter non trovato", `
+    <p>Per convertire i RAW in DNG serve <b>Adobe DNG Converter</b>, gratuito, installato nella cartella Applicazioni.</p>
+    <p>Lo trovi sul sito Adobe cercando «Adobe DNG Converter».</p>`, null);
+  let raws = null;
+  const known = new Map();
+  for (const pg of S.pages.values()) for (const it of pg) known.set(it.id, it.x);
+  if (ids.every(id => known.has(id))) raws = ids.filter(id => RAW_PROP.has((known.get(id) || "").toLowerCase())).length;
+  const what = raws != null ? `${raws.toLocaleString("it-IT")} file RAW` : "i file RAW selezionati";
+  if (raws === 0) return toast("Nella selezione non ci sono RAW proprietari da convertire");
+  const f = await dialog("Converti in DNG", `
+    <p>Verranno convertiti in DNG ${what}, con le impostazioni predefinite di Lightroom
+    (compressione senza perdita, anteprima media).</p>
+    <p>Ogni DNG viene salvato nella stessa cartella e <b>prende il posto del RAW nel catalogo</b>,
+    mantenendo raccolte, parole chiave, stelle ed etichette.</p>
+    <p class="warn">Dopo una conversione riuscita e verificata, il RAW originale (e il suo eventuale .xmp)
+    viene <b>cancellato</b>: sul NAS finisce nel cestino di rete, se attivo.</p>
+    <p>Puoi interrompere in qualsiasi momento dalla barra in basso.</p>`, "Converti");
+  if (!f) return;
+  await safe(async () => { await api("/api/convert/dng", {ids}); toast("Conversione avviata"); pollJobs(); });
+}
+function dngSummary(r) {
+  const list = (title, rows) => rows.length ? `<h4>${title} (${rows.length})</h4><div class="list">${rows.slice(0, 200).map(([n, why]) =>
+    `<div><b>${esc(n)}</b> <span class="setname">${esc(why)}</span></div>`).join("")}</div>` : "";
+  if (!r.saltate.length && !r.errori.length && !r.avvisi.length && !r.interrotta)
+    return toast(`Convertiti in DNG: ${r.convertite.toLocaleString("it-IT")} file`);
+  dialog(r.interrotta ? "Conversione interrotta" : "Conversione completata", `
+    <p>Convertiti: <b>${r.convertite.toLocaleString("it-IT")}</b> su ${r.da_convertire.toLocaleString("it-IT")}.</p>
+    ${list("Con avvisi", r.avvisi)}${list("Saltati", r.saltate)}${list("Non riusciti (originale intatto)", r.errori)}`, "OK");
+}
+$("#btn-convert-all").onclick = convertAll;
+$("#jobs").addEventListener("click", e => {
+  const b = e.target.closest("[data-cancel-job]");
+  if (b) safe(async () => { await api(`/api/jobs/${b.dataset.cancelJob}/cancel`, {}); pollJobs(); });
+});
+
 // ================================================================ filtri
 let searchT;
 $("#search").addEventListener("input", () => { clearTimeout(searchT); searchT = setTimeout(() => reload(), 300); });
@@ -1297,7 +1349,8 @@ async function pollJobs() {
   bar.innerHTML = jobs.map(j => {
     if (j.status === "running") {
       running = true;
-      return `<span class="job">⏳ ${esc(j.label)}: ${esc(j.message)} ${j.total ? `<progress value="${j.done}" max="${j.total}"></progress>` : ""}</span>`;
+      return `<span class="job">⏳ ${esc(j.label)}: ${esc(j.message)} ${j.total ? `<progress value="${j.done}" max="${j.total}"></progress>` : ""}` +
+        `${j.cancellable && !j.cancelled ? ` <button class="mini" data-cancel-job="${j.id}">Interrompi</button>` : ""}</span>`;
     }
     if (!seenDone.has(j.id)) {
       seenDone.add(j.id);
@@ -1312,6 +1365,7 @@ async function pollJobs() {
 async function onJobDone(j) {
   if (j.status !== "done" || !j.result) return;
   const r = j.result;
+  if (r.dng) { await loadTree(); reload(true); return dngSummary(r); }
   if (r.quick) {
     if (!r.new && !r.missing) return;
     await loadTree(); reload(true);
@@ -1345,6 +1399,7 @@ async function onJobDone(j) {
   await safe(loadTree);
   if (!scopeTitle(S.scope) || scopeTitle(S.scope) === "?") S.scope = "all";
   $("#view-title").textContent = scopeTitle(S.scope);
+  $("#btn-convert-all").hidden = S.scope !== "toconvert";
   renderSidebar();
   await reload();
   pollJobs();

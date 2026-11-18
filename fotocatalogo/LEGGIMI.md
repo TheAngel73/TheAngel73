@@ -82,6 +82,20 @@ presenti non vengono duplicate.
 | Vedere i file ancora da convertire | **Catalogo › Da convertire** (tutto ciò che non è DNG, JPEG o PSD) |
 | Tutte le altre azioni | **tasto destro** su foto, raccolte, cartelle e parole chiave |
 
+## Conversione in DNG
+
+Serve **Adobe DNG Converter** (gratuito, sul sito Adobe) installato in Applicazioni.
+
+- Tasto destro su una o più foto › **Converti in DNG…**, oppure **Catalogo › Da convertire ›
+  Converti tutti i RAW in DNG…**. Anche dal menu **Foto** dell'app.
+- Impostazioni predefinite di Lightroom: compressione senza perdita, anteprima media.
+- Il DNG viene salvato nella stessa cartella, verificato, e nel catalogo **prende il posto del
+  RAW** con raccolte, parole chiave, stelle, etichette e bandierine.
+- Poi il RAW originale (e il suo eventuale `.xmp`) viene **cancellato**: sul NAS finisce nel
+  cestino di rete, se attivo. Se la conversione non riesce, l'originale non viene toccato.
+- Se esiste già un DNG con lo stesso nome, il file viene saltato.
+- Si può interrompere con **Interrompi** nella barra in basso; al termine compare un riepilogo.
+
 ## Sincronizzazione automatica
 
 All'apertura di un catalogo parte una **sincronizzazione rapida**, in background: controlla

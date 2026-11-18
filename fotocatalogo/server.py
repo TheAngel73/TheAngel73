@@ -24,6 +24,7 @@ sys.path.insert(0, HERE)
 from catalog import nfc, now  # noqa: E402
 from lightroom import import_lrcat  # noqa: E402
 import catalogs  # noqa: E402
+import dng  # noqa: E402
 import thumbs  # noqa: E402
 
 PORT = int(os.environ.get("FOTOCAT_PORT", "8765"))
@@ -54,6 +55,7 @@ class Job:
         self.started = time.time()
         self.cancelled = False
         self.quick = False
+        self.cancellable = False
         self.thread = None
 
     def update(self, done=None, message=None, total=None):
@@ -66,7 +68,7 @@ class Job:
 
     def as_dict(self):
         return {k: getattr(self, k) for k in
-                ("id", "label", "message", "done", "total", "status", "result", "quick")}
+                ("id", "label", "message", "done", "total", "status", "result", "quick", "cancellable", "cancelled")}
 
 
 JOBS = {}
@@ -602,6 +604,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_file(p, ctype + "; charset=utf-8", False) if os.path.isfile(p) else self.not_found()
             if u.path == "/api/catalogs":
                 return self.send_json(catalogs_state())
+            if u.path == "/api/dng":
+                return self.send_json({"available": bool(dng.find_converter())})
             if cat is None:
                 return self.send_json({"error": "Nessun catalogo aperto", "nocatalog": True}, 409)
             if parts[0] == "full" and len(parts) == 2:
@@ -749,6 +753,19 @@ class Handler(BaseHTTPRequestHandler):
             return start_job("Importazione Lightroom", lambda job: import_lrcat(cat, path, job)).as_dict()
         if route == "thumbs/pregenerate":
             return pregenerate(body).as_dict()
+        if route == "convert/dng":
+            if not dng.find_converter():
+                raise ValueError("Adobe DNG Converter non trovato: installalo nella cartella Applicazioni")
+            ids, tdir = ids_of(body), THUMB_DIR
+            job = start_job("Conversione in DNG", lambda job: dng.convert(cat, ids, tdir, job))
+            job.cancellable = True
+            return job.as_dict()
+        if parts[1] == "jobs" and len(parts) == 4 and parts[3] == "cancel":
+            j = JOBS.get(parts[2])
+            if j and j.status == "running":
+                j.cancelled = True
+                j.message = "Interruzione dopo i file in corso…"
+            return None
         if route == "jobs/clear":
             for k in [k for k, j in JOBS.items() if j.status != "running"]:
                 del JOBS[k]
