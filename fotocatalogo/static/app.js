@@ -1341,9 +1341,17 @@ $("#jobs").addEventListener("click", e => {
 
 // ================================================================ filtri
 let searchT;
-$("#search").addEventListener("input", () => { clearTimeout(searchT); searchT = setTimeout(() => reload(), 300); });
+// filtri attivi evidenziati in colore, con ✕ per toglierli tutti
+const FILTERS = ["#search", "#f-rating", "#f-label", "#f-flag", "#f-year", "#f-ext"];
+function markFilters() {
+  let any = false;
+  for (const id of FILTERS) { const on = $(id).value.trim() !== ""; $(id).classList.toggle("on", on); any ||= on; }
+  $("#clear-filters").hidden = !any;
+}
+$("#clear-filters").onclick = () => { for (const id of FILTERS) $(id).value = ""; markFilters(); reload(); };
+$("#search").addEventListener("input", () => { markFilters(); clearTimeout(searchT); searchT = setTimeout(() => reload(), 300); });
 for (const id of ["#f-rating", "#f-label", "#f-flag", "#f-year", "#f-ext", "#sort", "#deep"])
-  $(id).addEventListener("change", () => { if (id === "#sort") store.set("sort", $("#sort").value); reload(); });
+  $(id).addEventListener("change", () => { if (id === "#sort") store.set("sort", $("#sort").value); markFilters(); reload(); });
 $("#sort").value = store.get("sort", "date:asc");
 
 // ================================================================ lavori in background
