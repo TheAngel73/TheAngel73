@@ -697,7 +697,7 @@ class Handler(BaseHTTPRequestHandler):
             return relocate(body)
         if route == "import/lightroom":
             path = os.path.expanduser(body.get("path", "").strip())
-            if not os.path.isfile(path):
+            if not os.path.exists(path):
                 raise ValueError(f"File non trovato: {path}")
             return start_job("Importazione Lightroom", lambda job: import_lrcat(cat, path, job)).as_dict()
         if route == "thumbs/pregenerate":

@@ -6,7 +6,10 @@ bandierine. Le copie virtuali vengono ricondotte alla foto originale.
 Le raccolte smart non vengono importate (le loro regole sono in formato
 interno di Lightroom): vengono solo contate nel riepilogo.
 """
+import os
+import shutil
 import sqlite3
+import tempfile
 
 from catalog import nfc, now
 
@@ -23,9 +26,57 @@ def _cols(src, table):
     return {r[1] for r in src.execute(f"PRAGMA table_info({table})")}
 
 
-def import_lrcat(cat, lrcat_path, job=None):
-    src = sqlite3.connect(f"file:{lrcat_path}?mode=ro", uri=True)
+class LightroomError(Exception):
+    pass
+
+
+def _open_copy(lrcat_path, tmpdir, step):
+    """Copia il catalogo (e il suo eventuale file di lavoro -wal) in una cartella
+    temporanea e apre la copia. L'originale di Lightroom non viene mai aperto da
+    SQLite, quindi non può essere modificato né bloccato."""
+    if os.path.isdir(lrcat_path) or not lrcat_path.lower().endswith(".lrcat"):
+        raise LightroomError("Scegli il file del catalogo, quello che termina con «.lrcat» "
+                             "(non le cartelle «Previews.lrdata» o «.lrcat-data»)")
+    copy = os.path.join(tmpdir, "catalogo.lrcat")
+    size = os.path.getsize(lrcat_path)
+    step(f"Copia temporanea del catalogo Lightroom ({size / 1e6:,.0f} MB)…".replace(",", "."))
+    try:
+        shutil.copyfile(lrcat_path, copy)
+        if os.path.exists(lrcat_path + "-wal"):
+            shutil.copyfile(lrcat_path + "-wal", copy + "-wal")
+    except PermissionError:
+        raise LightroomError(
+            "macOS non permette a FotoCatalogo di leggere il catalogo. Apri Impostazioni di Sistema › "
+            "Privacy e sicurezza › File e cartelle (oppure Accesso completo al disco), attiva "
+            "FotoCatalogo e riprova.")
+    except OSError as e:
+        raise LightroomError(f"Impossibile copiare il catalogo: {e.strerror or e}")
+    src = sqlite3.connect(copy)
     src.row_factory = sqlite3.Row
+    try:
+        tables = {r[0] for r in src.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    except sqlite3.DatabaseError:
+        src.close()
+        raise LightroomError("Il file scelto non è un catalogo Lightroom leggibile")
+    if not {"Adobe_images", "AgLibraryFile", "AgLibraryFolder", "AgLibraryRootFolder"} <= tables:
+        src.close()
+        raise LightroomError("Il file scelto non sembra un catalogo di Lightroom Classic")
+    return src
+
+
+def import_lrcat(cat, lrcat_path, job=None):
+    tmpdir = tempfile.mkdtemp(prefix="fotocatalogo_lr_")
+    try:
+        src = _open_copy(lrcat_path, tmpdir, lambda m: job and job.update(None, m))
+        try:
+            return _import(cat, src, job)
+        finally:
+            src.close()
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def _import(cat, src, job=None):
     db = cat.db
     stats = {"foto": 0, "raccolte": 0, "set": 0, "raccolte_smart_saltate": 0,
              "parole_chiave": 0, "cartelle": 0}
@@ -159,5 +210,4 @@ def import_lrcat(cat, lrcat_path, job=None):
              for r in src.execute("SELECT collection, image FROM AgLibraryCollectionImage")
              if coll_map.get(r["collection"]) and r["image"] in img_to_photo))
         db.commit()
-    src.close()
     return stats
