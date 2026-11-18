@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FotoCatalogo</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header id="topbar">
+  <div class="brand">FotoCatalogo</div>
+  <div class="menu-wrap">
+    <button id="btn-library">Libreria ▾</button>
+    <div class="menu" id="menu-library" hidden>
+      <button data-act="add-folder">Aggiungi cartella di foto…</button>
+      <button data-act="import-lr">Importa catalogo Lightroom…</button>
+      <hr>
+      <button data-act="pregen">Genera anteprime della vista corrente</button>
+      <button data-act="relocate">Cambia percorso del NAS…</button>
+      <hr>
+      <button data-act="help">Scorciatoie da tastiera</button>
+    </div>
+  </div>
+  <input id="search" type="search" placeholder="Cerca nome file, parola chiave, cartella…">
+  <select id="f-rating" title="Valutazione minima">
+    <option value="">Tutte le stelle</option>
+    <option value="1">★ e più</option><option value="2">★★ e più</option>
+    <option value="3">★★★ e più</option><option value="4">★★★★ e più</option>
+    <option value="5">★★★★★</option>
+  </select>
+  <select id="f-label" title="Etichetta colore">
+    <option value="">Tutte le etichette</option>
+    <option value="red">Rossa</option><option value="yellow">Gialla</option>
+    <option value="green">Verde</option><option value="blue">Blu</option>
+    <option value="purple">Viola</option><option value="none">Nessuna</option>
+  </select>
+  <select id="f-flag" title="Bandierina">
+    <option value="">Tutte le bandierine</option><option value="1">Scelte</option>
+    <option value="0">Senza bandierina</option><option value="-1">Scartate</option>
+  </select>
+  <select id="f-year" title="Anno"><option value="">Tutti gli anni</option></select>
+  <select id="f-ext" title="Tipo di file">
+    <option value="">Tutti i formati</option>
+    <option value="jpg,jpeg">JPEG</option>
+    <option value="psd,psb">PSD</option>
+    <option value="tif,tiff">TIFF</option>
+    <option value="nef,nrw,cr2,cr3,crw,arw,srf,sr2,raf,orf,rw2,pef,dng,srw,x3f,3fr,iiq,erf">RAW</option>
+  </select>
+  <select id="sort" title="Ordina">
+    <option value="date:asc">Data scatto ↑</option>
+    <option value="date:desc">Data scatto ↓</option>
+    <option value="name:asc">Nome file</option>
+    <option value="added:desc">Aggiunte di recente</option>
+    <option value="rating:desc">Valutazione</option>
+  </select>
+  <input id="zoom" type="range" min="100" max="360" value="180" title="Dimensione miniature">
+</header>
+
+<main id="layout">
+  <aside id="sidebar">
+    <section>
+      <h3>Catalogo</h3>
+      <ul class="tree" id="catalog-list"></ul>
+    </section>
+    <section>
+      <h3>Raccolte <span class="h-actions">
+        <button class="mini" data-act="new-coll" title="Nuova raccolta">＋</button>
+        <button class="mini" data-act="new-set" title="Nuovo set di raccolte">▤</button></span></h3>
+      <input class="filter" id="coll-filter" placeholder="Filtra raccolte…">
+      <ul class="tree" id="coll-tree"></ul>
+    </section>
+    <section>
+      <h3>Cartelle</h3>
+      <label class="small"><input type="checkbox" id="deep" checked> Includi sottocartelle</label>
+      <ul class="tree" id="folder-tree"></ul>
+    </section>
+    <section>
+      <h3>Parole chiave</h3>
+      <input class="filter" id="kw-filter" placeholder="Filtra parole chiave…">
+      <ul class="tree" id="kw-tree"></ul>
+    </section>
+  </aside>
+
+  <section id="center">
+    <div id="viewbar"><span id="view-title">Tutte le foto</span> <span id="view-count"></span>
+      <span id="sel-count"></span></div>
+    <div id="grid-scroll" tabindex="0"><div id="grid-space"></div></div>
+  </section>
+
+  <aside id="info"></aside>
+</main>
+
+<footer id="jobs"></footer>
+
+<div id="loupe" hidden>
+  <img id="loupe-img" alt="">
+  <div id="loupe-bar"><span id="loupe-name"></span>
+    <span class="hint">← → per scorrere · Esc per chiudere · 0-5 stelle</span></div>
+  <button id="loupe-prev" class="nav">‹</button>
+  <button id="loupe-next" class="nav">›</button>
+</div>
+
+<dialog id="dlg"><form method="dialog" id="dlg-form"></form></dialog>
+<div id="toast" hidden></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
