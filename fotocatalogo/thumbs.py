@@ -70,6 +70,45 @@ def _make_pillow(src, dst, px):
         return False
 
 
+# ---------------------------------------------------------------- piena risoluzione (zoom 100%)
+WEB_EXT = {"jpg", "jpeg", "jpe", "png", "gif", "webp"}
+FULL_KEEP = 20          # quante immagini convertite tenere in cache
+_full_slots = threading.Semaphore(2)
+
+
+def get_full(cat, cache_dir, photo_id):
+    """Percorso dell'immagine a piena risoluzione. I JPEG si mostrano così come sono;
+    RAW, DNG, PSD e TIFF vengono convertiti in JPEG (e tenuti in una piccola cache)."""
+    src = cat.photo_path(photo_id)
+    if not src or not os.path.exists(src):
+        return None
+    if src.rsplit(".", 1)[-1].lower() in WEB_EXT:
+        return src
+    folder = os.path.join(cache_dir, "_piena_risoluzione")
+    dst = os.path.join(folder, f"{photo_id}.jpg")
+    if os.path.exists(dst):
+        os.utime(dst)
+        return dst
+    os.makedirs(folder, exist_ok=True)
+    part = dst + ".part.jpg"
+    with _full_slots:
+        if IS_MAC:
+            ok = _run(["sips", "-s", "format", "jpeg", "-s", "formatOptions", "92", src, "--out", part], 180)
+        else:
+            ok = _make_pillow(src, part, 100000)
+    if not ok or not os.path.exists(part):
+        return None
+    os.replace(part, dst)
+    old = sorted((os.path.join(folder, f) for f in os.listdir(folder) if f.endswith(".jpg")),
+                 key=os.path.getmtime, reverse=True)
+    for f in old[FULL_KEEP:]:
+        try:
+            os.remove(f)
+        except OSError:
+            pass
+    return dst
+
+
 def get_thumb(cat, cache_dir, photo_id, size="m"):
     """Restituisce il percorso della miniatura, generandola se serve. None se impossibile."""
     dst = thumb_file(cache_dir, photo_id, size)

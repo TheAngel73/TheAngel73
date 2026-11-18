@@ -613,18 +613,83 @@ async function addKeywords() {
   await safe(async () => { await api("/api/keywords", {ids: [...S.sel], add: names}); inp.value = ""; await loadTree(); showInfo(true); toast("Parole chiave aggiunte"); });
 }
 
-// ================================================================ vista ingrandita
+// ================================================================ vista ingrandita (con zoom)
+// Clic: alterna "adatta allo schermo" / 100%. Rotellina (o pizzico sul trackpad): zoom.
+// Trascinando ci si sposta nell'immagine ingrandita.
+const fullURL = id => `/full/${id}?c=${CAT ? CAT.uid : ""}`;
+const L = {i: -1, id: null, fitW: 0, fitH: 0, bx: 0, by: 0, z: 1, tx: 0, ty: 0, natW: 0, full: "no"};
+const stage = $("#loupe-stage"), limg = $("#loupe-img");
 let loupeIdx = -1;
+
 function openLoupe(i) {
   const it = itemAt(i); if (!it) return;
   loupeIdx = i; S.cursor = i; S.sel.clear(); S.sel.add(it.id); selChanged();
-  const img = $("#loupe-img");
-  img.src = thumbURL(it.id);
+  Object.assign(L, {i, id: it.id, z: 1, tx: 0, ty: 0, natW: 0, full: "no"});
+  limg.onload = () => loupeLayout();
+  limg.src = thumbURL(it.id);
   const big = new Image();
-  big.onload = () => { if (loupeIdx === i) img.src = big.src; };
+  big.onload = () => { if (L.id === it.id && L.full === "no") limg.src = big.src; };
   big.src = previewURL(it.id);
   $("#loupe-name").textContent = `${it.n} · ${fmtDate(it.t)} ${it.r ? "· " + "★".repeat(it.r) : ""}`;
   $("#loupe").hidden = false;
+  loupeLayout();
+}
+function closeLoupe() { $("#loupe").hidden = true; L.id = null; }
+
+function loupeLayout() {
+  if (!limg.naturalWidth) return;
+  const W = stage.clientWidth, H = stage.clientHeight, ar = limg.naturalWidth / limg.naturalHeight;
+  if (W / H > ar) { L.fitH = H; L.fitW = H * ar; } else { L.fitW = W; L.fitH = W / ar; }
+  L.bx = (W - L.fitW) / 2; L.by = (H - L.fitH) / 2;
+  loupeApply();
+}
+function loupeClamp() {
+  const W = stage.clientWidth, H = stage.clientHeight, w = L.fitW * L.z, h = L.fitH * L.z;
+  L.tx = w <= W ? (L.fitW - w) / 2 : Math.min(-L.bx, Math.max(W - L.bx - w, L.tx));
+  L.ty = h <= H ? (L.fitH - h) / 2 : Math.min(-L.by, Math.max(H - L.by - h, L.ty));
+}
+function loupeApply(animate = false) {
+  loupeClamp();
+  limg.classList.toggle("anim", animate);
+  // dimensioni reali (non scale()) così il browser ridisegna l'immagine nitida a ogni zoom
+  limg.style.width = L.fitW * L.z + "px"; limg.style.height = L.fitH * L.z + "px";
+  limg.style.transform = `translate(${L.bx + L.tx}px, ${L.by + L.ty}px)`;
+  stage.classList.toggle("zoomed", L.z > 1.01);
+  const z100 = L.natW ? L.natW / L.fitW : 0;
+  $("#loupe-zoom").textContent = L.full === "loading" ? "Caricamento a piena risoluzione…"
+    : Math.abs(L.z - 1) < 0.01 ? "Adatta" : z100 ? Math.round(L.z / z100 * 100) + "%" : Math.round(L.z * 100) + "%";
+}
+function loupeZoomAt(px, py, z, animate = false) {
+  const z100 = L.natW ? L.natW / L.fitW : 1;
+  // si può scendere sotto "adatta" solo per vedere al 100% una foto più piccola dello schermo
+  z = Math.max(Math.min(1, z100), Math.min(Math.max(4, z100 * 3), z));
+  const u = (px - L.bx - L.tx) / L.z, v = (py - L.by - L.ty) / L.z;
+  L.tx = px - L.bx - u * z; L.ty = py - L.by - v * z; L.z = z;
+  loupeApply(animate);
+}
+// carica l'immagine a piena risoluzione (una volta per foto)
+function loupeLoadFull() {
+  if (L.full !== "no") return Promise.resolve();
+  L.full = "loading"; loupeApply();
+  const id = L.id;
+  return new Promise(res => {
+    const im = new Image();
+    im.onload = () => {
+      if (L.id !== id) return res();
+      L.full = "yes"; L.natW = im.naturalWidth;
+      limg.onload = null; limg.src = im.src;
+      const ar = im.naturalWidth / im.naturalHeight;
+      if (Math.abs(ar - L.fitW / L.fitH) > 0.02) { L.z = 1; L.tx = L.ty = 0; loupeLayout(); } else loupeApply();
+      res();
+    };
+    im.onerror = () => { if (L.id === id) { L.full = "error"; loupeApply(); toast("Piena risoluzione non disponibile: il NAS è collegato?", true); } res(); };
+    im.src = fullURL(id);
+  });
+}
+async function loupeToggle(px, py) {
+  if (Math.abs(L.z - 1) >= 0.01) { L.z = 1; L.tx = L.ty = 0; return loupeApply(true); }
+  await loupeLoadFull();
+  loupeZoomAt(px, py, L.natW ? L.natW / L.fitW : 2, true);
 }
 async function loupeStep(d) {
   const i = Math.max(0, Math.min(S.total - 1, loupeIdx + d));
@@ -633,14 +698,56 @@ async function loupeStep(d) {
 }
 $("#loupe-prev").onclick = () => loupeStep(-1);
 $("#loupe-next").onclick = () => loupeStep(1);
-$("#loupe").addEventListener("click", e => { if (e.target.id === "loupe") $("#loupe").hidden = true; });
+
+stage.addEventListener("wheel", e => {
+  e.preventDefault();
+  if (!L.fitW) return;
+  const r = stage.getBoundingClientRect();
+  const z = L.z * Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0018));
+  loupeZoomAt(e.clientX - r.left, e.clientY - r.top, z);
+  if (L.z > 1.01) loupeLoadFull();
+}, {passive: false});
+
+let drag = null;
+stage.addEventListener("pointerdown", e => {
+  if (e.button !== 0) return;
+  drag = {x: e.clientX, y: e.clientY, tx: L.tx, ty: L.ty, moved: false};
+  stage.setPointerCapture(e.pointerId);
+});
+stage.addEventListener("pointermove", e => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
+  if (drag.moved && L.z > 1.01) { stage.classList.add("dragging"); L.tx = drag.tx + dx; L.ty = drag.ty + dy; loupeApply(); }
+});
+stage.addEventListener("pointerup", e => {
+  const d = drag; drag = null; stage.classList.remove("dragging");
+  if (!d || d.moved) return;
+  const r = stage.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top;
+  const ir = limg.getBoundingClientRect();
+  const onImage = e.clientX >= ir.left && e.clientX <= ir.right && e.clientY >= ir.top && e.clientY <= ir.bottom;
+  if (!onImage && Math.abs(L.z - 1) < 0.01) return closeLoupe();   // clic sul fondo scuro: chiude
+  loupeToggle(px, py);
+});
+window.addEventListener("resize", () => { if (!$("#loupe").hidden) loupeLayout(); });
+function loupeKeyZoom(f) {
+  const W = stage.clientWidth, H = stage.clientHeight;
+  loupeZoomAt(W / 2, H / 2, L.z * f, true);
+  if (L.z > 1.01) loupeLoadFull();
+}
 
 // ================================================================ tastiera
 document.addEventListener("keydown", async e => {
   if (e.target.matches("input, select, textarea") || $("#dlg").open) return;
   const loupe = !$("#loupe").hidden;
   const mod = e.metaKey || e.ctrlKey;
-  if (e.key === "Escape") { if (loupe) $("#loupe").hidden = true; else { S.sel.clear(); selChanged(); } return; }
+  if (e.key === "Escape") { if (loupe) closeLoupe(); else { S.sel.clear(); selChanged(); } return; }
+  if (loupe && !mod) {
+    const kz = e.key.toLowerCase();
+    if (kz === "z") { e.preventDefault(); return loupeToggle(stage.clientWidth / 2, stage.clientHeight / 2); }
+    if (e.key === "+" || e.key === "=") { e.preventDefault(); return loupeKeyZoom(1.5); }
+    if (e.key === "-") { e.preventDefault(); return loupeKeyZoom(1 / 1.5); }
+  }
   if (loupe && (e.key === "ArrowRight" || e.key === "ArrowLeft")) { e.preventDefault(); return loupeStep(e.key === "ArrowRight" ? 1 : -1); }
   const shortcut = mod && {a: "selectAll", e: "photoshop", r: "finder", k: "keywords", d: "selectNone"}[e.key.toLowerCase()];
   // nell'app per Mac queste scorciatoie arrivano dalla barra dei menu
@@ -654,7 +761,7 @@ document.addEventListener("keydown", async e => {
   if (k === "x") return setMeta({flag: -1});
   if (k === "u") return setMeta({flag: 0});
   if (k === "c" || k === "b") { e.preventDefault(); return pickCollection([...S.sel]); }
-  if (e.key === "Enter" || e.key === " ") { if (S.cursor >= 0) { e.preventDefault(); loupe ? ($("#loupe").hidden = true) : openLoupe(S.cursor); } return; }
+  if (e.key === "Enter" || e.key === " ") { if (S.cursor >= 0) { e.preventDefault(); loupe ? closeLoupe() : openLoupe(S.cursor); } return; }
   if (e.key === "Backspace" || e.key === "Delete") { e.preventDefault(); return removeFromCurrentCollection(); }
   const moves = {ArrowRight: 1, ArrowLeft: -1, ArrowDown: S.cols, ArrowUp: -S.cols};
   if (moves[e.key] && S.total) {
@@ -731,7 +838,8 @@ async function removeRoot(rid) {
 
 function helpDialog() {
   const rows = [["Clic / ⌘-clic / ⇧-clic", "Seleziona / aggiungi alla selezione / intervallo"], ["⌘A", "Seleziona tutte le foto della vista"],
-    ["Frecce", "Spostati tra le foto"], ["Invio, Spazio, doppio clic", "Vista ingrandita"], ["0 – 5", "Stelle"],
+    ["Frecce", "Spostati tra le foto"], ["Invio, Spazio, doppio clic", "Vista ingrandita"],
+    ["Nella vista ingrandita", "clic o Z: adatta / 100% · rotellina o + −: zoom · trascina per spostarti"], ["0 – 5", "Stelle"],
     ["6 7 8 9", "Etichetta rossa, gialla, verde, blu"], ["P / X / U", "Scelta / Scartata / Togli bandierina"],
     ["C oppure B", "Aggiungi a raccolta…"], ["⌫ Backspace", "Togli dalla raccolta corrente"], ["⌘E", "Apri in Photoshop"],
     ["⌘R", "Mostra nel Finder"], ["⌘K", "Aggiungi parole chiave"], ["⌘D / Esc", "Deseleziona"],
@@ -1157,8 +1265,14 @@ async function pollJobs() {
 }
 async function onJobDone(j) {
   if (j.status !== "done" || !j.result) return;
-  await loadTree(); reload(true);
   const r = j.result;
+  if (r.quick) {
+    if (!r.new && !r.missing) return;
+    await loadTree(); reload(true);
+    const parts = [r.new && `${r.new.toLocaleString("it-IT")} foto nuove`, r.missing && `${r.missing.toLocaleString("it-IT")} non più trovate`].filter(Boolean);
+    return toast("Sincronizzazione: " + parts.join(", "));
+  }
+  await loadTree(); reload(true);
   if ("raccolte" in r) {
     dialog("Importazione completata", `<table>
       <tr><td>Foto</td><td>${r.foto.toLocaleString("it-IT")}</td></tr><tr><td>Cartelle</td><td>${r.cartelle.toLocaleString("it-IT")}</td></tr>

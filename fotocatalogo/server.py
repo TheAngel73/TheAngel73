@@ -48,6 +48,9 @@ class Job:
         self.status = "running"
         self.result = None
         self.started = time.time()
+        self.cancelled = False
+        self.quick = False
+        self.thread = None
 
     def update(self, done=None, message=None, total=None):
         if done is not None:
@@ -59,15 +62,28 @@ class Job:
 
     def as_dict(self):
         return {k: getattr(self, k) for k in
-                ("id", "label", "message", "done", "total", "status", "result")}
+                ("id", "label", "message", "done", "total", "status", "result", "quick")}
 
 
 JOBS = {}
 
 
 # ---------------------------------------------------------------- cataloghi
+def stop_quick_jobs():
+    """La sincronizzazione rapida si può interrompere in qualsiasi momento (es. cambio catalogo)."""
+    for j in list(JOBS.values()):
+        if j.quick and j.status == "running":
+            j.cancelled = True
+            j.thread.join(timeout=30)
+
+
 def jobs_running():
     return any(j.status == "running" for j in JOBS.values())
+
+
+def start_quick_sync():
+    if cat.db.execute("SELECT 1 FROM roots LIMIT 1").fetchone():
+        start_job("Sincronizzazione rapida", lambda job: cat.quick_sync(job), quick=True)
 
 
 def close_current():
@@ -82,15 +98,17 @@ def close_current():
 def open_catalog(path, password=None):
     global CURRENT, cat, THUMB_DIR
     with switch_lock:
-        if jobs_running():
-            raise ValueError("Attendi la fine dei lavori in corso prima di cambiare catalogo")
         if CURRENT and CURRENT.path == path:
             return CURRENT.info()
+        stop_quick_jobs()
+        if jobs_running():
+            raise ValueError("Attendi la fine dei lavori in corso prima di cambiare catalogo")
         oc = catalogs.OpenCatalog(path, password)   # se la password è errata, resta aperto il precedente
         close_current()
         CURRENT, cat, THUMB_DIR = oc, oc.cat, oc.thumb_dir
         JOBS.clear()
         catalogs.remember(path)
+        start_quick_sync()
         return oc.info()
 
 
@@ -126,6 +144,7 @@ def catalogs_post(action, body):
         return None
     if action == "lock":
         with switch_lock:
+            stop_quick_jobs()
             if jobs_running():
                 raise ValueError("Attendi la fine dei lavori in corso")
             close_current()
@@ -137,6 +156,7 @@ def catalogs_post(action, body):
         with switch_lock:
             if not CURRENT or CURRENT.protected:
                 raise ValueError("Apri prima il catalogo da proteggere")
+            stop_quick_jobs()
             if jobs_running():
                 raise ValueError("Attendi la fine dei lavori in corso")
             if len(pw) < 4:
@@ -158,6 +178,7 @@ def catalogs_post(action, body):
                 raise ValueError("Il catalogo aperto non è protetto")
             if not CURRENT.check_password(body.get("old")):
                 raise ValueError("Password attuale errata")
+            stop_quick_jobs()
             if jobs_running():
                 raise ValueError("Attendi la fine dei lavori in corso")
             path = CURRENT.path
@@ -171,8 +192,9 @@ def catalogs_post(action, body):
     raise ValueError("Comando sconosciuto")
 
 
-def start_job(label, fn):
+def start_job(label, fn, quick=False):
     job = Job(label)
+    job.quick = quick
     JOBS[job.id] = job
 
     def run():
@@ -184,7 +206,8 @@ def start_job(label, fn):
             traceback.print_exc()
             job.status = "error"
             job.message = str(e)
-    threading.Thread(target=run, daemon=True).start()
+    job.thread = threading.Thread(target=run, daemon=True)
+    job.thread.start()
     return job
 
 
@@ -536,6 +559,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(catalogs_state())
             if cat is None:
                 return self.send_json({"error": "Nessun catalogo aperto", "nocatalog": True}, 409)
+            if parts[0] == "full" and len(parts) == 2:
+                c, tdir, private = cat, THUMB_DIR, CURRENT.protected
+                path = thumbs.get_full(c, tdir, int(parts[1]))
+                if not path:
+                    return self.not_found()
+                ext = path.rsplit(".", 1)[-1].lower()
+                ctype = {"png": "image/png", "gif": "image/gif", "webp": "image/webp"}.get(ext, "image/jpeg")
+                return self.send_file(path, ctype, private=private)
             if parts[0] in ("thumb", "preview") and len(parts) == 2:
                 c, tdir, private = cat, THUMB_DIR, CURRENT.protected
                 path = thumbs.get_thumb(c, tdir, int(parts[1]), "m" if parts[0] == "thumb" else "l")

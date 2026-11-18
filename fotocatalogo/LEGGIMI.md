@@ -76,10 +76,22 @@ presenti non vengono duplicate.
 | Togliere foto dalla raccolta aperta | **⌫ Backspace** |
 | Stelle / etichette / bandierine | **0–5** / **6 7 8 9** / **P X U** |
 | Vista ingrandita | doppio clic, **Spazio** o **Invio**, poi **← →** |
+| Zoom nella vista ingrandita | **clic** (o **Z**): adatta ↔ 100% · **rotellina** o pizzico sul trackpad · **+ −** · trascina per spostarti |
 | Selezionare tutto | **⌘A** |
-| Nuove foto sul NAS | **⟳** accanto alla cartella, o tasto destro › Sincronizza su una sottocartella |
+| Nuove foto sul NAS | trovate da sole all'apertura del catalogo; in qualsiasi momento: **⟳** o tasto destro › Sincronizza |
 | Vedere i file ancora da convertire | **Catalogo › Da convertire** (tutto ciò che non è DNG, JPEG o PSD) |
 | Tutte le altre azioni | **tasto destro** su foto, raccolte, cartelle e parole chiave |
+
+## Sincronizzazione automatica
+
+All'apertura di un catalogo parte una **sincronizzazione rapida**, in background: controlla
+solo la data di modifica delle cartelle e rilegge esclusivamente quelle cambiate. Trova così
+le foto aggiunte (anche in cartelle nuove), quelle cancellate o spostate (segnate come
+«mancanti») e quelle tornate al loro posto. Se trova qualcosa, compare un messaggio in basso.
+
+La prima volta non ha date di riferimento, quindi controlla tutte le cartelle e può
+richiedere qualche minuto. Le volte successive bastano pochi secondi. Se il NAS non è
+collegato, non tocca nulla.
 
 ## Come leggere le miniature
 

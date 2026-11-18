@@ -156,7 +156,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         URLSession.shared.dataTask(with: req) { data, _, _ in
             if let data = data,
                let jobs = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
-                count = jobs.filter { ($0["status"] as? String) == "running" }.count
+                // la sincronizzazione rapida si può interrompere senza problemi
+                count = jobs.filter { ($0["status"] as? String) == "running" && ($0["quick"] as? Bool) != true }.count
             }
             sem.signal()
         }.resume()

@@ -132,8 +132,14 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
 #loupe { position: fixed; inset: 0; background: rgba(12,12,13,.97); z-index: 80; display: flex;
   align-items: center; justify-content: center; }
 #loupe[hidden] { display: none; }
-#loupe img { max-width: calc(100% - 120px); max-height: calc(100% - 70px); box-shadow: 0 4px 30px #000; }
-#loupe-bar { position: absolute; bottom: 0; left: 0; right: 0; padding: 10px 16px; display: flex;
+#loupe-stage { position: absolute; inset: 12px 64px 44px 64px; overflow: hidden; cursor: zoom-in; touch-action: none; }
+#loupe-stage.zoomed { cursor: grab; }
+#loupe-stage.dragging { cursor: grabbing; }
+#loupe-img { position: absolute; left: 0; top: 0; transform-origin: 0 0; max-width: none; max-height: none;
+  box-shadow: 0 4px 30px #000; -webkit-user-select: none; user-select: none; }
+#loupe-img.anim { transition: transform .18s ease-out, width .18s ease-out, height .18s ease-out; }
+#loupe-zoom { color: var(--accent); min-width: 60px; text-align: center; }
+#loupe-bar { position: absolute; bottom: 0; left: 0; right: 0; padding: 10px 16px; display: flex; gap: 16px;
   justify-content: space-between; color: var(--dim); }
 #loupe-name { color: var(--text); }
 #loupe .nav { position: absolute; top: 50%; transform: translateY(-50%); font-size: 40px; background: none;

@@ -54,6 +54,9 @@ CREATE TABLE IF NOT EXISTS photo_keywords(
   photo_id INTEGER NOT NULL, keyword_id INTEGER NOT NULL,
   PRIMARY KEY(photo_id, keyword_id)) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS ix_pk_kw ON photo_keywords(keyword_id);
+CREATE TABLE IF NOT EXISTS dir_state(
+  root_id INTEGER NOT NULL, rel_path TEXT NOT NULL, mtime REAL,
+  PRIMARY KEY(root_id, rel_path)) WITHOUT ROWID;
 """
 
 
@@ -170,11 +173,16 @@ class Catalog:
         seen = set()
         new_rows, updates = [], []
         count = 0
+        dir_mtimes = {}
         for dirpath, dirnames, filenames in os.walk(start):
             dirnames[:] = sorted(d for d in dirnames
                                  if not d.startswith(".") and d not in SKIP_DIRS)
             rel = nfc(os.path.relpath(dirpath, root))
             rel = "" if rel == "." else rel
+            try:
+                dir_mtimes[rel] = os.stat(dirpath).st_mtime
+            except OSError:
+                pass
             for fn in filenames:
                 if fn.startswith("."):
                     continue
@@ -225,8 +233,116 @@ class Catalog:
                     chunk = ",".join(map(str, ids[i:i + 5000]))
                     db.execute(f"UPDATE photos SET missing=? WHERE missing<>? AND id IN ({chunk})",
                                (val, val))
+            self._save_dir_state(root_id, sub, dir_mtimes)
             db.commit()
         return {"total": count, "new": len(new_rows), "missing": len(missing)}
+
+    def _save_dir_state(self, root_id, sub, dir_mtimes):
+        """Ricorda la data di modifica delle cartelle, per la sincronizzazione rapida."""
+        if sub:
+            self.db.execute("""DELETE FROM dir_state WHERE root_id=? AND
+                               (rel_path=? OR substr(rel_path,1,?)=?)""",
+                            (root_id, sub, len(sub) + 1, sub + "/"))
+        else:
+            self.db.execute("DELETE FROM dir_state WHERE root_id=?", (root_id,))
+        self.db.executemany("INSERT OR REPLACE INTO dir_state VALUES(?,?,?)",
+                            [(root_id, rel, mt) for rel, mt in dir_mtimes.items()])
+
+    # ---------- sincronizzazione rapida ----------
+    def quick_sync(self, job=None):
+        """Controlla solo la data di modifica delle cartelle (poche migliaia, non
+        centinaia di migliaia di file) e rilegge soltanto quelle cambiate.
+        La prima volta, non avendo date di riferimento, controlla tutto."""
+        db = self.db
+        res = {"quick": True, "new": 0, "missing": 0, "cartelle": 0}
+        for r in db.execute("SELECT id, path FROM roots").fetchall():
+            root_id, root = r["id"], r["path"]
+            if not os.path.isdir(root):
+                continue          # NAS non collegato: non tocchiamo nulla
+            known = {row["rel_path"]: row["mtime"] for row in db.execute(
+                "SELECT rel_path, mtime FROM dir_state WHERE root_id=?", (root_id,))}
+            seen = set()
+            for dirpath, dirnames, filenames in os.walk(root):
+                if job and job.cancelled:
+                    return res
+                dirnames[:] = sorted(d for d in dirnames
+                                     if not d.startswith(".") and d not in SKIP_DIRS)
+                rel = nfc(os.path.relpath(dirpath, root))
+                rel = "" if rel == "." else rel
+                seen.add(rel)
+                if job and len(seen) % 50 == 0:
+                    job.update(len(seen), f"Controllo cartelle: {len(seen)}")
+                try:
+                    mt = os.stat(dirpath).st_mtime
+                except OSError:
+                    continue
+                if known.get(rel) == mt:
+                    continue
+                n_new, n_miss = self._sync_dir(root_id, rel, dirpath, filenames)
+                res["new"] += n_new
+                res["missing"] += n_miss
+                res["cartelle"] += 1
+                with self.write_lock:
+                    db.execute("INSERT OR REPLACE INTO dir_state VALUES(?,?,?)", (root_id, rel, mt))
+                    db.commit()
+            # cartelle sparite (rinominate o cancellate): le loro foto diventano "mancanti"
+            gone = [rel for rel in known if rel not in seen]
+            if gone:
+                with self.write_lock:
+                    for rel in gone:
+                        cur = db.execute("""UPDATE photos SET missing=1 WHERE missing=0 AND folder_id IN
+                                            (SELECT id FROM folders WHERE root_id=? AND rel_path=?)""",
+                                         (root_id, rel))
+                        res["missing"] += cur.rowcount
+                        db.execute("DELETE FROM dir_state WHERE root_id=? AND rel_path=?", (root_id, rel))
+                    db.commit()
+        return res
+
+    def _sync_dir(self, root_id, rel, dirpath, filenames):
+        """Allinea il catalogo con il contenuto di una sola cartella (senza sottocartelle)."""
+        db = self.db
+        files = {}
+        for fn in filenames:
+            if fn.startswith("."):
+                continue
+            ext = fn.rsplit(".", 1)[-1].lower() if "." in fn else ""
+            if ext in PHOTO_EXT:
+                files[nfc(fn)] = (fn, ext)
+        f = db.execute("SELECT id FROM folders WHERE root_id=? AND rel_path=?", (root_id, rel)).fetchone()
+        existing = {}
+        if f:
+            existing = {row["filename"]: (row["id"], row["missing"]) for row in db.execute(
+                "SELECT id, filename, missing FROM photos WHERE folder_id=?", (f["id"],))}
+        new, back, gone = [], [], []
+        for name, (fn, ext) in files.items():
+            if name not in existing:
+                full = os.path.join(dirpath, fn)
+                try:
+                    st = os.stat(full)
+                except OSError:
+                    continue
+                ex = read_exif(full) if ext in EXIF_EXT else {}
+                cap = ex.get("capture") or time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(st.st_mtime))
+                new.append((name, ext, st.st_size, st.st_mtime, cap, ex))
+            elif existing[name][1]:
+                back.append(existing[name][0])
+        for name, (pid, miss) in existing.items():
+            if name not in files and not miss:
+                gone.append(pid)
+        if not (new or back or gone):
+            return 0, 0
+        with self.write_lock:
+            fid = f["id"] if f else self.ensure_folder(root_id, rel)
+            ts = now()
+            db.executemany(
+                """INSERT OR IGNORE INTO photos(folder_id, filename, ext, size, mtime, capture_time,
+                   width, height, orientation, added_at) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                [(fid, name, ext, size, mt, cap, ex.get("width"), ex.get("height"),
+                  ex.get("orientation"), ts) for name, ext, size, mt, cap, ex in new])
+            db.executemany("UPDATE photos SET missing=0 WHERE id=?", [(i,) for i in back])
+            db.executemany("UPDATE photos SET missing=1 WHERE id=?", [(i,) for i in gone])
+            db.commit()
+        return len(new), len(gone)
 
 
 def resolve_path(path):
