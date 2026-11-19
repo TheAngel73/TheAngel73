@@ -214,6 +214,7 @@ function selChanged() {
 let renameTimer = null;
 space.addEventListener("click", e => {
   clearTimeout(renameTimer);
+  if (S.nativeDrag) return;          // fine di un trascinamento, non un clic
   const c = e.target.closest(".cell"); if (!c) { if (!e.metaKey && !e.shiftKey) { S.sel.clear(); selChanged(); } return; }
   const it = itemAt(+c.dataset.i);
   const wasOnly = it && S.sel.size === 1 && S.sel.has(it.id);
@@ -227,10 +228,15 @@ space.addEventListener("dragstart", e => {
   const c = e.target.closest(".cell"); const it = c && itemAt(+c.dataset.i);
   if (!it) return e.preventDefault();
   if (!S.sel.has(it.id)) { S.sel.clear(); S.sel.add(it.id); S.anchor = S.cursor = +c.dataset.i; selChanged(); }
+  if (NATIVE) {
+    // nell'app per Mac il trascinamento lo fa macOS con i file veri: sul Finder o sulla
+    // scrivania si crea una copia; dentro la finestra arriva come "Files" (vedi isInternal)
+    e.preventDefault();
+    S.nativeDrag = [...S.sel];
+    window.webkit.messageHandlers.fc.postMessage({cmd: "drag", ids: S.nativeDrag});
+    return;
+  }
   e.dataTransfer.setData("application/x-fc-photos", JSON.stringify([...S.sel]));
-  // nell'app per Mac: l'app legge questi numeri e aggiunge i file veri, così trascinandoli
-  // sul Finder o sulla scrivania si crea una copia
-  if (NATIVE) e.dataTransfer.setData("text/plain", "provinia-ids:" + [...S.sel].join(","));
   e.dataTransfer.effectAllowed = "copyMove";   // copia in una raccolta, spostamento su una cartella
   const n = S.sel.size;
   if (n > 1) {
@@ -420,7 +426,7 @@ collTree.addEventListener("mousedown", e => {
 function dropTarget(e) {
   const li = e.target.closest("li[data-coll]"); if (!li) return null;
   const types = e.dataTransfer.types;
-  if (types.includes("application/x-fc-photos") && li.dataset.isset === "0") return li;
+  if (isInternal(e.dataTransfer) && li.dataset.isset === "0") return li;
   if (types.includes("application/x-fc-coll") && li.dataset.isset === "1") return li;
   return null;
 }
@@ -434,8 +440,8 @@ collTree.addEventListener("drop", e => {
   collTree.querySelectorAll(".drop").forEach(n => n.classList.remove("drop"));
   const li = dropTarget(e); if (!li) return;
   e.preventDefault();
-  const photos = e.dataTransfer.getData("application/x-fc-photos");
-  if (photos) return addToCollection(+li.dataset.coll, JSON.parse(photos));
+  const photos = dragIds(e.dataTransfer);
+  if (photos.length) return addToCollection(+li.dataset.coll, photos);
   const coll = e.dataTransfer.getData("application/x-fc-coll");
   if (coll && coll !== li.dataset.coll) safe(async () => {
     await api(`/api/collections/${coll}/update`, {parent: +li.dataset.coll});
@@ -1006,8 +1012,11 @@ window.fc = {
     if (document.activeElement?.matches("input, textarea") && ["rotateLeft", "rotateRight", "deleteFiles"].includes(name)) return;
     COMMANDS[name]?.();
   },
+  dragEnded() { setTimeout(() => { S.nativeDrag = null; }, 400); },
   pickResult(id, path) { pickWaiters.get(id)?.(path); pickWaiters.delete(id); },
 };
+// sicurezza: se la fine del trascinamento nativo non arrivasse, il clic successivo lo chiude
+document.addEventListener("mousedown", () => { S.nativeDrag = null; }, true);
 // file trascinati dal Finder: non devono far "navigare" la finestra
 for (const ev of ["dragover", "drop"]) document.addEventListener(ev, e => {
   if (e.dataTransfer && [...e.dataTransfer.types].includes("Files")) e.preventDefault();
@@ -1859,7 +1868,10 @@ async function folderDelete(fid) {
 const folderTree = $("#folder-tree");
 // Safari/WebKit aggiunge il tipo "Files" anche quando si trascina una miniatura della pagina:
 // le foto del catalogo hanno sempre la precedenza (spostamento), i file contano solo da soli.
-const isInternal = dt => [...dt.types].includes("application/x-fc-photos");
+// Nell'app per Mac le foto si trascinano come file veri (S.nativeDrag, vedi dragstart):
+// se il trascinamento l'abbiamo iniziato noi, i "Files" sono le nostre foto.
+const isInternal = dt => [...dt.types].includes("application/x-fc-photos") || !!(S.nativeDrag && [...dt.types].includes("Files"));
+const dragIds = dt => { const j = dt.getData("application/x-fc-photos"); return j ? JSON.parse(j) : (S.nativeDrag || []); };
 const hasFiles = dt => !isInternal(dt) && [...dt.types].includes("Files");
 function folderDropTarget(e) {
   const li = e.target.closest("li[data-folder]"); if (!li) return null;
@@ -1878,7 +1890,7 @@ folderTree.addEventListener("drop", async e => {
   e.preventDefault();
   const fid = +li.dataset.folder;
   if (hasFiles(e.dataTransfer)) return importDrop(e.dataTransfer, fid);
-  const ids = JSON.parse(e.dataTransfer.getData("application/x-fc-photos") || "[]");
+  const ids = dragIds(e.dataTransfer);
   if (!ids.length) return toast(`Trascinamento non riconosciuto (contenuto: ${[...e.dataTransfer.types].join(", ") || "vuoto"})`, true);
   const fo = S.tree.folders.find(x => x.id === fid);
   const d = await dialog("Sposta", `<p>Spostare ${ids.length === 1 ? "la foto" : ids.length.toLocaleString("it-IT") + " foto"}

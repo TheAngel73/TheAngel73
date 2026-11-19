@@ -6,7 +6,6 @@
 
 import Cocoa
 import WebKit
-import ObjectiveC
 
 let port = 8765
 let baseURL = URL(string: "http://localhost:\(port)/")!
@@ -19,107 +18,89 @@ func jsString(_ value: String?) -> String {
     return String(s.dropFirst().dropLast())   // ["…"] -> "…"
 }
 
-// MARK: trascinare le foto fuori dall'app = copiarle
+// MARK: trascinare le foto = trascinare i file veri
 //
-// Il trascinamento delle miniature è gestito da WebKit (serve per raccolte e cartelle
-// dentro l'app). Quando inizia, la pagina mette nel testo del trascinamento
-// "provinia-ids:1,2,3": qui lo leggiamo, chiediamo al motore i percorsi dei file e li
-// aggiungiamo al trascinamento. Fuori dall'app (Finder, scrivania, Mail…) si può
-// solo copiare: gli originali restano dove sono.
-final class FCWebView: WKWebView {
-    var dragPaths: [String] = []
-    static let filenamesType = NSPasteboard.PasteboardType("NSFilenamesPboardType")
+// Nell'app la pagina non usa il trascinamento di WebKit per le foto: all'inizio del
+// trascinamento manda qui gli id ("drag"), noi chiediamo al motore i percorsi e avviamo
+// un trascinamento nativo di macOS con i file. Così:
+// - fuori dall'app (Finder, scrivania, Mail…) si può solo COPIARE: gli originali restano;
+// - dentro la finestra la pagina lo riceve come "Files" e, sapendo di averlo iniziato lei,
+//   lo tratta come le sue foto (sposta su una cartella, aggiunge a una raccolta).
 
-    func photoPaths(fromText text: String?) -> [String] {
-        guard let text = text, text.hasPrefix("provinia-ids:") else { return [] }
-        let ids = text.dropFirst("provinia-ids:".count).split(separator: ",").compactMap { Int($0) }
-        if ids.isEmpty { return [] }
-        var paths: [String] = []
-        let sem = DispatchSemaphore(value: 0)
+// Sorgente del trascinamento: un oggetto a parte, per non interferire con i
+// trascinamenti che WebKit gestisce da sé (es. le raccolte nella barra laterale).
+final class FileDragSource: NSObject, NSDraggingSource {
+    weak var view: FCWebView?
+
+    func draggingSession(_ session: NSDraggingSession,
+                         sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        context == .outsideApplication ? .copy : [.copy, .move, .generic]
+    }
+
+    func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+        // WebKit non ha visto il rilascio del tasto (lo ha gestito il trascinamento):
+        // glielo diamo, altrimenti crederebbe il tasto ancora premuto
+        if let v = view, let win = v.window, let up = NSEvent.mouseEvent(with: .leftMouseUp,
+                location: win.mouseLocationOutsideOfEventStream, modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: win.windowNumber,
+                context: nil, eventNumber: 0, clickCount: 1, pressure: 0) {
+            v.mouseUp(with: up)
+        }
+        view?.onDragEnd?()
+    }
+}
+
+final class FCWebView: WKWebView {
+    var onDragEnd: (() -> Void)?
+    let dragSource = FileDragSource()
+
+    func startFileDrag(paths: [String]) {
+        guard let win = window, !paths.isEmpty else { onDragEnd?(); return }
+        // il tasto è stato già rilasciato mentre aspettavamo i percorsi: niente da fare
+        if NSEvent.pressedMouseButtons & 1 == 0 { onDragEnd?(); return }
+        let loc = win.mouseLocationOutsideOfEventStream
+        var event = NSApp.currentEvent
+        if event == nil || ![.leftMouseDragged, .leftMouseDown].contains(event!.type) {
+            event = NSEvent.mouseEvent(with: .leftMouseDragged, location: loc, modifierFlags: [],
+                                       timestamp: ProcessInfo.processInfo.systemUptime,
+                                       windowNumber: win.windowNumber, context: nil,
+                                       eventNumber: 0, clickCount: 1, pressure: 1)
+        }
+        guard let ev = event else { onDragEnd?(); return }
+        let p = convert(loc, from: nil)
+        var items: [NSDraggingItem] = []
+        for (i, path) in paths.enumerated() {
+            let item = NSDraggingItem(pasteboardWriter: URL(fileURLWithPath: path) as NSURL)
+            let off = CGFloat(min(i, 4)) * 4
+            let frame = NSRect(x: p.x - 32 + off, y: p.y - 32 - off, width: 64, height: 64)
+            if i < 5 {
+                let icon = NSWorkspace.shared.icon(forFile: path)
+                icon.size = NSSize(width: 64, height: 64)
+                item.setDraggingFrame(frame, contents: icon)
+            } else {
+                item.setDraggingFrame(frame, contents: nil)
+            }
+            items.append(item)
+        }
+        dragSource.view = self
+        let session = beginDraggingSession(with: items, event: ev, source: dragSource)
+        session.animatesToStartingPositionsOnCancelOrFail = true
+        session.draggingFormation = .pile
+    }
+
+    func requestDrag(ids: [Int]) {
         var req = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/api/paths")!)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try? JSONSerialization.data(withJSONObject: ["ids": ids])
-        req.timeoutInterval = 3
+        req.timeoutInterval = 5
         URLSession.shared.dataTask(with: req) { data, _, _ in
+            var paths: [String] = []
             if let data = data, let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 paths = obj["paths"] as? [String] ?? []
             }
-            sem.signal()
+            DispatchQueue.main.async { self.startFileDrag(paths: paths) }
         }.resume()
-        _ = sem.wait(timeout: .now() + 4)
-        return paths
-    }
-
-    // WebKit avvia i trascinamenti dalla pagina con il vecchio metodo
-    // dragImage(…pasteboard:…), che Swift non permette di sovrascrivere ("unavailable"):
-    // lo si sostituisce al volo, aggiungendo i file al pasteboard prima di chiamare l'originale.
-    static func installDragImage() {
-        let sel = NSSelectorFromString("dragImage:at:offset:event:pasteboard:source:slideBack:")
-        guard let superMethod = class_getInstanceMethod(WKWebView.self, sel),
-              let types = method_getTypeEncoding(superMethod) else { return }
-        typealias Fn = @convention(c) (AnyObject, Selector, NSImage, NSPoint, NSSize, NSEvent,
-                                       NSPasteboard, AnyObject, ObjCBool) -> Void
-        let callSuper = unsafeBitCast(method_getImplementation(superMethod), to: Fn.self)
-        let block: @convention(block) (AnyObject, NSImage, NSPoint, NSSize, NSEvent, NSPasteboard,
-                                       AnyObject, ObjCBool) -> Void = { obj, image, at, offset, event, pboard, source, slide in
-            if let wv = obj as? FCWebView {
-                wv.dragPaths = wv.photoPaths(fromText: pboard.string(forType: .string))
-                if !wv.dragPaths.isEmpty {
-                    // si aggiungono i file all'elemento già presente, senza toccare i dati della pagina
-                    pboard.addTypes([FCWebView.filenamesType], owner: nil)
-                    pboard.setPropertyList(wv.dragPaths, forType: FCWebView.filenamesType)
-                }
-            }
-            callSuper(obj, sel, image, at, offset, event, pboard, source, slide)
-        }
-        let imp = imp_implementationWithBlock(block)
-        if !class_addMethod(FCWebView.self, sel, imp, types) {
-            if let m = class_getInstanceMethod(FCWebView.self, sel) { method_setImplementation(m, imp) }
-        }
-    }
-
-    // nel caso WebKit usi l'API più recente
-    override func beginDraggingSession(with items: [NSDraggingItem], event: NSEvent,
-                                       source: NSDraggingSource) -> NSDraggingSession {
-        var text: String?
-        for item in items {
-            if let pi = item.item as? NSPasteboardItem, let t = pi.string(forType: .string) { text = t; break }
-        }
-        dragPaths = photoPaths(fromText: text)
-        var all = items
-        if let frame = items.first?.draggingFrame {
-            for path in dragPaths {
-                let extra = NSDraggingItem(pasteboardWriter: URL(fileURLWithPath: path) as NSURL)
-                extra.setDraggingFrame(frame, contents: nil)
-                all.append(extra)
-            }
-        }
-        return super.beginDraggingSession(with: all, event: event, source: source)
-    }
-
-    // Fuori dall'app solo "copia" (il Finder non deve mai spostare gli originali).
-    // Il metodo è di WebKit e non è dichiarato pubblicamente: lo si sostituisce al volo.
-    static func installDragMask() {
-        let sel = NSSelectorFromString("draggingSession:sourceOperationMaskForDraggingContext:")
-        typealias Fn = @convention(c) (AnyObject, Selector, NSDraggingSession, NSDraggingContext) -> NSDragOperation
-        let superMethod = class_getInstanceMethod(WKWebView.self, sel)
-        let callSuper: Fn? = superMethod.map { unsafeBitCast(method_getImplementation($0), to: Fn.self) }
-        let block: @convention(block) (AnyObject, NSDraggingSession, NSDraggingContext) -> NSDragOperation = { obj, session, context in
-            if context == .outsideApplication, let wv = obj as? FCWebView, !wv.dragPaths.isEmpty { return .copy }
-            if let callSuper = callSuper { return callSuper(obj, sel, session, context) }
-            return [.copy, .move, .generic]
-        }
-        let imp = imp_implementationWithBlock(block)
-        let added: Bool
-        if let m = superMethod, let types = method_getTypeEncoding(m) {
-            added = class_addMethod(FCWebView.self, sel, imp, types)
-        } else {
-            added = class_addMethod(FCWebView.self, sel, imp, "Q@:@q")
-        }
-        if !added {
-            if let m = class_getInstanceMethod(FCWebView.self, sel) { method_setImplementation(m, imp) }
-        }
     }
 }
 
@@ -138,8 +119,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
 
         let config = WKWebViewConfiguration()
         config.userContentController.add(self, name: "fc")
-        FCWebView.installDragMask()
-        FCWebView.installDragImage()
         webView = FCWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = self
         webView.uiDelegate = self
@@ -303,6 +282,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     func userContentController(_ userContentController: WKUserContentController,
                                didReceive message: WKScriptMessage) {
         guard let body = message.body as? [String: Any], let cmd = body["cmd"] as? String else { return }
+        if cmd == "drag", let wv = webView as? FCWebView {
+            let ids = (body["ids"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.intValue }
+            wv.onDragEnd = { [weak wv] in wv?.evaluateJavaScript("window.fc && fc.dragEnded()", completionHandler: nil) }
+            wv.requestDrag(ids: ids)
+            return
+        }
         if cmd == "pick" {
             let kind = body["kind"] as? String ?? "folder"
             let reqId = (body["id"] as? NSNumber)?.intValue ?? 0

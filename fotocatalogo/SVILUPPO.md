@@ -141,18 +141,19 @@ sincronizzazione rapida). Le colonne nuove si aggiungono con `ALTER TABLE` in
   cartelle viene annullato.
 - Esc va segnalato con `preventDefault()` quando fa qualcosa, altrimenti macOS
   emette il suono d'errore.
-- **Trascinare fuori dall'app = copia** (`FCWebView` in `mac/Provinia.swift`): il
-  trascinamento è di WebKit; nell'app la pagina aggiunge il testo `provinia-ids:1,2,3`.
-  Swift lo legge nel pasteboard (`dragImage(…pasteboard:…)` sostituito al volo con il
-  runtime ObjC perché Swift lo dichiara «unavailable» e non si può fare override; e
-  `beginDraggingSession` se WebKit usa l'API nuova), chiede i percorsi a `POST /api/paths`
-  e li aggiunge come `NSFilenamesPboardType` senza toccare i dati della pagina.
-  `draggingSession:sourceOperationMaskForDraggingContext:` (di WebKit, non pubblico) è
-  sostituito al volo: fuori dall'app solo `.copy`, così il Finder non sposta mai gli
-  originali. Il rilascio dentro l'app vede anche `Files`: vale ancora `isInternal`.
-  Non verificato su Mac al momento della scrittura: se non copia, guardare qui.
-- Il trascinamento delle foto contiene del testo: il rilascio su un campo di testo è
-  bloccato (handler `drop` in cattura).
+- **Trascinare le foto (app per Mac) = trascinare i file veri.** Nell'app il `dragstart`
+  delle miniature viene annullato: la pagina manda `{cmd:"drag", ids}` a Swift
+  (`FCWebView.requestDrag`), che chiede i percorsi a `POST /api/paths` e avvia un
+  trascinamento **nativo** (`beginDraggingSession`, sorgente `FileDragSource`, oggetto
+  separato per non toccare i trascinamenti propri di WebKit). Fuori dall'app solo
+  `.copy`: il Finder copia, mai sposta. Dentro la finestra arriva come `Files`: la pagina
+  sa di averlo iniziato (`S.nativeDrag`) e `isInternal`/`dragIds` lo trattano come foto
+  (sposta su cartella, aggiungi a raccolta). A fine trascinamento Swift manda un
+  `mouseUp` sintetico a WebKit e chiama `fc.dragEnded()`; il clic generato da quel
+  `mouseUp` viene ignorato finché `S.nativeDrag` è attivo.
+  Tentativo precedente fallito: aggiungere file al trascinamento di WebKit (override di
+  `dragImage…`, «unavailable» in Swift; con il runtime ObjC non veniva comunque chiamato:
+  il Finder riceveva solo il testo e creava un ritaglio `.textClipping`).
 - `<dialog>` richiede macOS 12.3 o successivo (`LSMinimumSystemVersion`).
 
 ## Strumenti di macOS usati (sul Linux di sviluppo non ci sono)
