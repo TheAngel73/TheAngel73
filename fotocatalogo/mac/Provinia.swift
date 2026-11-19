@@ -51,17 +51,32 @@ final class FCWebView: WKWebView {
         return paths
     }
 
-    // usato da WebKit per i trascinamenti dalla pagina
-    override func dragImage(_ image: NSImage, at viewLocation: NSPoint, offset initialOffset: NSSize,
-                           event: NSEvent, pasteboard pboard: NSPasteboard, source sourceObj: Any, slideBack: Bool) {
-        dragPaths = photoPaths(fromText: pboard.string(forType: .string))
-        if !dragPaths.isEmpty {
-            // si aggiungono i file all'elemento già presente, senza toccare i dati della pagina
-            pboard.addTypes([FCWebView.filenamesType], owner: nil)
-            pboard.setPropertyList(dragPaths, forType: FCWebView.filenamesType)
+    // WebKit avvia i trascinamenti dalla pagina con il vecchio metodo
+    // dragImage(…pasteboard:…), che Swift non permette di sovrascrivere ("unavailable"):
+    // lo si sostituisce al volo, aggiungendo i file al pasteboard prima di chiamare l'originale.
+    static func installDragImage() {
+        let sel = NSSelectorFromString("dragImage:at:offset:event:pasteboard:source:slideBack:")
+        guard let superMethod = class_getInstanceMethod(WKWebView.self, sel),
+              let types = method_getTypeEncoding(superMethod) else { return }
+        typealias Fn = @convention(c) (AnyObject, Selector, NSImage, NSPoint, NSSize, NSEvent,
+                                       NSPasteboard, AnyObject, ObjCBool) -> Void
+        let callSuper = unsafeBitCast(method_getImplementation(superMethod), to: Fn.self)
+        let block: @convention(block) (AnyObject, NSImage, NSPoint, NSSize, NSEvent, NSPasteboard,
+                                       AnyObject, ObjCBool) -> Void = { obj, image, at, offset, event, pboard, source, slide in
+            if let wv = obj as? FCWebView {
+                wv.dragPaths = wv.photoPaths(fromText: pboard.string(forType: .string))
+                if !wv.dragPaths.isEmpty {
+                    // si aggiungono i file all'elemento già presente, senza toccare i dati della pagina
+                    pboard.addTypes([FCWebView.filenamesType], owner: nil)
+                    pboard.setPropertyList(wv.dragPaths, forType: FCWebView.filenamesType)
+                }
+            }
+            callSuper(obj, sel, image, at, offset, event, pboard, source, slide)
         }
-        super.dragImage(image, at: viewLocation, offset: initialOffset, event: event,
-                        pasteboard: pboard, source: sourceObj, slideBack: slideBack)
+        let imp = imp_implementationWithBlock(block)
+        if !class_addMethod(FCWebView.self, sel, imp, types) {
+            if let m = class_getInstanceMethod(FCWebView.self, sel) { method_setImplementation(m, imp) }
+        }
     }
 
     // nel caso WebKit usi l'API più recente
@@ -124,6 +139,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         let config = WKWebViewConfiguration()
         config.userContentController.add(self, name: "fc")
         FCWebView.installDragMask()
+        FCWebView.installDragImage()
         webView = FCWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = self
         webView.uiDelegate = self

@@ -143,7 +143,8 @@ sincronizzazione rapida). Le colonne nuove si aggiungono con `ALTER TABLE` in
   emette il suono d'errore.
 - **Trascinare fuori dall'app = copia** (`FCWebView` in `mac/Provinia.swift`): il
   trascinamento è di WebKit; nell'app la pagina aggiunge il testo `provinia-ids:1,2,3`.
-  Swift lo legge nel pasteboard (override di `dragImage(…)`, e di
+  Swift lo legge nel pasteboard (`dragImage(…pasteboard:…)` sostituito al volo con il
+  runtime ObjC perché Swift lo dichiara «unavailable» e non si può fare override; e
   `beginDraggingSession` se WebKit usa l'API nuova), chiede i percorsi a `POST /api/paths`
   e li aggiunge come `NSFilenamesPboardType` senza toccare i dati della pagina.
   `draggingSession:sourceOperationMaskForDraggingContext:` (di WebKit, non pubblico) è
