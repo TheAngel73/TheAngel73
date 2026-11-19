@@ -169,6 +169,7 @@ function makeCell(it, i) {
     ${it.f === 1 ? '<span class="flag" title="Scelta">⚑</span>' : ""}
     <div class="cap"${it.l ? ` title="Etichetta ${LABELS[it.l] || ""}"` : ""}><span class="fn" title="${esc(it.n)}">${esc(it.n)}</span><span class="stars">${stars}</span></div>`;
   const img = el.querySelector("img");
+  img.draggable = false;
   img.onerror = () => { img.replaceWith(Object.assign(document.createElement("span"), {className: "ph", textContent: it.x || "?"})); };
   return el;
 }
@@ -1744,11 +1745,13 @@ async function folderDelete(fid) {
 
 // ================================================================ trascinamento: foto -> cartella (sposta), file dal Finder -> cartella (importa)
 const folderTree = $("#folder-tree");
-const hasFiles = dt => [...dt.types].includes("Files");
+// Safari/WebKit aggiunge il tipo "Files" anche quando si trascina una miniatura della pagina:
+// le foto del catalogo hanno sempre la precedenza (spostamento), i file contano solo da soli.
+const isInternal = dt => [...dt.types].includes("application/x-fc-photos");
+const hasFiles = dt => !isInternal(dt) && [...dt.types].includes("Files");
 function folderDropTarget(e) {
   const li = e.target.closest("li[data-folder]"); if (!li) return null;
-  const t = e.dataTransfer.types;
-  return (t.includes("application/x-fc-photos") || t.includes("Files")) ? li : null;
+  return (isInternal(e.dataTransfer) || hasFiles(e.dataTransfer)) ? li : null;
 }
 folderTree.addEventListener("dragover", e => {
   folderTree.querySelectorAll(".drop").forEach(n => n.classList.remove("drop"));
@@ -1764,7 +1767,7 @@ folderTree.addEventListener("drop", async e => {
   const fid = +li.dataset.folder;
   if (hasFiles(e.dataTransfer)) return importDrop(e.dataTransfer, fid);
   const ids = JSON.parse(e.dataTransfer.getData("application/x-fc-photos") || "[]");
-  if (!ids.length) return;
+  if (!ids.length) return toast(`Trascinamento non riconosciuto (contenuto: ${[...e.dataTransfer.types].join(", ") || "vuoto"})`, true);
   const fo = S.tree.folders.find(x => x.id === fid);
   const d = await dialog("Sposta", `<p>Spostare ${ids.length === 1 ? "la foto" : ids.length.toLocaleString("it-IT") + " foto"}
     in «${esc(folderLabel(fo))}»?</p><p class="small">I file vengono spostati sul disco; raccolte, parole chiave e stelle restano.</p>`, "Sposta");
@@ -1799,8 +1802,9 @@ async function collectDropped(dt) {
   return out;
 }
 async function importDrop(dt, fid) {
+  const types = [...dt.types].join(", ");
   const items = await collectDropped(dt);
-  if (!items.length) return;
+  if (!items.length) return toast(`Nessun file da importare in questo trascinamento (contenuto: ${types || "vuoto"})`, true);
   const fo = S.tree.folders.find(x => x.id === fid);
   const total = items.length;
   let done = 0, ok = 0;
