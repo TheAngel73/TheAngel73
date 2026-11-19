@@ -1,4 +1,6 @@
-# FotoCatalogo
+# Provinia
+
+*(fino a novembre 2026 si chiamava FotoCatalogo)*
 
 Catalogo foto per Mac, pensato per sostituire la **Libreria** di Lightroom quando
 le foto si modificano in Photoshop. Non ha strumenti di sviluppo o ritocco: solo
@@ -16,7 +18,7 @@ catalogazione.
 - Pensato per grandi archivi (oltre 170 000 foto): la griglia carica solo ciò che vedi
 
 **Le foto non vengono mai modificate, spostate o cancellate.** L'app legge soltanto
-i file sul NAS. I cataloghi sono salvati sul Mac in **`Documenti/FotoCatalogo/`**.
+i file sul NAS. I cataloghi sono salvati sul Mac in **`Documenti/Provinia/`**.
 
 ## Requisiti
 
@@ -32,7 +34,7 @@ i file sul NAS. I cataloghi sono salvati sul Mac in **`Documenti/FotoCatalogo/`*
    in quel caso fai clic destro › **Apri** › **Apri**.
    - Se mancano gli «strumenti per sviluppatori» di Apple (gratuiti), si apre la
      finestra per installarli: conferma, attendi qualche minuto e rilancia `Crea app.command`.
-3. Lo script costruisce **FotoCatalogo.app**, la copia in **Applicazioni** e la apre.
+3. Lo script costruisce **Provinia.app**, la copia in **Applicazioni** e la apre.
    Da lì puoi trascinarla nel Dock come qualsiasi altra app.
 
 L'app ha la sua finestra, la barra dei menu di macOS (Libreria, Modifica, Foto,
@@ -42,13 +44,13 @@ Il «motore» Python parte e si ferma da solo insieme all'app: non serve il Term
 **Aggiornamenti:** quando il codice cambia, rilancia `Crea app.command` per
 ricostruire l'app. Il catalogo non viene toccato.
 
-**Senza app**, in alternativa: doppio clic su `Avvia FotoCatalogo.command`, che apre
+**Senza app**, in alternativa: doppio clic su `Avvia Provinia.command`, che apre
 l'interfaccia nel browser (con le stesse funzioni, menu col tasto destro compresi).
 
 ## Passare da Lightroom
 
 1. **Chiudi Lightroom.**
-2. In FotoCatalogo: **Libreria › Importa catalogo Lightroom…** e scegli il file `.lrcat`
+2. In Provinia: **Libreria › Importa catalogo Lightroom…** e scegli il file `.lrcat`
    (di solito in `Immagini/Lightroom/`).
 3. Al termine compare un riepilogo. Le **raccolte smart** non vengono importate,
    perché le loro regole sono in un formato interno di Lightroom: si possono
@@ -85,7 +87,10 @@ presenti non vengono duplicate.
 | Esportare in JPEG | **⇧⌘E** sulla selezione, oppure tasto destro su cartella o raccolta › Esporta in JPEG… |
 | Importare dal desktop | trascina file o cartelle dal Finder su una cartella della barra laterale (o sulla griglia della cartella aperta) |
 | Spostare foto | trascinale su una cartella, oppure tasto destro › Sposta in… |
-| Rinominare | **F2** o tasto destro › Rinomina…; **Catalogo › Da rinominare** per i nomi della fotocamera |
+| Rinominare una foto | **clic sul nome** della foto già selezionata (come nel Finder), oppure **F2**, oppure clic sul nome nel pannello a destra · **Invio** conferma, **Esc** annulla |
+| Rinominare con nome e numero | seleziona più foto e **F2**, oppure tasto destro › Rinomina con nome e numero…; **Catalogo › Da rinominare** per i nomi della fotocamera |
+| Copiare foto nel Finder | trascina le foto selezionate sulla scrivania o in una cartella del Finder (solo nell'app) |
+| Salvare una raccolta | tasto destro su una raccolta o un set › **Salva raccolta…** |
 | Tutte le altre azioni | **tasto destro** su foto, raccolte, cartelle e parole chiave |
 
 ## Conversione (RAW → DNG, PNG → JPEG)
@@ -151,12 +156,33 @@ stelle restano. Se nella destinazione esiste già un file con lo stesso nome vie
 
 **Cartelle** (tasto destro): Nuova cartella…, Rinomina cartella…, Elimina cartella vuota….
 
-**Rinominare** (F2 o tasto destro › Rinomina…): prefisso, primo numero, cifre, separatore,
+**Rinominare una sola foto**: clic sul nome di una foto già selezionata (come nel Finder),
+oppure **F2**, oppure clic sul nome nel pannello a destra. Si modifica solo il nome:
+l'estensione resta la stessa. **Invio** conferma, **Esc** annulla. Il `.xmp` segue la foto,
+tranne quando c'è un altro file con lo stesso nome (es. RAW + JPEG): allora resta al RAW.
+
+**Rinominare con nome e numero** (più foto + F2, o tasto destro › Rinomina con nome e numero…): prefisso, primo numero, cifre, separatore,
 ordine (data di scatto o nome attuale), estensione minuscola; i file con lo stesso nome
 (RAW + JPEG) ricevono lo stesso numero. Anteprima dal vivo dei nuovi nomi. Se un nome è già
 occupato (sul disco o nel catalogo) la rinomina non parte. I `.xmp` seguono il loro file.
 La rinomina passa da nomi temporanei: anche gli scambi di nome sono sicuri e, se l'app si
 chiudesse a metà, al riavvio la rinomina viene completata.
+
+**Copiare trascinando** (solo nell'app): trascina una o più foto dalla griglia sulla scrivania
+o in una cartella del Finder (o su Mail, AirDrop…): viene creata una **copia** dei file
+originali. Fuori dall'app il trascinamento è sempre una copia, anche sullo stesso NAS:
+gli originali restano dove sono. Dentro l'app, trascinare su una cartella continua a
+*spostare* e su una raccolta ad *aggiungere*.
+
+**Salva raccolta…** (tasto destro su una raccolta o un set): copia i file **originali** in
+una nuova cartella, ricreando la struttura delle raccolte. Esempio: il set «Gite» con le
+raccolte «Torino» e «Napoli» diventa `Gite/Torino/…` e `Gite/Napoli/…`; salvando il set
+«2021» si ottiene anche il livello `2021/`. Comodo per passare a qualcuno le foto originali.
+- prima di partire mostra la struttura, il numero di file e lo spazio necessario;
+- se la cartella esiste già ne crea una nuova («Gite (2)»): nulla viene sovrascritto;
+- due foto con lo stesso nome nella stessa raccolta diventano «nome.jpg» e «nome (2).jpg»;
+- a scelta copia anche i `.xmp`; una foto in più raccolte viene copiata in ognuna;
+- si può interrompere; i file non trovati (NAS scollegato) vengono elencati alla fine.
 
 **Catalogo › Da rinominare** mostra i file che hanno ancora il nome dato dalla fotocamera
 (`_DSC0001`, `DSC_0001`, `IMG_1234`, `DSCF…`, `P1010001`, `DJI_…`, `GOPR…`, `PXL_…`).
@@ -190,10 +216,10 @@ successive, così scorrendo sono già pronte. Comandi e clic hanno sempre la pre
 
 ## Cataloghi
 
-Come in Lightroom, puoi avere più cataloghi. Stanno tutti in `Documenti/FotoCatalogo/`:
+Come in Lightroom, puoi avere più cataloghi. Stanno tutti in `Documenti/Provinia/`:
 
 ```
-Documenti/FotoCatalogo/
+Documenti/Provinia/
 ├── Catalogo principale/          ← catalogo normale: una cartella
 │   ├── catalogo.db               ← raccolte, parole chiave, stelle… (il file importante)
 │   └── miniature/                ← si possono cancellare, vengono ricreate
@@ -220,11 +246,16 @@ Si richiude da solo quando passi a un altro catalogo o chiudi l'app, oppure subi
 La prima volta macOS chiede il permesso di accedere alla cartella Documenti: concedilo.
 
 Alla prima apertura di questa versione, il catalogo creato con la versione precedente
-viene spostato automaticamente in `Documenti/FotoCatalogo/Catalogo principale`.
+viene spostato automaticamente in `Documenti/Provinia/Catalogo principale`.
+
+**Cambio di nome**: alla prima apertura di Provinia la cartella `Documenti/FotoCatalogo`
+diventa `Documenti/Provinia` (e così le impostazioni in *Libreria/Application Support*):
+cataloghi, password e preferenze restano quelli di prima. La vecchia `FotoCatalogo.app`
+in Applicazioni viene sostituita da `Provinia.app` quando ricostruisci l'app.
 
 ## Backup
 
-Basta copiare la cartella `Documenti/FotoCatalogo` (con l'app chiusa), oppure lasciare
+Basta copiare la cartella `Documenti/Provinia` (con l'app chiusa), oppure lasciare
 che se ne occupi Time Machine. Un catalogo protetto resta cifrato anche nel backup.
 
 ## Struttura del codice

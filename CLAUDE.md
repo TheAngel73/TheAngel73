@@ -1,6 +1,6 @@
 # Repository di TheAngel73
 
-Il progetto principale è **FotoCatalogo** (`fotocatalogo/`), un catalogo foto per macOS
+Il progetto principale è **Provinia** (ex FotoCatalogo, cartella `fotocatalogo/`), un catalogo foto per macOS
 che sostituisce la Libreria di Lightroom.
 
 - Prima di modificarlo leggi `fotocatalogo/SVILUPPO.md`: architettura, decisioni, trappole già

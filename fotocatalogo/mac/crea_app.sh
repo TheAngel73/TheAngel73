@@ -1,12 +1,12 @@
 #!/bin/bash
-# Costruisce FotoCatalogo.app e (se vuoi) la copia in Applicazioni.
+# Costruisce Provinia.app e (se vuoi) la copia in Applicazioni.
 # Uso: ./crea_app.sh            (chiede se installare)
 #      ./crea_app.sh --installa (installa senza chiedere)
 set -euo pipefail
 cd "$(dirname "$0")"
 SRC="$(cd .. && pwd)"
 BUILD="$SRC/build"
-APP="$BUILD/FotoCatalogo.app"
+APP="$BUILD/Provinia.app"
 
 if ! command -v swiftc >/dev/null 2>&1 || ! xcrun --find swiftc >/dev/null 2>&1; then
   echo "Servono gli strumenti per sviluppatori di Apple (gratuiti)."
@@ -18,7 +18,7 @@ fi
 echo "› Compilo l'app…"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/app/static"
-swiftc -O -swift-version 5 -o "$APP/Contents/MacOS/FotoCatalogo" FotoCatalogo.swift \
+swiftc -O -swift-version 5 -o "$APP/Contents/MacOS/Provinia" Provinia.swift \
   -framework Cocoa -framework WebKit
 mkdir -p "$APP/Contents/Resources/bin"
 swiftc -O -swift-version 5 -o "$APP/Contents/Resources/bin/fcimg" fcimg.swift
@@ -27,25 +27,18 @@ echo "› Copio il motore e l'interfaccia…"
 cp "$SRC"/*.py "$APP/Contents/Resources/app/"
 cp "$SRC"/static/* "$APP/Contents/Resources/app/static/"
 
-echo "› Creo l'icona…"
-ICONSET="$BUILD/AppIcon.iconset"
-rm -rf "$ICONSET"; mkdir -p "$ICONSET"
-for s in 16 32 128 256 512; do
-  sips -z $s $s icona.png --out "$ICONSET/icon_${s}x${s}.png" >/dev/null
-  sips -z $((s*2)) $((s*2)) icona.png --out "$ICONSET/icon_${s}x${s}@2x.png" >/dev/null
-done
-iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
-rm -rf "$ICONSET"
+echo "› Icona…"
+cp Provinia.icns "$APP/Contents/Resources/AppIcon.icns"
 
 VERSION="$(date +%Y.%m.%d)"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>CFBundleName</key><string>FotoCatalogo</string>
-  <key>CFBundleDisplayName</key><string>FotoCatalogo</string>
+  <key>CFBundleName</key><string>Provinia</string>
+  <key>CFBundleDisplayName</key><string>Provinia</string>
   <key>CFBundleIdentifier</key><string>local.fotocatalogo</string>
-  <key>CFBundleExecutable</key><string>FotoCatalogo</string>
+  <key>CFBundleExecutable</key><string>Provinia</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
@@ -56,9 +49,9 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>NSPrincipalClass</key><string>NSApplication</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSHumanReadableCopyright</key><string>Catalogo foto personale</string>
-  <key>NSDocumentsFolderUsageDescription</key><string>FotoCatalogo salva i cataloghi nella cartella Documenti/FotoCatalogo.</string>
-  <key>NSNetworkVolumesUsageDescription</key><string>FotoCatalogo legge le foto dal NAS per creare le miniature. I file non vengono mai modificati.</string>
-  <key>NSRemovableVolumesUsageDescription</key><string>FotoCatalogo legge le foto dai dischi esterni per creare le miniature.</string>
+  <key>NSDocumentsFolderUsageDescription</key><string>Provinia salva i cataloghi nella cartella Documenti/Provinia.</string>
+  <key>NSNetworkVolumesUsageDescription</key><string>Provinia legge le foto dal NAS per mostrarle e per le operazioni sui file che chiedi tu.</string>
+  <key>NSRemovableVolumesUsageDescription</key><string>Provinia legge le foto dai dischi esterni.</string>
   <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
 </dict></plist>
 PLIST
@@ -74,12 +67,17 @@ if [ "$INSTALL" != "--installa" ]; then
   case "${ans:-s}" in [sSyY]*) INSTALL="--installa";; esac
 fi
 if [ "$INSTALL" = "--installa" ]; then
-  osascript -e 'tell application "FotoCatalogo" to quit' >/dev/null 2>&1 || true
+  osascript -e 'tell application id "local.fotocatalogo" to quit' >/dev/null 2>&1 || true
   sleep 1
-  rm -rf "/Applications/FotoCatalogo.app"
-  ditto "$APP" "/Applications/FotoCatalogo.app"
+  # la versione con il vecchio nome viene sostituita da Provinia
+  if [ -d "/Applications/FotoCatalogo.app" ]; then
+    rm -rf "/Applications/FotoCatalogo.app"
+    echo "  (rimossa la vecchia FotoCatalogo.app: ora si chiama Provinia)"
+  fi
+  rm -rf "/Applications/Provinia.app"
+  ditto "$APP" "/Applications/Provinia.app"
   echo "✓ Installata in Applicazioni. La apro…"
-  open "/Applications/FotoCatalogo.app"
+  open "/Applications/Provinia.app"
 else
   open -R "$APP"
 fi

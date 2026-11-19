@@ -368,11 +368,23 @@ def rename_plan(cat, ids, opts):
     plan, skipped = [], []
     numbers = {}
     n = start
+    single = opts.get("name") is not None          # rinomina libera di un solo file
+    if single:
+        name = nfc((opts.get("name") or "").strip())
+        if len(rows) != 1:
+            raise ValueError("La rinomina libera vale per un file alla volta")
+        if not name or any(c in name for c in "/:\\") or name.startswith("."):
+            raise ValueError("Il nome non può essere vuoto, contenere / : \\ né iniziare con un punto")
     for r in rows:
         if r["missing"]:
             skipped.append([r["filename"], "file mancante"])
             continue
         base, ext = os.path.splitext(r["filename"])
+        folder_dir = resolve_path(os.path.join(r["root"], r["rel_path"]))
+        if single:
+            plan.append({"id": r["id"], "old": r["filename"], "new": nfc(name + ext), "dir": folder_dir,
+                         "keep_side": _has_sibling(folder_dir, r["filename"])})
+            continue
         key = (r["folder_id"], base.lower())
         if keep_pairs and key in numbers:
             num = numbers[key]
@@ -381,8 +393,7 @@ def rename_plan(cat, ids, opts):
             numbers[key] = num
         new_ext = ext.lower() if lower_ext else ext
         new = nfc(f"{prefix}{sep if prefix else ''}{num:0{digits}d}{new_ext}")
-        plan.append({"id": r["id"], "old": r["filename"], "new": new,
-                     "dir": resolve_path(os.path.join(r["root"], r["rel_path"]))})
+        plan.append({"id": r["id"], "old": r["filename"], "new": new, "dir": folder_dir})
     # nomi di destinazione già occupati da file che NON fanno parte della rinomina
     sources = {(p["dir"], p["old"].lower()) for p in plan}
     batch = {p["id"] for p in plan}
@@ -405,6 +416,18 @@ def rename_plan(cat, ids, opts):
         elif (folders[p["id"]], p["new"].lower()) in in_catalog:
             conflicts.append([p["new"], "è già usato da un'altra foto del catalogo"])
     return plan, skipped, conflicts
+
+
+def _has_sibling(folder_dir, filename):
+    """True se nella cartella c'è un altro file con lo stesso nome base (es. ARW + JPG):
+    in quel caso il .xmp resta a lui e non segue il file rinominato da solo."""
+    base = os.path.splitext(filename)[0].lower()
+    try:
+        names = os.listdir(folder_dir)
+    except OSError:
+        return False
+    return any(os.path.splitext(x)[0].lower() == base and x.lower() != filename.lower()
+               and os.path.splitext(x)[1].lower() != ".xmp" for x in names)
 
 
 def rename(cat, ids, opts, job):
@@ -434,7 +457,7 @@ def rename(cat, ids, opts, job):
     for p in plan:
         old_base = os.path.splitext(p["old"])[0]
         key = (p["dir"], old_base.lower())
-        if key in seen_bases:
+        if key in seen_bases or p.get("keep_side"):
             continue
         seen_bases.add(key)
         for x in (".xmp", ".XMP"):

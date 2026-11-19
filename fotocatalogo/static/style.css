@@ -18,7 +18,8 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
 
 #topbar { display: flex; gap: 8px; align-items: center; padding: 8px 12px; height: 46px;
   background: var(--panel); border-bottom: 1px solid var(--line); }
-.brand { font-weight: 600; letter-spacing: .3px; margin-right: 6px; }
+.brand { font-weight: 600; letter-spacing: .3px; margin-right: 6px; display: flex; align-items: center; gap: 7px; }
+.brand img { width: 22px; height: 22px; }
 #search { flex: 1; min-width: 160px; }
 #zoom { width: 110px; }
 .menu-wrap { position: relative; }
@@ -77,6 +78,14 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
   display: flex; gap: 4px; align-items: center; white-space: nowrap; overflow: hidden; }
 .cell .cap .fn { flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .cell .stars { color: #ddd; letter-spacing: -1px; }
+.cell .cap .fn { cursor: default; }
+/* rinomina con un clic sul nome */
+.cell.editing .cap { overflow: visible; z-index: 2; }
+.cell .fn-edit { flex: 1; min-width: 0; font-size: 11px; padding: 1px 4px; border: 1px solid var(--accent);
+  border-radius: 3px; background: #111; color: #fff; outline: none; box-shadow: 0 0 0 2px rgba(74,144,226,.35); }
+.cell .fn-ext { color: var(--dim); }
+#info .fname { cursor: text; }
+#info .fname:hover { text-decoration: underline dotted; }
 .cell .flag { position: absolute; top: 3px; right: 6px; font-size: 12px; color: #fff; }
 .cell.rejected .im { opacity: .35; }
 .cell.rejected .fn { text-decoration: line-through; }

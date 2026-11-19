@@ -46,9 +46,9 @@ def _open_copy(lrcat_path, tmpdir, step):
             shutil.copyfile(lrcat_path + "-wal", copy + "-wal")
     except PermissionError:
         raise LightroomError(
-            "macOS non permette a FotoCatalogo di leggere il catalogo. Apri Impostazioni di Sistema › "
+            "macOS non permette a Provinia di leggere il catalogo. Apri Impostazioni di Sistema › "
             "Privacy e sicurezza › File e cartelle (oppure Accesso completo al disco), attiva "
-            "FotoCatalogo e riprova.")
+            "Provinia e riprova.")
     except OSError as e:
         raise LightroomError(f"Impossibile copiare il catalogo: {e.strerror or e}")
     src = sqlite3.connect(copy)

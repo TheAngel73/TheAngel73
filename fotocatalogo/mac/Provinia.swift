@@ -1,4 +1,4 @@
-// FotoCatalogo.app — finestra nativa per macOS.
+// Provinia.app (ex FotoCatalogo) — finestra nativa per macOS.
 //
 // Avvia il motore Python (server.py) in background, mostra l'interfaccia in una
 // finestra WebKit e fornisce la barra dei menu di macOS. Alla chiusura dell'app
@@ -6,16 +6,106 @@
 
 import Cocoa
 import WebKit
+import ObjectiveC
 
 let port = 8765
 let baseURL = URL(string: "http://localhost:\(port)/")!
-let logPath = (NSHomeDirectory() as NSString).appendingPathComponent("Library/Logs/FotoCatalogo.log")
+let logPath = (NSHomeDirectory() as NSString).appendingPathComponent("Library/Logs/Provinia.log")
 
 func jsString(_ value: String?) -> String {
     guard let value = value,
           let data = try? JSONSerialization.data(withJSONObject: [value]),
           let s = String(data: data, encoding: .utf8) else { return "null" }
     return String(s.dropFirst().dropLast())   // ["…"] -> "…"
+}
+
+// MARK: trascinare le foto fuori dall'app = copiarle
+//
+// Il trascinamento delle miniature è gestito da WebKit (serve per raccolte e cartelle
+// dentro l'app). Quando inizia, la pagina mette nel testo del trascinamento
+// "provinia-ids:1,2,3": qui lo leggiamo, chiediamo al motore i percorsi dei file e li
+// aggiungiamo al trascinamento. Fuori dall'app (Finder, scrivania, Mail…) si può
+// solo copiare: gli originali restano dove sono.
+final class FCWebView: WKWebView {
+    var dragPaths: [String] = []
+    static let filenamesType = NSPasteboard.PasteboardType("NSFilenamesPboardType")
+
+    func photoPaths(fromText text: String?) -> [String] {
+        guard let text = text, text.hasPrefix("provinia-ids:") else { return [] }
+        let ids = text.dropFirst("provinia-ids:".count).split(separator: ",").compactMap { Int($0) }
+        if ids.isEmpty { return [] }
+        var paths: [String] = []
+        let sem = DispatchSemaphore(value: 0)
+        var req = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/api/paths")!)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["ids": ids])
+        req.timeoutInterval = 3
+        URLSession.shared.dataTask(with: req) { data, _, _ in
+            if let data = data, let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                paths = obj["paths"] as? [String] ?? []
+            }
+            sem.signal()
+        }.resume()
+        _ = sem.wait(timeout: .now() + 4)
+        return paths
+    }
+
+    // usato da WebKit per i trascinamenti dalla pagina
+    override func dragImage(_ image: NSImage, at viewLocation: NSPoint, offset initialOffset: NSSize,
+                           event: NSEvent, pasteboard pboard: NSPasteboard, source sourceObj: Any, slideBack: Bool) {
+        dragPaths = photoPaths(fromText: pboard.string(forType: .string))
+        if !dragPaths.isEmpty {
+            // si aggiungono i file all'elemento già presente, senza toccare i dati della pagina
+            pboard.addTypes([FCWebView.filenamesType], owner: nil)
+            pboard.setPropertyList(dragPaths, forType: FCWebView.filenamesType)
+        }
+        super.dragImage(image, at: viewLocation, offset: initialOffset, event: event,
+                        pasteboard: pboard, source: sourceObj, slideBack: slideBack)
+    }
+
+    // nel caso WebKit usi l'API più recente
+    override func beginDraggingSession(with items: [NSDraggingItem], event: NSEvent,
+                                       source: NSDraggingSource) -> NSDraggingSession {
+        var text: String?
+        for item in items {
+            if let pi = item.item as? NSPasteboardItem, let t = pi.string(forType: .string) { text = t; break }
+        }
+        dragPaths = photoPaths(fromText: text)
+        var all = items
+        if let frame = items.first?.draggingFrame {
+            for path in dragPaths {
+                let extra = NSDraggingItem(pasteboardWriter: URL(fileURLWithPath: path) as NSURL)
+                extra.setDraggingFrame(frame, contents: nil)
+                all.append(extra)
+            }
+        }
+        return super.beginDraggingSession(with: all, event: event, source: source)
+    }
+
+    // Fuori dall'app solo "copia" (il Finder non deve mai spostare gli originali).
+    // Il metodo è di WebKit e non è dichiarato pubblicamente: lo si sostituisce al volo.
+    static func installDragMask() {
+        let sel = NSSelectorFromString("draggingSession:sourceOperationMaskForDraggingContext:")
+        typealias Fn = @convention(c) (AnyObject, Selector, NSDraggingSession, NSDraggingContext) -> NSDragOperation
+        let superMethod = class_getInstanceMethod(WKWebView.self, sel)
+        let callSuper: Fn? = superMethod.map { unsafeBitCast(method_getImplementation($0), to: Fn.self) }
+        let block: @convention(block) (AnyObject, NSDraggingSession, NSDraggingContext) -> NSDragOperation = { obj, session, context in
+            if context == .outsideApplication, let wv = obj as? FCWebView, !wv.dragPaths.isEmpty { return .copy }
+            if let callSuper = callSuper { return callSuper(obj, sel, session, context) }
+            return [.copy, .move, .generic]
+        }
+        let imp = imp_implementationWithBlock(block)
+        let added: Bool
+        if let m = superMethod, let types = method_getTypeEncoding(m) {
+            added = class_addMethod(FCWebView.self, sel, imp, types)
+        } else {
+            added = class_addMethod(FCWebView.self, sel, imp, "Q@:@q")
+        }
+        if !added {
+            if let m = class_getInstanceMethod(FCWebView.self, sel) { method_setImplementation(m, imp) }
+        }
+    }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
@@ -33,7 +123,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
 
         let config = WKWebViewConfiguration()
         config.userContentController.add(self, name: "fc")
-        webView = WKWebView(frame: .zero, configuration: config)
+        FCWebView.installDragMask()
+        webView = FCWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = false
@@ -42,13 +133,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         titleObserver = webView.observe(\.title, options: [.new]) { [weak self] wv, _ in
             guard let self = self else { return }
             let t = wv.title ?? ""
-            self.window?.title = (t.isEmpty || t == "FotoCatalogo") ? "FotoCatalogo" : "FotoCatalogo — \(t)"
+            self.window?.title = (t.isEmpty || t == "Provinia") ? "Provinia" : "Provinia — \(t)"
         }
 
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1440, height: 900),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable],
                           backing: .buffered, defer: false)
-        window.title = "FotoCatalogo"
+        window.title = "Provinia"
         window.appearance = NSAppearance(named: .darkAqua)
         window.backgroundColor = NSColor(calibratedWhite: 0.12, alpha: 1)
         window.minSize = NSSize(width: 960, height: 600)
@@ -56,7 +147,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         window.contentView = webView
         window.delegate = self
         window.center()
-        window.setFrameAutosaveName("FotoCatalogoFinestra")   // ricorda posizione e dimensioni
+        window.setFrameAutosaveName("FotoCatalogoFinestra")   // ricorda posizione e dimensioni (nome storico)
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
@@ -182,7 +273,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         align-items:center;justify-content:center;height:100vh;margin:0;text-align:center;-webkit-user-select:none}
         h1{font-weight:500;font-size:20px;margin:0 0 12px} code,pre{background:#2e2e31;padding:2px 6px;border-radius:4px}
         pre{text-align:left;max-width:80%;overflow:auto;padding:12px;font-size:11px;-webkit-user-select:text} .s{color:#8e8e93}
-        </style></head><body><h1>FotoCatalogo</h1><p>\(html)</p>\(extra)</body></html>
+        </style></head><body><h1>Provinia</h1><p>\(html)</p>\(extra)</body></html>
         """
         webView.loadHTMLString(page, baseURL: nil)
     }
@@ -199,13 +290,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         if cmd == "pick" {
             let kind = body["kind"] as? String ?? "folder"
             let reqId = (body["id"] as? NSNumber)?.intValue ?? 0
+            let isFolder = kind == "folder" || kind == "dest"
             let panel = NSOpenPanel()
-            panel.canChooseDirectories = kind == "folder"
-            panel.canChooseFiles = kind != "folder"
+            panel.canChooseDirectories = isFolder
+            panel.canChooseFiles = !isFolder
+            panel.canCreateDirectories = kind == "dest"
             panel.allowsMultipleSelection = false
             panel.prompt = "Scegli"
             panel.message = kind == "folder" ? "Scegli la cartella delle foto sul NAS"
-                                             : "Scegli il catalogo Lightroom (.lrcat)"
+                          : kind == "dest" ? "Scegli dove salvare"
+                          : "Scegli il catalogo Lightroom (.lrcat)"
             if kind == "folder" { panel.directoryURL = URL(fileURLWithPath: "/Volumes") }
             panel.beginSheetModal(for: window) { response in
                 let path = response == .OK ? panel.url?.path : nil
@@ -241,7 +335,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
 
     @objc func showDataFolder(_ sender: Any?) {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        let dir = docs.appendingPathComponent("FotoCatalogo")
+        var dir = docs.appendingPathComponent("Provinia")
+        if !FileManager.default.fileExists(atPath: dir.path) { dir = docs.appendingPathComponent("FotoCatalogo") }
         NSWorkspace.shared.open(dir)
     }
 
@@ -271,16 +366,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             menu.addItem(item)
         }
 
-        let app = submenu("FotoCatalogo")
-        sys(app, "Informazioni su FotoCatalogo", #selector(NSApplication.orderFrontStandardAboutPanel(_:)))
+        let app = submenu("Provinia")
+        sys(app, "Informazioni su Provinia", #selector(NSApplication.orderFrontStandardAboutPanel(_:)))
         app.addItem(.separator())
         sys(app, "Mostra cartella dei cataloghi", #selector(showDataFolder(_:)), target: self)
         app.addItem(.separator())
-        sys(app, "Nascondi FotoCatalogo", #selector(NSApplication.hide(_:)), "h")
+        sys(app, "Nascondi Provinia", #selector(NSApplication.hide(_:)), "h")
         sys(app, "Nascondi altre", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option])
         sys(app, "Mostra tutte", #selector(NSApplication.unhideAllApplications(_:)))
         app.addItem(.separator())
-        sys(app, "Esci da FotoCatalogo", #selector(NSApplication.terminate(_:)), "q")
+        sys(app, "Esci da Provinia", #selector(NSApplication.terminate(_:)), "q")
 
         let lib = submenu("Libreria")
         cmd(lib, "Cambia catalogo…", "switchCatalog", "o", [.command, .option])
@@ -326,7 +421,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         cmd(photo, "Ruota a destra", "rotateRight", right)
         cmd(photo, "Esporta in JPEG…", "exportSel", "e", [.command, .shift])
         photo.addItem(.separator())
-        cmd(photo, "Rinomina…", "renameSel", String(utf16CodeUnits: [unichar(NSF2FunctionKey)], count: 1), [])
+        cmd(photo, "Rinomina", "renameSel", String(utf16CodeUnits: [unichar(NSF2FunctionKey)], count: 1), [])
+        cmd(photo, "Rinomina con nome e numero…", "renameNum")
         cmd(photo, "Sposta in…", "moveSel")
         photo.addItem(.separator())
         cmd(photo, "Converti (RAW → DNG, PNG → JPEG)…", "convertDng")

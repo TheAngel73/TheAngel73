@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""FotoCatalogo: catalogo foto locale con cartelle, raccolte e parole chiave.
+"""Provinia (ex FotoCatalogo): catalogo foto locale con cartelle, raccolte e parole chiave.
 
 Avvio:  python3 server.py   (poi apri http://localhost:8765)
 Solo libreria standard di Python: non serve installare nulla.
@@ -29,6 +29,7 @@ import catalogs  # noqa: E402
 import conversione  # noqa: E402
 import gestione_file  # noqa: E402
 import esporta  # noqa: E402
+import salva  # noqa: E402
 import thumbs  # noqa: E402
 
 PORT = int(os.environ.get("FOTOCAT_PORT", "8765"))
@@ -481,6 +482,7 @@ def pick_path(kind):
     if sys.platform != "darwin":
         return None
     what = ('choose folder with prompt "Scegli la cartella delle foto"' if kind == "folder"
+            else 'choose folder with prompt "Scegli la cartella di destinazione"' if kind == "dest"
             else 'choose file with prompt "Scegli il catalogo Lightroom (.lrcat)"')
     r = subprocess.run(["osascript", "-e", 'tell application "Finder"', "-e", "activate",
                         "-e", f"set p to POSIX path of ({what})", "-e", "end tell",
@@ -650,9 +652,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_file(os.path.join(STATIC, "index.html"), "text/html; charset=utf-8", False)
             if parts[0] == "static" and len(parts) == 2 and "/" not in parts[1] and ".." not in parts[1]:
                 p = os.path.join(STATIC, parts[1])
-                ctype = {"js": "text/javascript", "css": "text/css", "svg": "image/svg+xml"}.get(
-                    p.rsplit(".", 1)[-1], "application/octet-stream")
-                return self.send_file(p, ctype + "; charset=utf-8", False) if os.path.isfile(p) else self.not_found()
+                ctype = {"js": "text/javascript; charset=utf-8", "css": "text/css; charset=utf-8",
+                         "svg": "image/svg+xml", "png": "image/png"}.get(p.rsplit(".", 1)[-1], "application/octet-stream")
+                return self.send_file(p, ctype, False) if os.path.isfile(p) else self.not_found()
             if u.path == "/api/catalogs":
                 return self.send_json(catalogs_state())
             if u.path == "/api/dng":
@@ -839,6 +841,39 @@ class Handler(BaseHTTPRequestHandler):
             job = start_job("Esportazione JPEG", lambda job: esporta.export(cat, ids, opts, job))
             job.cancellable = True
             return job.as_dict()
+        if route == "collsave/preview":
+            return salva.summary(cat, int(body["id"]))
+        if route == "collsave":
+            cid, opts = int(body["id"]), body.get("options", {})
+            job = start_job("Salva raccolta", lambda job: salva.save(cat, cid, opts, job))
+            job.cancellable = True
+            return job.as_dict()
+        if route == "collsave/reveal":
+            dest = salva.LAST.get("dest")
+            if dest and os.path.isdir(dest) and sys.platform == "darwin":
+                subprocess.Popen(["open", dest])
+            return None
+        if route == "paths":
+            # percorsi dei file esistenti, per trascinarli fuori dall'app (copia nel Finder)
+            out = []
+            for pid in ids_of(body)[:20000]:
+                path = cat.photo_path(pid)
+                if path and os.path.isfile(path):
+                    out.append(path)
+            return {"paths": out}
+        if route == "rename/one":
+            pid, name = int(body["id"]), body.get("name")
+            _, _, conflicts = gestione_file.rename_plan(cat, [pid], {"name": name})
+            if conflicts:
+                raise ValueError(f"«{conflicts[0][0]}»: {conflicts[0][1]}")
+            job = Job("Rinomina")
+            res = gestione_file.rename(cat, [pid], {"name": name}, job)
+            if res["errori"]:
+                raise ValueError(f"Rinomina non riuscita: {res['errori'][0][1]}")
+            if res["saltate"]:
+                raise ValueError(f"Rinomina non possibile: {res['saltate'][0][1]}")
+            r = cat.db.execute("SELECT filename, ext FROM photos WHERE id=?", (pid,)).fetchone()
+            return {"filename": r["filename"], "ext": r["ext"]}
         if route == "export/reveal":
             dest = esporta.LAST.get("dest")
             if dest and os.path.isdir(dest) and sys.platform == "darwin":
@@ -949,6 +984,8 @@ def shutdown(*_):
 
 
 def startup():
+    for m in catalogs.migrate_name():
+        print(f"Cartella dei dati rinominata: {m}")
     catalogs.lock_leftovers()
     moved = catalogs.migrate_old()
     if moved:
@@ -969,7 +1006,7 @@ def main():
     signal.signal(signal.SIGTERM, shutdown)
     startup()
     url = f"http://localhost:{PORT}/"
-    print(f"FotoCatalogo attivo su {url}")
+    print(f"Provinia attiva su {url}")
     print("Per chiudere: Ctrl+C (o chiudi questa finestra)")
     if "--no-browser" not in sys.argv:
         threading.Timer(0.8, lambda: webbrowser.open(url)).start()

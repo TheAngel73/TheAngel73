@@ -1,6 +1,6 @@
 """Gestione di più cataloghi, come in Lightroom.
 
-Ogni catalogo è una cartella in ~/Documents/FotoCatalogo/<Nome>/ che contiene
+Ogni catalogo è una cartella in ~/Documents/Provinia/<Nome>/ che contiene
 il database (catalogo.db) e le miniature.
 
 Un catalogo protetto da password è invece un'immagine disco cifrata di macOS
@@ -22,11 +22,18 @@ from catalog import Catalog
 
 IS_MAC = sys.platform == "darwin"
 if IS_MAC:
-    SUPPORT = os.path.expanduser("~/Library/Application Support/FotoCatalogo")
-    DEFAULT_BASE = os.path.expanduser("~/Documents/FotoCatalogo")
+    SUPPORT = os.path.expanduser("~/Library/Application Support/Provinia")
+    DEFAULT_BASE = os.path.expanduser("~/Documents/Provinia")
+    # nomi usati quando l'app si chiamava FotoCatalogo (vedi migrate_name)
+    OLD_SUPPORT = os.path.expanduser("~/Library/Application Support/FotoCatalogo")
+    OLD_BASE = os.path.expanduser("~/Documents/FotoCatalogo")
 else:
-    SUPPORT = os.path.expanduser("~/.fotocatalogo")
-    DEFAULT_BASE = os.path.expanduser("~/FotoCatalogo")
+    SUPPORT = os.path.expanduser("~/.provinia")
+    DEFAULT_BASE = os.path.expanduser("~/Provinia")
+    OLD_SUPPORT = os.path.expanduser("~/.fotocatalogo")
+    OLD_BASE = os.path.expanduser("~/FotoCatalogo")
+CUSTOM_DATA = "FOTOCAT_DATA" in os.environ
+CUSTOM_BASE = "FOTOCAT_BASE" in os.environ
 SUPPORT = os.environ.get("FOTOCAT_DATA", SUPPORT)
 BASE = os.environ.get("FOTOCAT_BASE", DEFAULT_BASE)
 SETTINGS = os.path.join(SUPPORT, "impostazioni.json")
@@ -112,6 +119,55 @@ def startup_catalog():
             return p
     found = list_catalogs()
     return found[0] if found else None
+
+
+# ---------------------------------------------------------------- l'app ora si chiama Provinia
+def _use_support(path):
+    global SUPPORT, SETTINGS, MOUNTS
+    SUPPORT = path
+    SETTINGS = os.path.join(SUPPORT, "impostazioni.json")
+    MOUNTS = os.path.join(SUPPORT, "sbloccati")
+
+
+def migrate_name():
+    """Rinomina le cartelle dei dati da «FotoCatalogo» a «Provinia» (una volta sola).
+    Documenti/FotoCatalogo -> Documenti/Provinia, e così le impostazioni; i percorsi
+    salvati nelle impostazioni vengono aggiornati. Se qualcosa non si può spostare
+    si continua a usare la vecchia cartella: nulla va perso."""
+    moved = []
+    if not CUSTOM_DATA and os.path.isdir(OLD_SUPPORT) and not os.path.exists(SUPPORT):
+        old_mounts = os.path.join(OLD_SUPPORT, "sbloccati")
+        busy = os.path.isdir(old_mounts) and any(os.path.ismount(os.path.join(old_mounts, n))
+                                                 for n in os.listdir(old_mounts))
+        try:
+            if busy:
+                raise OSError("catalogo protetto ancora sbloccato")
+            os.rename(OLD_SUPPORT, SUPPORT)
+            moved.append(SUPPORT)
+        except OSError:
+            _use_support(OLD_SUPPORT)
+    global BASE
+    if not CUSTOM_BASE and os.path.isdir(OLD_BASE) and not os.path.exists(BASE):
+        try:
+            os.rename(OLD_BASE, BASE)
+            moved.append(BASE)
+        except OSError:
+            BASE = OLD_BASE
+    if BASE != OLD_BASE and not CUSTOM_BASE:
+        s = load_settings()
+        prefix = OLD_BASE + os.sep
+
+        def fix(p):
+            return BASE + os.sep + p[len(prefix):] if isinstance(p, str) and p.startswith(prefix) else p
+        new = dict(s)
+        for k in ("default", "last"):
+            if k in new:
+                new[k] = fix(new[k])
+        if "known" in new:
+            new["known"] = [fix(p) for p in new["known"]]
+        if new != s:
+            save_settings(new)
+    return moved
 
 
 # ---------------------------------------------------------------- migrazione dalla versione precedente

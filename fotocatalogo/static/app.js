@@ -211,16 +211,26 @@ function selChanged() {
   render(); showInfo();
 }
 
+let renameTimer = null;
 space.addEventListener("click", e => {
+  clearTimeout(renameTimer);
   const c = e.target.closest(".cell"); if (!c) { if (!e.metaKey && !e.shiftKey) { S.sel.clear(); selChanged(); } return; }
+  const it = itemAt(+c.dataset.i);
+  const wasOnly = it && S.sel.size === 1 && S.sel.has(it.id);
   clickCell(+c.dataset.i, e);
+  // come nel Finder: clic sul nome di una foto già selezionata -> rinomina
+  if (wasOnly && e.target.closest(".fn") && !e.shiftKey && !e.metaKey && !e.ctrlKey && e.detail === 1)
+    renameTimer = setTimeout(() => startInlineRename(it.id), 600);
 });
-space.addEventListener("dblclick", e => { const c = e.target.closest(".cell"); if (c) openLoupe(+c.dataset.i); });
+space.addEventListener("dblclick", e => { clearTimeout(renameTimer); const c = e.target.closest(".cell"); if (c) openLoupe(+c.dataset.i); });
 space.addEventListener("dragstart", e => {
   const c = e.target.closest(".cell"); const it = c && itemAt(+c.dataset.i);
   if (!it) return e.preventDefault();
   if (!S.sel.has(it.id)) { S.sel.clear(); S.sel.add(it.id); S.anchor = S.cursor = +c.dataset.i; selChanged(); }
   e.dataTransfer.setData("application/x-fc-photos", JSON.stringify([...S.sel]));
+  // nell'app per Mac: l'app legge questi numeri e aggiunge i file veri, così trascinandoli
+  // sul Finder o sulla scrivania si crea una copia
+  if (NATIVE) e.dataTransfer.setData("text/plain", "provinia-ids:" + [...S.sel].join(","));
   e.dataTransfer.effectAllowed = "copyMove";   // copia in una raccolta, spostamento su una cartella
   const n = S.sel.size;
   if (n > 1) {
@@ -562,7 +572,7 @@ async function showInfo(refresh = false) {
   const folder = d.rel_path ? d.rel_path : "(radice)";
   box.innerHTML = `
     <div class="prev"><img src="${thumbURL(id)}" alt="" onerror="this.remove()"></div>
-    <div class="fname">${esc(d.filename)}</div>
+    <div class="fname" title="Clic per rinominare">${esc(d.filename)}</div>
     <div class="path">${esc(d.path)}</div>
     ${rateBars(d.rating, d.label, d.flag)}
     <div class="row">
@@ -968,7 +978,8 @@ const COMMANDS = {
   switchCatalog: () => showCatalogScreen(null, false),
   convertDng: needSel(() => convertDng(selIds())),
   deleteFiles: needSel(() => deleteFiles(selIds())),
-  renameSel: needSel(() => renameDialog(selIds())),
+  renameSel: needSel(() => S.sel.size === 1 ? startInlineRename(selIds()[0]) : renameDialog(selIds())),
+  renameNum: needSel(() => renameDialog(selIds())),
   moveSel: needSel(() => moveDialog(selIds())),
   rotateLeft: needSel(() => rotate(-90)), rotateRight: needSel(() => rotate(90)),
   exportSel: needSel(() => exportDialog(selIds(), S.sel.size === 1 ? "la foto selezionata" : `${S.sel.size.toLocaleString("it-IT")} foto selezionate`)),
@@ -978,7 +989,7 @@ const COMMANDS = {
   zoomOut: () => { $("#zoom").value = +$("#zoom").value - 40; $("#zoom").dispatchEvent(new Event("input")); },
 };
 
-// ponte con l'app per Mac (FotoCatalogo.app): i menu nativi chiamano fc.cmd("...")
+// ponte con l'app per Mac (Provinia.app): i menu nativi chiamano fc.cmd("...")
 const pickWaiters = new Map();
 let pickSeq = 0;
 function nativePick(kind) {
@@ -1001,6 +1012,10 @@ window.fc = {
 for (const ev of ["dragover", "drop"]) document.addEventListener(ev, e => {
   if (e.dataTransfer && [...e.dataTransfer.types].includes("Files")) e.preventDefault();
 });
+// foto trascinate su un campo di testo: niente testo incollato
+document.addEventListener("drop", e => {
+  if (e.dataTransfer && isInternal(e.dataTransfer) && e.target.closest("input, textarea")) e.preventDefault();
+}, true);
 
 async function keywordDialog() {
   const n = S.sel.size;
@@ -1132,7 +1147,8 @@ async function photoMenu() {
       {label: "Nessuna", key: "U", checked: d && !d.flag, run: () => setMeta({flag: 0})}]},
     {label: "Aggiungi parole chiave…", key: "⌘K", run: COMMANDS.keywords},
     "-",
-    {label: one ? "Rinomina…" : `Rinomina ${n.toLocaleString("it-IT")} file…`, key: "F2", run: COMMANDS.renameSel},
+    one && {label: "Rinomina", key: "F2", run: COMMANDS.renameSel},
+    {label: one ? "Rinomina con nome e numero…" : `Rinomina ${n.toLocaleString("it-IT")} file…`, key: one ? "" : "F2", run: COMMANDS.renameNum},
     {label: "Sposta in…", run: COMMANDS.moveSel},
     {label: "Ruota a sinistra", key: "⌘←", run: COMMANDS.rotateLeft},
     {label: "Ruota a destra", key: "⌘→", run: COMMANDS.rotateRight},
@@ -1161,6 +1177,7 @@ function collMenu(cid, fromChip = false) {
     c.set && {label: "Nuovo set in questo set…", run: () => newCollection(true, [], cid)},
     {label: "Rinomina o sposta…", run: () => editCollection(cid)},
     {label: c.set ? "Esporta il set in JPEG…" : "Esporta la raccolta in JPEG…", run: () => exportScope("collection:" + cid, `«${c.name}»`)},
+    {label: c.set ? "Salva il set con le sottocartelle…" : "Salva raccolta…", run: () => saveCollection(cid)},
     "-",
     {label: c.set ? "Elimina set…" : "Elimina raccolta…", danger: true, run: () => deleteCollection(cid)},
   ];
@@ -1251,7 +1268,7 @@ async function lockCatalog() {
 
 async function newCatalogDialog() {
   const f = await dialog("Nuovo catalogo", `
-    <p>Il catalogo verrà salvato in <code>Documenti/FotoCatalogo</code>.</p>
+    <p>Il catalogo verrà salvato in <code>Documenti/Provinia</code>.</p>
     <label>Nome</label><input type="text" name="name" required autofocus placeholder="es. Personale">
     <label class="check"><input type="checkbox" name="prot"> Proteggi con password (catalogo cifrato)</label>
     <div class="pw" hidden>
@@ -1301,7 +1318,7 @@ async function showCatalogScreen(cs, startup) {
   let sel = cs.catalogs.find(c => c.path === (startup ? cs.startup : (cs.current?.path || cs.startup))) || cs.catalogs[0];
   const draw = (err = "") => {
     el.innerHTML = `<div class="cs-box">
-      <h1>${startup ? "FotoCatalogo" : "Cataloghi"}</h1>
+      <h1>${startup ? "Provinia" : "Cataloghi"}</h1>
       <p class="small">Cartella: <code>${esc(cs.base)}</code></p>
       <div class="cs-list">${cs.catalogs.map(c => `<div class="cs-item${c === sel ? " on" : ""}" data-path="${esc(c.path)}">
         <span class="cs-ic">${c.protected ? "🔒" : "▦"}</span><span class="cs-name">${esc(c.name)}</span>
@@ -1612,7 +1629,7 @@ async function exportDialog(ids, what) {
       };
       form.mode.onchange = hint; hint();
       form.quality.oninput = () => $("#exp-q").textContent = form.quality.value;
-      form.querySelector("[data-pick]").onclick = () => pickInto(form.dest, "folder");
+      form.querySelector("[data-pick]").onclick = () => pickInto(form.dest, "dest");
     });
   if (!f) return;
   const opts = {dest: f.dest.value.trim(), mode: f.mode.value, size: +f.size.value || 2048, quality: +f.quality.value, nogps: f.nogps.checked};
@@ -1626,6 +1643,100 @@ async function exportSummary(r) {
     ${rows.length ? `<h4>Non esportati (${rows.length})</h4><div class="list">${rows.slice(0, 200).map(([n, why]) =>
       `<div><b>${esc(n)}</b> <span class="setname">${esc(why)}</span></div>`).join("")}</div>` : ""}`, NATIVE || navigator.platform.startsWith("Mac") ? "Mostra nel Finder" : "OK");
   if (f && (NATIVE || navigator.platform.startsWith("Mac"))) safe(() => api("/api/export/reveal", {}));
+}
+
+// ================================================================ rinomina di un solo file (clic sul nome, F2)
+function startInlineRename(id) {
+  clearTimeout(renameTimer);
+  let i = -1;
+  for (const [k] of cells) if (itemAt(k)?.id === id) { i = k; break; }
+  const el = i >= 0 && cells.get(i), it = el && itemAt(i);
+  if ($("#dlg").open) return;
+  if (!el || !$("#loupe").hidden) return renameOneDialog(id);
+  if (it.m) return toast("Il file è mancante: non si può rinominare", true);
+  if (el.classList.contains("editing")) return;
+  ensureVisible(i);
+  const dot = it.n.lastIndexOf(".");
+  const base = dot > 0 ? it.n.slice(0, dot) : it.n, ext = dot > 0 ? it.n.slice(dot) : "";
+  const cap = el.querySelector(".cap");
+  el.draggable = false; el.classList.add("editing");
+  cap.innerHTML = `<input class="fn-edit" type="text" spellcheck="false" autocomplete="off"><span class="fn-ext">${esc(ext)}</span>`;
+  const inp = cap.querySelector("input");
+  inp.value = base; inp.focus(); inp.select();
+  let done = false;
+  const finish = async save => {
+    if (done) return; done = true;
+    const v = inp.value.trim();
+    if (save && v && v !== base) await renameOne(id, v);
+    el._key = null; el.classList.remove("editing");
+    render(); scroller.focus({preventScroll: true});
+  };
+  inp.addEventListener("keydown", e => {
+    e.stopPropagation();
+    if (e.key === "Enter") { e.preventDefault(); finish(true); }
+    else if (e.key === "Escape") { e.preventDefault(); finish(false); }
+  });
+  inp.addEventListener("blur", () => finish(true));
+  for (const ev of ["click", "dblclick", "mousedown"]) inp.addEventListener(ev, e => e.stopPropagation());
+}
+async function renameOne(id, name) {
+  try {
+    const r = await api("/api/rename/one", {id, name});
+    patchItems([id], {n: r.filename, x: r.ext});
+    if (S.detail && S.detail.id === id) showInfo(true);
+    loadTree();                                     // conteggio «Da rinominare»
+    return true;
+  } catch (e) { toast(e.message, true); return false; }
+}
+async function renameOneDialog(id) {
+  const d = await safe(() => api(`/api/photo/${id}`)); if (!d) return;
+  if (d.missing) return toast("Il file è mancante: non si può rinominare", true);
+  const dot = d.filename.lastIndexOf(".");
+  const base = dot > 0 ? d.filename.slice(0, dot) : d.filename, ext = dot > 0 ? d.filename.slice(dot) : "";
+  const f = await dialog("Rinomina", `<label>Nuovo nome</label>
+    <div class="pickrow"><input type="text" name="name" value="${esc(base)}" required spellcheck="false"><span>${esc(ext)}</span></div>
+    <p class="small">L'estensione resta la stessa; l'eventuale file .xmp segue la foto.</p>`, "Rinomina", form => setTimeout(() => form.name.select()));
+  if (f && f.name.value.trim() && f.name.value.trim() !== base && await renameOne(id, f.name.value.trim())) {
+    for (const [k, el] of cells) if (itemAt(k)?.id === id) el._key = null;
+    render();
+    const it = itemAt(L.i);
+    if (!$("#loupe").hidden && it && it.id === id) $("#loupe-name").textContent = `${it.n} · ${fmtDate(it.t)} ${it.r ? "· " + "★".repeat(it.r) : ""}`;
+  }
+}
+$("#info").addEventListener("click", e => { if (e.target.closest(".fname") && S.sel.size === 1) startInlineRename(selIds()[0]); });
+
+// ================================================================ salva raccolta (originali, con le sottocartelle)
+async function saveCollection(cid) {
+  const c = S.tree.collections.find(c => c.id === cid); if (!c) return;
+  const info = await safe(() => api("/api/collsave/preview", {id: cid})); if (!info) return;
+  if (!info.files) return toast(c.set ? "Il set non contiene foto" : "La raccolta è vuota");
+  const o = {dest: "", xmp: true, ...store.get("collsave", {})};
+  const tree = info.folders.map(([p, n]) => {
+    const depth = p.split("/").length - 1, name = p.split("/").pop();
+    return `<div style="padding-left:${depth * 18}px">📁 ${esc(name)} <span class="setname">${n ? n.toLocaleString("it-IT") + " file" : ""}</span></div>`;
+  }).join("") + (info.nfolders > info.folders.length ? `<div class="small">… e altre ${info.nfolders - info.folders.length} cartelle</div>` : "");
+  const f = await dialog(c.set ? `Salva il set «${c.name}»` : `Salva la raccolta «${c.name}»`, `
+    <p>Copia i file <b>originali</b> (${info.files.toLocaleString("it-IT")} file, ${fmtBytes(info.bytes)}) in una nuova cartella,
+    con una sottocartella per ogni raccolta e set. Il catalogo e i file sul NAS non vengono toccati.</p>
+    <div class="list">${tree}</div>
+    <label>Dove creare la cartella «${esc(info.root)}»</label>
+    <div class="pickrow"><input type="text" name="dest" required value="${esc(o.dest)}" placeholder="/Users/…/Desktop"><button type="button" data-pick>Scegli…</button></div>
+    <label class="check"><input type="checkbox" name="xmp" ${o.xmp ? "checked" : ""}> Copia anche i file .xmp accanto alle foto</label>
+    <p class="small">Se la cartella esiste già ne viene creata una nuova («${esc(info.root)} (2)»): nulla viene sovrascritto.</p>`,
+    `Salva ${info.files.toLocaleString("it-IT")} file`, form => { form.querySelector("[data-pick]").onclick = () => pickInto(form.dest, "dest"); });
+  if (!f) return;
+  const opts = {dest: f.dest.value.trim(), xmp: f.xmp.checked};
+  store.set("collsave", opts);
+  await safe(async () => { await api("/api/collsave", {id: cid, options: opts}); toast("Salvataggio avviato"); pollJobs(); });
+}
+async function saveSummary(r) {
+  const msg = `Copiati ${r.copiate.toLocaleString("it-IT")} file (${fmtBytes(r.byte)}) in ${r.cartelle} cartell${r.cartelle === 1 ? "a" : "e"}`;
+  const rows = [...r.saltate, ...r.errori];
+  const mac = NATIVE || navigator.platform.startsWith("Mac");
+  const f = await dialog(r.interrotta ? "Salvataggio interrotto" : "Raccolta salvata", `<p>${msg} in <code>${esc(r.dest)}</code>.</p>
+    ${rows.length ? `<h4>Non copiati (${rows.length})</h4><div class="list">${rows.slice(0, 200).map(([n, why]) =>
+      `<div><b>${esc(n)}</b> <span class="setname">${esc(why)}</span></div>`).join("")}</div>` : ""}`, mac ? "Mostra nel Finder" : "OK");
+  if (f && mac) safe(() => api("/api/collsave/reveal", {}));
 }
 
 // ================================================================ rinomina
@@ -1878,6 +1989,7 @@ async function onJobDone(j) {
   const r = j.result;
   if (r.dng) { await loadTree(); reload(true); return dngSummary(r); }
   if (r.export) return exportSummary(r);
+  if (r.saved) return saveSummary(r);
   if (r.moved || r.renamed) { await loadTree(); reload(true); showInfo(true); return fileOpSummary(r); }
   if (r.duplicates) {
     if (r.interrotta) return;

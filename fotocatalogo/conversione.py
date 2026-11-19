@@ -91,7 +91,7 @@ def _make_jpeg(src, tmp):
         # senza l'app (avvio dal browser): sips, ma solo per i PNG senza trasparenza
         code, out = _run(["sips", "-g", "hasAlpha", src], 60)
         if "hasAlpha: yes" in out:
-            return "ha parti trasparenti: convertilo dall'app FotoCatalogo"
+            return "ha parti trasparenti: convertilo dall'app Provinia"
         _, detail = _run(["sips", "-s", "format", "jpeg", "-s", "formatOptions",
                           str(int(JPEG_QUALITY * 100)), src, "--out", tmp], 300)
     else:

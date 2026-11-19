@@ -1,4 +1,4 @@
-# FotoCatalogo — note per lo sviluppo
+# Provinia (ex FotoCatalogo) — note per lo sviluppo
 
 Nota per chi riprende il progetto, persone o assistenti, anche in una conversazione
 nuova. Per l'uso dell'app vedi `LEGGIMI.md`: qui ci sono architettura, decisioni
@@ -8,18 +8,21 @@ prese (con i motivi), trappole già incontrate e come provare le modifiche.
 
 Catalogo foto per **macOS** che sostituisce la Libreria di Lightroom Classic per
 un archivio di circa **170 000 foto su un NAS**. Nessuno strumento di sviluppo o
-ritocco: quello si fa in Photoshop. L'utente scrive in italiano, e interfaccia,
+ritocco: quello si fa in Photoshop. Fino a novembre 2026 si chiamava **FotoCatalogo**:
+la cartella del codice (`fotocatalogo/`), l'identificativo dell'app (`local.fotocatalogo`),
+le variabili `FOTOCAT_*` e i suffissi dei file temporanei hanno mantenuto il vecchio nome. L'utente scrive in italiano, e interfaccia,
 messaggi, commenti e commit sono **in italiano**.
 
 - **Motore**: Python 3, **solo libreria standard** (niente pip). Server HTTP locale
   su `127.0.0.1:8765`, database SQLite.
 - **Interfaccia**: HTML, CSS e JavaScript senza framework, in `static/`.
-- **App per Mac**: finestra WebKit in Swift (`mac/FotoCatalogo.swift`), più il
+- **App per Mac**: finestra WebKit in Swift (`mac/Provinia.swift`), più il
   convertitore `mac/fcimg.swift`. Si compilano sul Mac dell'utente con
   `Crea app.command` → `mac/crea_app.sh`, che richiede gli strumenti per
   sviluppatori di Apple. L'app pesa meno di 1 MB e include una copia di `*.py` e `static/`.
   **Dopo ogni modifica l'utente deve rilanciare `Crea app.command`.**
-- Avvio alternativo nel browser: `Avvia FotoCatalogo.command`, cioè `python3 server.py`.
+- Icona: `mac/Provinia.icns` (fornita dall'utente; `static/icona.png` ne è un estratto da 128 px).
+- Avvio alternativo nel browser: `Avvia Provinia.command`, cioè `python3 server.py`.
 
 ## Principi da non rompere
 
@@ -42,25 +45,26 @@ messaggi, commenti e commit sono **in italiano**.
 |---|---|
 | `server.py` | server HTTP (`ThreadingHTTPServer`), API, lavori in background (`Job`, `start_job`), cataloghi aperti |
 | `catalog.py` | classe `Catalog`: schema SQLite, connessioni per thread, scansione completa, **sincronizzazione rapida**, riconoscimento dei nomi da fotocamera |
-| `catalogs.py` | più cataloghi in `~/Documents/FotoCatalogo`, cataloghi **cifrati** (immagini disco `hdiutil`), impostazioni, migrazione dalla prima versione |
+| `catalogs.py` | più cataloghi in `~/Documents/Provinia`, cataloghi **cifrati** (immagini disco `hdiutil`), impostazioni, migrazione dalla prima versione e dal vecchio nome (`migrate_name`) |
 | `lightroom.py` | importazione da `.lrcat`, letta da una **copia temporanea** |
 | `thumbs.py` | miniature (QuickLook/sips), preparazione in background (`Prefetcher`), piena risoluzione, rotazione, `find_imghelper()` |
 | `conversione.py` | RAW → DNG (Adobe DNG Converter), PNG → JPEG (`fcimg`) |
 | `gestione_file.py` | duplicati, elimina dal disco, sposta, **rinomina**, cartelle, recupero delle rinomine interrotte |
 | `esporta.py` | esportazione in JPEG (bordo lungo, larghezza, altezza, originale; senza GPS) |
+| `salva.py` | «Salva raccolta…»: copia gli originali di una raccolta o di un set ricreando la struttura in cartelle |
 | `exif.py` | lettore EXIF minimale (JPEG/TIFF/RAW) e data di ripresa dei video MP4/MOV |
 | `static/app.js` | tutta l'interfaccia (circa 1900 righe, divise in sezioni `// ====`) |
-| `mac/FotoCatalogo.swift` | finestra, menu di macOS, avvio e arresto del motore, finestre di scelta native, titolo con il nome del catalogo |
+| `mac/Provinia.swift` | finestra, menu di macOS, avvio e arresto del motore, finestre di scelta native, titolo con il nome del catalogo |
 | `mac/fcimg.swift` | `fcimg tojpeg …` e `fcimg export …` (ImageIO: orientamento, rotazione, ridimensionamento, EXIF) |
 
 ## Dati
 
-- **Cataloghi**: `~/Documents/FotoCatalogo/<Nome>/catalogo.db` e `miniature/`.
+- **Cataloghi**: `~/Documents/Provinia/<Nome>/catalogo.db` e `miniature/`.
   Un catalogo protetto è `<Nome>.sparsebundle` (AES-256), montato in
-  `~/Library/Application Support/FotoCatalogo/sbloccati/<uid>`.
+  `~/Library/Application Support/Provinia/sbloccati/<uid>`.
 - **Impostazioni** (catalogo predefinito, ultimo usato, cataloghi esterni):
-  `~/Library/Application Support/FotoCatalogo/impostazioni.json`.
-- **Registro**: `~/Library/Logs/FotoCatalogo.log`.
+  `~/Library/Application Support/Provinia/impostazioni.json`.
+- **Registro**: `~/Library/Logs/Provinia.log`.
 - Variabili d'ambiente per sviluppo e test: `FOTOCAT_DATA`, `FOTOCAT_BASE`,
   `FOTOCAT_PORT`, `FOTOCAT_HDIUTIL`, `FOTOCAT_DNG`, `FOTOCAT_IMGHELPER`.
 
@@ -91,6 +95,9 @@ sincronizzazione rapida). Le colonne nuove si aggiungono con `ALTER TABLE` in
 - **Rotazione**: colonna `rotation` (0/90/180/270, in senso orario), applicata
   solo alle copie in cache (`thumb_file(..., rot)`) e alle esportazioni. Il file
   originale non cambia: Photoshop lo apre con l'orientamento di prima.
+- **Rinomina libera di un file** (clic sul nome, F2 con una sola foto): `POST /api/rename/one`
+  usa la stessa `rename` con `opts["name"]` (solo il nome base, l'estensione resta). Il
+  `.xmp` non segue se c'è un altro file con lo stesso nome base (`keep_side`).
 - **Rinomina** (`gestione_file.rename`), in due passaggi:
   1. i file e i `.xmp` vanno su nomi temporanei (`.fctmp-<id>-<nome finale>`,
      `.fctmpx-<base finale>.xmp`), e **anche il catalogo** viene messo su nomi
@@ -134,6 +141,17 @@ sincronizzazione rapida). Le colonne nuove si aggiungono con `ALTER TABLE` in
   cartelle viene annullato.
 - Esc va segnalato con `preventDefault()` quando fa qualcosa, altrimenti macOS
   emette il suono d'errore.
+- **Trascinare fuori dall'app = copia** (`FCWebView` in `mac/Provinia.swift`): il
+  trascinamento è di WebKit; nell'app la pagina aggiunge il testo `provinia-ids:1,2,3`.
+  Swift lo legge nel pasteboard (override di `dragImage(…)`, e di
+  `beginDraggingSession` se WebKit usa l'API nuova), chiede i percorsi a `POST /api/paths`
+  e li aggiunge come `NSFilenamesPboardType` senza toccare i dati della pagina.
+  `draggingSession:sourceOperationMaskForDraggingContext:` (di WebKit, non pubblico) è
+  sostituito al volo: fuori dall'app solo `.copy`, così il Finder non sposta mai gli
+  originali. Il rilascio dentro l'app vede anche `Files`: vale ancora `isInternal`.
+  Non verificato su Mac al momento della scrittura: se non copia, guardare qui.
+- Il trascinamento delle foto contiene del testo: il rilascio su un campo di testo è
+  bloccato (handler `drop` in cattura).
 - `<dialog>` richiede macOS 12.3 o successivo (`LSMinimumSystemVersion`).
 
 ## Strumenti di macOS usati (sul Linux di sviluppo non ci sono)
@@ -181,4 +199,5 @@ Idee discusse ma non fatte:
 - trascinare intere cartelle per spostarle nell'albero;
 - un pulsante «Importa…» con selezione dei file (in WKWebView `<input type=file>`
   richiede `runOpenPanelWith` nel delegate Swift);
-- raccolte smart (quelle di Lightroom non vengono importate).
+- raccolte smart (quelle di Lightroom non vengono importate);
+- trascinamento verso il Finder anche nel browser (solo app per ora).
