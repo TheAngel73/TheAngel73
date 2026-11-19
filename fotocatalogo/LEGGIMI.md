@@ -79,7 +79,7 @@ presenti non vengono duplicate.
 | Zoom nella vista ingrandita | **clic** (o **Z**): adatta ↔ 100% · **doppio clic** o **Esc**: torna alla griglia · **rotellina** o pizzico sul trackpad · **+ −** · trascina per spostarti |
 | Selezionare tutto | **⌘A** |
 | Nuove foto sul NAS | trovate da sole all'apertura del catalogo; in qualsiasi momento: **⟳** o tasto destro › Sincronizza |
-| Vedere i file ancora da convertire | **Catalogo › Da convertire** (tutto ciò che non è DNG, JPEG o PSD) |
+| Vedere i file ancora da convertire | **Catalogo › Da convertire** (tutto ciò che non è DNG, JPEG, HEIC o PSD) |
 | Togliere dal catalogo foto cancellate | **Catalogo › File mancanti › Rimuovi tutte dal catalogo…**, oppure tasto destro › Rimuovi dal catalogo (o ⌫ in quella vista) |
 | Ruotare | **⌘←** / **⌘→** (anche ⌘[ e ⌘]), tasto destro, pannello a destra o ⟲ ⟳ nella vista ingrandita |
 | Esportare in JPEG | **⇧⌘E** sulla selezione, oppure tasto destro su cartella o raccolta › Esporta in JPEG… |
@@ -180,7 +180,7 @@ successive, così scorrendo sono già pronte. Comandi e clic hanno sempre la pre
 
 ## Come leggere le miniature
 
-- **Triangolino in alto a sinistra**: verde = JPEG, giallo = PSD, rosso = RAW proprietario
+- **Triangolino in alto a sinistra**: verde = JPEG o HEIC, giallo = PSD, rosso = RAW proprietario
   (ARW, NEF, CR2…) da convertire. I DNG non hanno il triangolino.
 - **Striscia colorata sotto la foto**: l'etichetta colore.
 - **▶ MOV / MP4…** in alto a sinistra: video. Si riproducono nella vista ingrandita

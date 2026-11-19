@@ -149,6 +149,7 @@ function fileType(x) {
   x = (x || "").toLowerCase();
   if (VIDEO_EXT.has(x)) return ["video", "Video " + x.toUpperCase()];
   if (x === "jpg" || x === "jpeg" || x === "jpe") return ["jpg", "JPEG"];
+  if (x === "heic" || x === "heif") return ["jpg", "HEIC"];          // foto "standard" come i JPEG
   if (x === "psd" || x === "psb") return ["psd", "Photoshop (" + x.toUpperCase() + ")"];
   if (RAW_PROP.has(x)) return ["raw", "RAW proprietario (" + x.toUpperCase() + ") da convertire"];
   return null;
@@ -280,7 +281,7 @@ function setScope(scope) {
 }
 function scopeTitle(scope) {
   const [k, v] = scope.split(":"); const t = S.tree; if (!t) return "";
-  const fixed = {all: "Tutte le foto", nocoll: "Foto senza raccolta", toconvert: "Da convertire (non DNG, JPEG, PSD o video)", video: "Video", torename: "Da rinominare (nomi della fotocamera)", missing: "File mancanti", recent: "Importazione più recente"};
+  const fixed = {all: "Tutte le foto", nocoll: "Foto senza raccolta", toconvert: "Da convertire (non DNG, JPEG, HEIC, PSD o video)", video: "Video", torename: "Da rinominare (nomi della fotocamera)", missing: "File mancanti", recent: "Importazione più recente"};
   if (fixed[k]) return fixed[k];
   if (k === "collection") { const c = t.collections.find(c => c.id == v); return c ? (c.set ? "Set: " : "Raccolta: ") + c.name : "?"; }
   if (k === "keyword") { const c = t.keywords.find(c => c.id == v); return c ? "Parola chiave: " + c.name : "?"; }

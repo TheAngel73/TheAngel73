@@ -41,7 +41,7 @@ switch_lock = threading.Lock()
 STATIC = os.path.join(HERE, "static")
 LABELS = ("red", "yellow", "green", "blue", "purple")
 # formati "definitivi": tutto il resto finisce in "Da convertire"
-FINAL_EXT = ("dng", "jpg", "jpeg", "jpe", "psd", "psb")
+FINAL_EXT = ("dng", "jpg", "jpeg", "jpe", "heic", "heif", "psd", "psb")
 from catalog import VIDEO_EXT  # noqa: E402
 NOT_TO_CONVERT = FINAL_EXT + tuple(sorted(VIDEO_EXT))
 VIDEO_TYPES = {"mp4": "video/mp4", "m4v": "video/x-m4v", "mov": "video/quicktime", "3gp": "video/3gpp",
