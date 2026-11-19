@@ -83,6 +83,9 @@ presenti non vengono duplicate.
 | Togliere dal catalogo foto cancellate | **Catalogo › File mancanti › Rimuovi tutte dal catalogo…**, oppure tasto destro › Rimuovi dal catalogo (o ⌫ in quella vista) |
 | Ruotare | **⌘←** / **⌘→** (anche ⌘[ e ⌘]), tasto destro, pannello a destra o ⟲ ⟳ nella vista ingrandita |
 | Esportare in JPEG | **⇧⌘E** sulla selezione, oppure tasto destro su cartella o raccolta › Esporta in JPEG… |
+| Importare dal desktop | trascina file o cartelle dal Finder su una cartella della barra laterale (o sulla griglia della cartella aperta) |
+| Spostare foto | trascinale su una cartella, oppure tasto destro › Sposta in… |
+| Rinominare | **F2** o tasto destro › Rinomina…; **Catalogo › Da rinominare** per i nomi della fotocamera |
 | Tutte le altre azioni | **tasto destro** su foto, raccolte, cartelle e parole chiave |
 
 ## Conversione (RAW → DNG, PNG → JPEG)
@@ -133,6 +136,30 @@ la foto appare con l'orientamento di prima.
 - orientamento della fotocamera e rotazione del catalogo applicati, profilo colore e dati
   EXIF mantenuti; i video vengono saltati;
 - nomi già presenti nella destinazione: «nome (2).jpg»; le impostazioni vengono ricordate.
+
+## Gestione dei file
+
+**Importare dal desktop**: trascina file o intere cartelle dal Finder su una cartella della
+barra laterale, oppure sulla griglia quando stai guardando una cartella. I file vengono
+**copiati** sul NAS (gli originali restano dove sono) e catalogati subito; una cartella
+trascinata viene ricreata con le sue sottocartelle. I file che non sono foto o video, e
+quelli con un nome già presente nella destinazione, vengono saltati.
+
+**Spostare**: trascina le foto su una cartella della barra laterale, oppure tasto destro ›
+**Sposta in…**. Il file si sposta sul disco con il suo `.xmp`; raccolte, parole chiave e
+stelle restano. Se nella destinazione esiste già un file con lo stesso nome viene saltato.
+
+**Cartelle** (tasto destro): Nuova cartella…, Rinomina cartella…, Elimina cartella vuota….
+
+**Rinominare** (F2 o tasto destro › Rinomina…): prefisso, primo numero, cifre, separatore,
+ordine (data di scatto o nome attuale), estensione minuscola; i file con lo stesso nome
+(RAW + JPEG) ricevono lo stesso numero. Anteprima dal vivo dei nuovi nomi. Se un nome è già
+occupato (sul disco o nel catalogo) la rinomina non parte. I `.xmp` seguono il loro file.
+La rinomina passa da nomi temporanei: anche gli scambi di nome sono sicuri e, se l'app si
+chiudesse a metà, al riavvio la rinomina viene completata.
+
+**Catalogo › Da rinominare** mostra i file che hanno ancora il nome dato dalla fotocamera
+(`_DSC0001`, `DSC_0001`, `IMG_1234`, `DSCF…`, `P1010001`, `DJI_…`, `GOPR…`, `PXL_…`).
 
 ## Sincronizzazione automatica
 

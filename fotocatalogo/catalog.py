@@ -3,6 +3,7 @@
 Il catalogo NON modifica mai i file delle foto: legge soltanto.
 """
 import os
+import re
 import sqlite3
 import threading
 import time
@@ -63,6 +64,18 @@ CREATE TABLE IF NOT EXISTS dir_state(
 """
 
 
+# Nomi assegnati dalle fotocamere/telefoni (da rinominare): _DSC0001, DSC_0001, IMG_1234,
+# _MG_1234, DSCF1234, DSCN1234, P1010001, DJI_0001, GOPR0001, GH010001, PXL_20230101_123456…
+CAMERA_NAME = re.compile(
+    r"^(_DSC|DSC_|_DSCF|DSCF|DSCN|DSC|_MG_|_IMG_|IMG_|IMG|DJI_|GOPR|GH|GX|MVI_|PXL_|CIMG|SAM_|IMAG|VID_|VID|MOV_|C|P)"
+    r"\d+([_-]\d+)*( ?\(?\d+\)?)?$", re.IGNORECASE)
+
+
+def is_camera_name(filename):
+    base = os.path.splitext(filename or "")[0]
+    return 1 if CAMERA_NAME.match(base) else 0
+
+
 def nfc(s):
     return unicodedata.normalize("NFC", s) if s else s
 
@@ -97,6 +110,7 @@ class Catalog:
             c.execute("PRAGMA journal_mode=WAL")
             c.execute("PRAGMA synchronous=NORMAL")
             c.execute("PRAGMA foreign_keys=OFF")
+            c.create_function("fc_camname", 1, is_camera_name, deterministic=True)
             self._local.conn = c
         return c
 
@@ -106,6 +120,8 @@ class Catalog:
             self.closed = True
             for c in self._conns:
                 try:
+                    c.rollback()                          # niente modifiche lasciate a metà
+                    c.execute("PRAGMA busy_timeout=2000")  # la chiusura non aspetta all'infinito
                     c.execute("PRAGMA wal_checkpoint(TRUNCATE)")
                 except Exception:
                     pass
@@ -325,8 +341,28 @@ class Catalog:
                 self.db.commit()
         return len(back)
 
+    def add_file(self, root_id, rel, full):
+        """Aggiunge al catalogo un file appena copiato o creato (es. importazione)."""
+        name = nfc(os.path.basename(full))
+        ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+        st = os.stat(full)
+        ex = read_meta(full, ext)
+        cap = ex.get("capture") or time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(st.st_mtime))
+        with self.write_lock:
+            fid = self.ensure_folder(root_id, rel)
+            cur = self.db.execute(
+                """INSERT OR IGNORE INTO photos(folder_id, filename, ext, size, mtime, capture_time,
+                   width, height, orientation, added_at) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                (fid, name, ext, st.st_size, st.st_mtime, cap, ex.get("width"), ex.get("height"),
+                 ex.get("orientation"), now()))
+            self.db.commit()
+            return cur.lastrowid if cur.rowcount else None
+
     def _sync_dir(self, root_id, rel, dirpath, filenames):
         """Allinea il catalogo con il contenuto di una sola cartella (senza sottocartelle)."""
+        if any(fn.startswith((".fctmp-", ".fctmpx-")) for fn in filenames):
+            from gestione_file import recover_renames
+            filenames = recover_renames(self, root_id, rel, dirpath, filenames)
         db = self.db
         files = {}
         present = set()          # tutti i file della cartella, qualunque estensione

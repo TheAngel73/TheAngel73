@@ -22,7 +22,8 @@ from urllib.parse import parse_qs, urlparse
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-from catalog import nfc, now  # noqa: E402
+from catalog import PHOTO_EXT, nfc, now, resolve_path  # noqa: E402
+CHUNK = 1024 * 1024
 from lightroom import import_lrcat  # noqa: E402
 import catalogs  # noqa: E402
 import conversione  # noqa: E402
@@ -202,9 +203,20 @@ def catalogs_post(action, body):
     raise ValueError("Comando sconosciuto")
 
 
+def rollback(c):
+    """Annulla una modifica al database rimasta a metà per un errore (altrimenti il
+    catalogo resterebbe occupato e le operazioni successive aspetterebbero)."""
+    try:
+        if c is not None and not c.closed:
+            c.db.rollback()
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def start_job(label, fn, quick=False):
     job = Job(label)
     job.quick = quick
+    job_cat = cat
     JOBS[job.id] = job
 
     def run():
@@ -214,6 +226,7 @@ def start_job(label, fn, quick=False):
             job.message = "Completato"
         except Exception as e:  # noqa: BLE001
             traceback.print_exc()
+            rollback(job_cat)
             job.status = "error"
             job.message = str(e)
     job.thread = threading.Thread(target=run, daemon=True)
@@ -245,6 +258,8 @@ def scope_filter(scope, deep=True):
         return f"COALESCE(p.ext,'') NOT IN ({','.join(repr(e) for e in NOT_TO_CONVERT)})", []
     if kind == "video":
         return f"p.ext IN ({','.join(repr(e) for e in sorted(VIDEO_EXT))})", []
+    if kind == "torename":
+        return "fc_camname(p.filename)=1", []
     if kind == "nocoll":
         return "NOT EXISTS (SELECT 1 FROM collection_photos cp WHERE cp.photo_id=p.id)", []
     if kind == "missing":
@@ -395,7 +410,8 @@ def tree():
         (SELECT count(*) FROM photos p WHERE COALESCE(p.ext,'') NOT IN
            ({','.join(repr(e) for e in NOT_TO_CONVERT)})) AS toconvert,
         (SELECT count(*) FROM photos p WHERE p.ext IN
-           ({','.join(repr(e) for e in sorted(VIDEO_EXT))})) AS video
+           ({','.join(repr(e) for e in sorted(VIDEO_EXT))})) AS video,
+        (SELECT count(*) FROM photos p WHERE fc_camname(p.filename)=1) AS torename
         FROM photos""").fetchone()
     return {"roots": roots, "folders": folders, "collections": colls, "keywords": kws,
             "stats": dict(stats)}
@@ -678,6 +694,61 @@ class Handler(BaseHTTPRequestHandler):
             traceback.print_exc()
             self.send_json({"error": str(e)}, 500)
 
+    def do_PUT(self):
+        """Importazione di un file trascinato nella finestra: /api/upload?folder=ID&path=sotto/nome.ext&mtime=ms"""
+        u = urlparse(self.path)
+        q = {k: v[0] for k, v in parse_qs(u.query).items()}
+        left = int(self.headers.get("Content-Length") or 0)
+
+        def drain():
+            nonlocal left
+            while left > 0:
+                left -= len(self.rfile.read(min(left, CHUNK)))
+        try:
+            if u.path != "/api/upload" or cat is None:
+                drain()
+                return self.send_json({"error": "Nessun catalogo aperto"}, 409)
+            parts = gestione_file.safe_subpath(q.get("path"))
+            name = parts[-1]
+            ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+            if ext not in PHOTO_EXT:
+                drain()
+                return self.send_json({"skipped": "non è una foto o un video"})
+            f = cat.db.execute("""SELECT f.root_id, f.rel_path, r.path FROM folders f
+                                  JOIN roots r ON r.id=f.root_id WHERE f.id=?""", (int(q["folder"]),)).fetchone()
+            if not f:
+                drain()
+                return self.send_json({"error": "Cartella sconosciuta"}, 400)
+            rel = "/".join([x for x in [f["rel_path"]] if x] + parts[:-1])
+            folder = os.path.join(f["path"], rel)
+            target = os.path.join(folder, name)
+            if os.path.exists(resolve_path(target)):
+                drain()
+                return self.send_json({"skipped": "nella cartella esiste già un file con questo nome"})
+            os.makedirs(folder, exist_ok=True)
+            tmp = os.path.join(folder, f".{name}.fotocatalogo-upload")
+            with open(tmp, "wb") as out:
+                while left > 0:
+                    chunk = self.rfile.read(min(left, CHUNK))
+                    if not chunk:
+                        break
+                    out.write(chunk)
+                    left -= len(chunk)
+            if left > 0:
+                os.remove(tmp)
+                return self.send_json({"error": "trasferimento interrotto"}, 400)
+            if q.get("mtime"):
+                t = int(q["mtime"]) / 1000
+                os.utime(tmp, (t, t))
+            os.replace(tmp, target)
+            return self.send_json({"id": cat.add_file(f["root_id"], rel, target)})
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        except Exception as e:  # noqa: BLE001
+            traceback.print_exc()
+            drain()
+            self.send_json({"error": str(e)}, 400)
+
     def do_POST(self):
         u = urlparse(self.path)
         ln = int(self.headers.get("Content-Length") or 0)
@@ -695,6 +766,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(res if res is not None else {"ok": True})
         except Exception as e:  # noqa: BLE001
             traceback.print_exc()
+            rollback(cat)
             self.send_json({"error": str(e)}, 400)
 
     def post(self, parts, body):
@@ -772,6 +844,25 @@ class Handler(BaseHTTPRequestHandler):
             if dest and os.path.isdir(dest) and sys.platform == "darwin":
                 subprocess.Popen(["open", dest])
             return None
+        if route == "move":
+            ids, fid = ids_of(body), int(body["folder"])
+            job = start_job("Spostamento", lambda job: gestione_file.move(cat, ids, fid, job))
+            job.cancellable = True
+            return job.as_dict()
+        if route == "rename/preview":
+            plan, skipped, conflicts = gestione_file.rename_plan(cat, ids_of(body), body.get("options", {}))
+            return {"total": len(plan), "rows": [[p["old"], p["new"]] for p in plan[:12]],
+                    "skipped": skipped[:50], "conflicts": conflicts[:50], "nconflicts": len(conflicts)}
+        if route == "rename":
+            ids, opts = ids_of(body), body.get("options", {})
+            return start_job("Rinomina", lambda job: gestione_file.rename(cat, ids, opts, job)).as_dict()
+        if parts[1] == "folders" and len(parts) == 4 and parts[3] in ("create", "rename", "delete"):
+            fid = int(parts[2])
+            if parts[3] == "create":
+                return gestione_file.folder_create(cat, fid, body.get("name"))
+            if parts[3] == "rename":
+                return gestione_file.folder_rename(cat, fid, body.get("name"))
+            return gestione_file.folder_delete(cat, fid)
         if route == "meta":
             return set_meta(body)
         if route == "keywords":

@@ -219,7 +219,7 @@ space.addEventListener("dragstart", e => {
   if (!it) return e.preventDefault();
   if (!S.sel.has(it.id)) { S.sel.clear(); S.sel.add(it.id); S.anchor = S.cursor = +c.dataset.i; selChanged(); }
   e.dataTransfer.setData("application/x-fc-photos", JSON.stringify([...S.sel]));
-  e.dataTransfer.effectAllowed = "copy";
+  e.dataTransfer.effectAllowed = "copyMove";   // copia in una raccolta, spostamento su una cartella
   const n = S.sel.size;
   if (n > 1) {
     const g = Object.assign(document.createElement("div"), {textContent: `${n} foto`});
@@ -274,11 +274,12 @@ function setScope(scope) {
   $("#view-title").textContent = scopeTitle(scope);
   $("#btn-convert-all").hidden = scope !== "toconvert";
   $("#btn-remove-missing").hidden = scope !== "missing";
+  $("#btn-rename-all").hidden = scope !== "torename";
   renderSidebar(); reload();
 }
 function scopeTitle(scope) {
   const [k, v] = scope.split(":"); const t = S.tree; if (!t) return "";
-  const fixed = {all: "Tutte le foto", nocoll: "Foto senza raccolta", toconvert: "Da convertire (non DNG, JPEG, PSD o video)", video: "Video", missing: "File mancanti", recent: "Importazione più recente"};
+  const fixed = {all: "Tutte le foto", nocoll: "Foto senza raccolta", toconvert: "Da convertire (non DNG, JPEG, PSD o video)", video: "Video", torename: "Da rinominare (nomi della fotocamera)", missing: "File mancanti", recent: "Importazione più recente"};
   if (fixed[k]) return fixed[k];
   if (k === "collection") { const c = t.collections.find(c => c.id == v); return c ? (c.set ? "Set: " : "Raccolta: ") + c.name : "?"; }
   if (k === "keyword") { const c = t.keywords.find(c => c.id == v); return c ? "Parola chiave: " + c.name : "?"; }
@@ -299,6 +300,7 @@ function renderSidebar() {
     ["nocoll", "◌", "Senza raccolta", t.stats.nocoll],
     ["toconvert", "◭", "Da convertire", t.stats.toconvert]];
   if (t.stats.video) cat.push(["video", "▶", "Video", t.stats.video]);
+  cat.push(["torename", "✎", "Da rinominare", t.stats.torename]);
   if (t.stats.missing) cat.push(["missing", "⚠", "File mancanti", t.stats.missing]);
   $("#catalog-list").innerHTML = cat.map(([s, icon, name, count]) =>
     `<li data-scope="${s}">${nodeHTML({icon, name, count, active: S.scope === s})}</li>`).join("");
@@ -831,6 +833,7 @@ document.addEventListener("keydown", async e => {
   if (k === "x") return setMeta({flag: -1});
   if (k === "u") return setMeta({flag: 0});
   if (k === "c" || k === "b") { e.preventDefault(); return pickCollection([...S.sel]); }
+  if (e.key === "F2" && !NATIVE) { e.preventDefault(); return COMMANDS.renameSel(); }   // nell'app: menu Foto
   if (e.key === "Enter" || e.key === " ") { if (S.cursor >= 0) { e.preventDefault(); loupe ? closeLoupe() : openLoupe(S.cursor); } return; }
   if (e.key === "Backspace" || e.key === "Delete") {
     e.preventDefault();
@@ -963,6 +966,8 @@ const COMMANDS = {
   switchCatalog: () => showCatalogScreen(null, false),
   convertDng: needSel(() => convertDng(selIds())),
   deleteFiles: needSel(() => deleteFiles(selIds())),
+  renameSel: needSel(() => renameDialog(selIds())),
+  moveSel: needSel(() => moveDialog(selIds())),
   rotateLeft: needSel(() => rotate(-90)), rotateRight: needSel(() => rotate(90)),
   exportSel: needSel(() => exportDialog(selIds(), S.sel.size === 1 ? "la foto selezionata" : `${S.sel.size.toLocaleString("it-IT")} foto selezionate`)),
   findDups: () => openDuplicates(),
@@ -1091,6 +1096,7 @@ async function menuFor(t) {
     {label: "Genera anteprime di questa vista", run: COMMANDS.pregen},
     S.scope === "toconvert" && S.total && {label: "Converti tutti (RAW e PNG)…", run: convertAll},
     S.scope === "missing" && S.total && {label: "Rimuovi tutte dal catalogo…", danger: true, run: () => removeMissing(null)},
+    S.scope === "torename" && S.total && {label: "Rinomina tutte…", run: renameAll},
     {label: "Miniature", sub: [{label: "Più grandi", key: "⌘+", run: COMMANDS.zoomIn}, {label: "Più piccole", key: "⌘−", run: COMMANDS.zoomOut}]},
   ];
   return null;
@@ -1124,6 +1130,8 @@ async function photoMenu() {
       {label: "Nessuna", key: "U", checked: d && !d.flag, run: () => setMeta({flag: 0})}]},
     {label: "Aggiungi parole chiave…", key: "⌘K", run: COMMANDS.keywords},
     "-",
+    {label: one ? "Rinomina…" : `Rinomina ${n.toLocaleString("it-IT")} file…`, key: "F2", run: COMMANDS.renameSel},
+    {label: "Sposta in…", run: COMMANDS.moveSel},
     {label: "Ruota a sinistra", key: "⌘←", run: COMMANDS.rotateLeft},
     {label: "Ruota a destra", key: "⌘→", run: COMMANDS.rotateRight},
     {label: `Esporta ${one ? "la foto" : "le foto"} in JPEG…`, key: "⇧⌘E", run: COMMANDS.exportSel},
@@ -1164,6 +1172,10 @@ function folderMenu(fid) {
     {label: "Mostra le foto", run: () => setScope("folder:" + fid)},
     {label: "Apri nel Finder", run: () => safe(() => api("/api/open", {folder: fid}))},
     {label: "Copia percorso", run: () => copyText(folderFullPath(fid))},
+    "-",
+    {label: "Nuova cartella…", run: () => folderCreate(fid)},
+    !isRoot && {label: "Rinomina cartella…", run: () => folderRename(fid)},
+    !isRoot && {label: "Elimina cartella vuota…", danger: true, run: () => folderDelete(fid)},
     "-",
     {label: `Sincronizza «${isRoot ? root.name : f.name}»`, run: () => safe(async () => { await api(`/api/folders/${fid}/rescan`, {}); pollJobs(); })},
     {label: "Esporta la cartella in JPEG…", run: () => exportScope("folder:" + fid, `la cartella «${isRoot ? root.name : f.name}» (con le sottocartelle)`)},
@@ -1614,6 +1626,209 @@ async function exportSummary(r) {
   if (f && (NATIVE || navigator.platform.startsWith("Mac"))) safe(() => api("/api/export/reveal", {}));
 }
 
+// ================================================================ rinomina
+async function renameAll() {
+  const r = await safe(() => api(`/api/photos?${params({offset: 0, limit: 1000000, ids_only: 1})}`));
+  if (r) renameDialog(r.ids);
+}
+$("#btn-rename-all").onclick = renameAll;
+function suggestedPrefix() {
+  const [k, v] = S.scope.split(":");
+  if (k === "collection") { const c = S.tree.collections.find(c => c.id == v); if (c) return c.name; }
+  if (k === "folder") { const f = S.tree.folders.find(f => f.id == v); if (f && f.name) return f.name; }
+  return store.get("rename", {}).prefix || "";
+}
+async function renameDialog(ids) {
+  if (!ids.length) return;
+  const o = {start: 1, digits: 4, sep: " ", order: "date", lower_ext: true, keep_pairs: true, ...store.get("rename", {}), prefix: suggestedPrefix()};
+  let ok = false;
+  const opts = form => ({prefix: form.prefix.value, start: +form.start.value || 0, digits: +form.digits.value,
+    sep: form.sep.value === "none" ? "" : form.sep.value, order: form.order.value,
+    lower_ext: form.lower_ext.checked, keep_pairs: form.keep_pairs.checked});
+  const f = await dialog(ids.length === 1 ? "Rinomina" : `Rinomina ${ids.length.toLocaleString("it-IT")} file`, `
+    <div class="pickrow"><div style="flex:1"><label>Nome (prefisso)</label><input type="text" name="prefix" value="${esc(o.prefix)}" autofocus></div>
+      <div><label>Primo numero</label><input type="number" name="start" min="0" value="${o.start}" style="width:100px"></div>
+      <div><label>Cifre</label><select name="digits">${[2, 3, 4, 5, 6].map(d => `<option ${d === o.digits ? "selected" : ""}>${d}</option>`).join("")}</select></div></div>
+    <div class="pickrow"><div style="flex:1"><label>Separatore</label><select name="sep">
+      <option value=" ">spazio — «Saggio 0001»</option><option value="_">trattino basso — «Saggio_0001»</option>
+      <option value="-">trattino — «Saggio-0001»</option><option value="none">nessuno — «Saggio0001»</option></select></div>
+      <div style="flex:1"><label>Ordine dei numeri</label><select name="order">
+      <option value="date">per data di scatto</option><option value="name">per nome attuale</option></select></div></div>
+    <label class="check"><input type="checkbox" name="lower_ext" ${o.lower_ext ? "checked" : ""}> Estensione in minuscolo (.ARW → .arw)</label>
+    <label class="check"><input type="checkbox" name="keep_pairs" ${o.keep_pairs ? "checked" : ""}> File con lo stesso nome (es. RAW + JPEG) ricevono lo stesso numero</label>
+    <h4>Anteprima</h4><div class="list" id="ren-prev"><div class="small">…</div></div>
+    <p class="small">Anche gli eventuali file .xmp vengono rinominati. Raccolte, parole chiave e stelle restano.</p>`,
+    "Rinomina", form => {
+      form.sep.value = o.sep === "" ? "none" : o.sep; form.order.value = o.order;
+      const ok_btn = form.querySelector("button.primary");
+      let t;
+      const preview = () => { clearTimeout(t); t = setTimeout(async () => {
+        try {
+          const r = await api("/api/rename/preview", {ids, options: opts(form)});
+          ok = !r.nconflicts && r.total > 0;
+          ok_btn.disabled = !ok;
+          $("#ren-prev").innerHTML = r.rows.map(([a, b]) => `<div>${esc(a)} <span class="setname">→</span> <b>${esc(b)}</b></div>`).join("") +
+            (r.total > r.rows.length ? `<div class="small">… e altri ${(r.total - r.rows.length).toLocaleString("it-IT")}</div>` : "") +
+            (r.nconflicts ? `<div class="cs-err">Impossibile: ${r.nconflicts} nomi già occupati, es. «${esc(r.conflicts[0][0])}» (${esc(r.conflicts[0][1])}). Cambia nome o primo numero.</div>` : "") +
+            (r.skipped.length ? `<div class="small">Saltati ${r.skipped.length} file mancanti.</div>` : "");
+        } catch (e) { ok = false; ok_btn.disabled = true; $("#ren-prev").innerHTML = `<div class="cs-err">${esc(e.message)}</div>`; }
+      }, 200); };
+      form.addEventListener("input", preview); form.addEventListener("change", preview); preview();
+    });
+  if (!f || !ok) return;
+  const op = opts(f);
+  store.set("rename", op);
+  await safe(async () => { await api("/api/rename", {ids, options: op}); toast("Rinomina avviata"); pollJobs(); });
+}
+
+// ================================================================ sposta
+async function moveDialog(ids) {
+  const folders = S.tree.folders.map(f => ({id: f.id, path: folderLabel(f)})).sort((a, b) => a.path.localeCompare(b.path));
+  let chosen = null;
+  const f = await dialog(`Sposta ${ids.length === 1 ? "la foto" : ids.length.toLocaleString("it-IT") + " foto"}`, `
+    <input type="text" name="q" placeholder="Cerca cartella…" autocomplete="off" autofocus>
+    <div class="list" id="mv-list"></div>
+    <p class="small">I file vengono spostati sul disco (con i loro .xmp); raccolte, parole chiave e stelle restano.
+    Puoi anche trascinare le foto su una cartella nella barra a sinistra.</p>`, "Sposta", form => {
+      const draw = () => {
+        const q = form.q.value.trim().toLowerCase();
+        const list = folders.filter(x => x.path.toLowerCase().includes(q)).slice(0, 300);
+        if (!list.find(x => x.id === chosen)) chosen = list[0]?.id ?? null;
+        $("#mv-list").innerHTML = list.map(x => `<div data-id="${x.id}" class="${x.id === chosen ? "on" : ""}">${esc(x.path)}</div>`).join("");
+      };
+      form.q.addEventListener("input", draw);
+      $("#mv-list").addEventListener("click", e => { const d = e.target.closest("[data-id]"); if (d) { chosen = +d.dataset.id; draw(); } });
+      $("#mv-list").addEventListener("dblclick", e => { if (e.target.closest("[data-id]")) form.requestSubmit(); });
+      draw();
+    });
+  if (!f || chosen == null) return;
+  startMove(ids, chosen);
+}
+function folderLabel(f) {
+  const r = S.tree.roots.find(r => r.id === f.root);
+  return [r ? r.name : "", f.rel].filter(Boolean).join("/");
+}
+function startMove(ids, fid) {
+  return safe(async () => { await api("/api/move", {ids, folder: fid}); toast("Spostamento avviato"); pollJobs(); });
+}
+function fileOpSummary(r) {
+  const msg = r.moved ? `Spostate ${r.spostate.toLocaleString("it-IT")} foto in «${r.dest}»` : `Rinominati ${r.rinominate.toLocaleString("it-IT")} file`;
+  const rows = [...(r.saltate || []), ...(r.errori || [])];
+  if (!rows.length && !r.interrotta) return toast(msg);
+  dialog(r.interrotta ? "Operazione interrotta" : "Operazione completata", `<p>${msg}.</p>
+    <h4>Non ${r.moved ? "spostate" : "rinominati"} (${rows.length})</h4><div class="list">${rows.slice(0, 200).map(([n, why]) =>
+      `<div><b>${esc(n)}</b> <span class="setname">${esc(why)}</span></div>`).join("")}</div>`, "OK");
+}
+
+// ================================================================ cartelle
+async function folderCreate(fid) {
+  const f = await dialog("Nuova cartella", `<p>Dentro «${esc(folderLabel(S.tree.folders.find(x => x.id === fid)))}»</p>
+    <label>Nome</label><input type="text" name="name" required autofocus>`, "Crea");
+  if (!f) return;
+  await safe(async () => { await api(`/api/folders/${fid}/create`, {name: f.name.value}); S.expanded.add("f" + fid); store.set("expanded", [...S.expanded]); await loadTree(); });
+}
+async function folderRename(fid) {
+  const fo = S.tree.folders.find(x => x.id === fid);
+  const f = await dialog("Rinomina cartella", `<label>Nome</label><input type="text" name="name" required value="${esc(fo.name)}" autofocus>
+    <p class="small">La cartella viene rinominata anche sul disco.</p>`, "Rinomina");
+  if (!f) return;
+  await safe(async () => { await api(`/api/folders/${fid}/rename`, {name: f.name.value}); await loadTree(); $("#view-title").textContent = scopeTitle(S.scope); });
+}
+async function folderDelete(fid) {
+  const fo = S.tree.folders.find(x => x.id === fid);
+  const f = await dialog("Elimina cartella", `<p>Eliminare la cartella vuota «${esc(fo.name)}» dal disco e dal catalogo?</p>
+    <p class="small">Si può eliminare solo una cartella senza foto né sottocartelle.</p>`, "Elimina");
+  if (!f) return;
+  await safe(async () => { await api(`/api/folders/${fid}/delete`, {}); if (S.scope === "folder:" + fid) setScope("all"); await loadTree(); });
+}
+
+// ================================================================ trascinamento: foto -> cartella (sposta), file dal Finder -> cartella (importa)
+const folderTree = $("#folder-tree");
+const hasFiles = dt => [...dt.types].includes("Files");
+function folderDropTarget(e) {
+  const li = e.target.closest("li[data-folder]"); if (!li) return null;
+  const t = e.dataTransfer.types;
+  return (t.includes("application/x-fc-photos") || t.includes("Files")) ? li : null;
+}
+folderTree.addEventListener("dragover", e => {
+  folderTree.querySelectorAll(".drop").forEach(n => n.classList.remove("drop"));
+  const li = folderDropTarget(e); if (!li) return;
+  e.preventDefault(); e.dataTransfer.dropEffect = hasFiles(e.dataTransfer) ? "copy" : "move";
+  li.querySelector(".node").classList.add("drop");
+});
+folderTree.addEventListener("dragleave", () => folderTree.querySelectorAll(".drop").forEach(n => n.classList.remove("drop")));
+folderTree.addEventListener("drop", async e => {
+  folderTree.querySelectorAll(".drop").forEach(n => n.classList.remove("drop"));
+  const li = folderDropTarget(e); if (!li) return;
+  e.preventDefault();
+  const fid = +li.dataset.folder;
+  if (hasFiles(e.dataTransfer)) return importDrop(e.dataTransfer, fid);
+  const ids = JSON.parse(e.dataTransfer.getData("application/x-fc-photos") || "[]");
+  if (!ids.length) return;
+  const fo = S.tree.folders.find(x => x.id === fid);
+  const d = await dialog("Sposta", `<p>Spostare ${ids.length === 1 ? "la foto" : ids.length.toLocaleString("it-IT") + " foto"}
+    in «${esc(folderLabel(fo))}»?</p><p class="small">I file vengono spostati sul disco; raccolte, parole chiave e stelle restano.</p>`, "Sposta");
+  if (d) startMove(ids, fid);
+});
+// file dal Finder sulla griglia: si importano nella cartella che stai guardando
+scroller.addEventListener("dragover", e => { if (hasFiles(e.dataTransfer) && S.scope.startsWith("folder:")) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; scroller.classList.add("dropping"); } });
+scroller.addEventListener("dragleave", () => scroller.classList.remove("dropping"));
+scroller.addEventListener("drop", e => {
+  scroller.classList.remove("dropping");
+  if (!hasFiles(e.dataTransfer)) return;
+  e.preventDefault();
+  if (!S.scope.startsWith("folder:")) return toast("Trascina i file su una cartella nella barra a sinistra", true);
+  importDrop(e.dataTransfer, +S.scope.split(":")[1]);
+});
+
+// legge file e cartelle trascinati (con le sottocartelle) mantenendo la struttura
+async function collectDropped(dt) {
+  const entries = [...dt.items].map(i => i.webkitGetAsEntry && i.webkitGetAsEntry()).filter(Boolean);
+  const out = [];
+  const fileOf = entry => new Promise((res, rej) => entry.file(res, rej));
+  const readAll = reader => new Promise((res, rej) => {
+    const all = []; const next = () => reader.readEntries(b => { if (!b.length) return res(all); all.push(...b); next(); }, rej); next();
+  });
+  async function walk(entry, prefix) {
+    if (entry.name.startsWith(".")) return;
+    if (entry.isFile) out.push({file: await fileOf(entry), path: prefix + entry.name});
+    else if (entry.isDirectory) for (const c of await readAll(entry.createReader())) await walk(c, prefix + entry.name + "/");
+  }
+  if (entries.length) { for (const en of entries) await walk(en, ""); }
+  else for (const file of dt.files) out.push({file, path: file.name});
+  return out;
+}
+async function importDrop(dt, fid) {
+  const items = await collectDropped(dt);
+  if (!items.length) return;
+  const fo = S.tree.folders.find(x => x.id === fid);
+  const total = items.length;
+  let done = 0, ok = 0;
+  const skipped = [];
+  const show = () => { const t = $("#toast"); t.textContent = `Importazione in «${fo.name || folderLabel(fo)}»: ${done} / ${total}`; t.className = ""; t.hidden = false; clearTimeout(toast._t); };
+  show();
+  const queue = [...items];
+  async function worker() {
+    while (queue.length) {
+      const it = queue.shift();
+      try {
+        const q = new URLSearchParams({folder: fid, path: it.path, mtime: it.file.lastModified || ""});
+        const r = await fetch(`/api/upload?${q}`, {method: "PUT", body: it.file});
+        const d = await r.json().catch(() => ({}));
+        if (d.error) skipped.push([it.path, d.error]); else if (d.skipped) skipped.push([it.path, d.skipped]); else ok++;
+      } catch (e) { skipped.push([it.path, e.message]); }
+      done++; show();
+    }
+  }
+  await Promise.all([worker(), worker()]);
+  $("#toast").hidden = true;
+  await loadTree(); reload(true);
+  const msg = `Importati ${ok.toLocaleString("it-IT")} file in «${folderLabel(fo)}». I file originali non sono stati toccati.`;
+  if (!skipped.length) return toast(msg);
+  dialog("Importazione completata", `<p>${esc(msg)}</p><h4>Non importati (${skipped.length})</h4><div class="list">${skipped.slice(0, 300).map(([n, why]) =>
+    `<div><b>${esc(n)}</b> <span class="setname">${esc(why)}</span></div>`).join("")}</div>`, "OK");
+}
+
 // ================================================================ filtri
 let searchT;
 // filtri attivi evidenziati in colore, con ✕ per toglierli tutti
@@ -1658,6 +1873,7 @@ async function onJobDone(j) {
   const r = j.result;
   if (r.dng) { await loadTree(); reload(true); return dngSummary(r); }
   if (r.export) return exportSummary(r);
+  if (r.moved || r.renamed) { await loadTree(); reload(true); showInfo(true); return fileOpSummary(r); }
   if (r.duplicates) {
     if (r.interrotta) return;
     if (!r.gruppi && !r.vuoti && !r.orfani) return toast("Nessun duplicato trovato 🎉");
@@ -1700,6 +1916,7 @@ async function onJobDone(j) {
   $("#view-title").textContent = scopeTitle(S.scope);
   $("#btn-convert-all").hidden = S.scope !== "toconvert";
   $("#btn-remove-missing").hidden = S.scope !== "missing";
+  $("#btn-rename-all").hidden = S.scope !== "torename";
   renderSidebar();
   await reload();
   pollJobs();

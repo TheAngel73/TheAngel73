@@ -326,6 +326,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         cmd(photo, "Ruota a destra", "rotateRight", right)
         cmd(photo, "Esporta in JPEG…", "exportSel", "e", [.command, .shift])
         photo.addItem(.separator())
+        cmd(photo, "Rinomina…", "renameSel", String(utf16CodeUnits: [unichar(NSF2FunctionKey)], count: 1), [])
+        cmd(photo, "Sposta in…", "moveSel")
+        photo.addItem(.separator())
         cmd(photo, "Converti (RAW → DNG, PNG → JPEG)…", "convertDng")
         cmd(photo, "Elimina dal disco…", "deleteFiles", "\u{8}")
 
