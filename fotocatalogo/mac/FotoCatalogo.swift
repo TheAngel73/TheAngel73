@@ -319,6 +319,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         cmd(photo, "Togli dalla raccolta corrente", "removeFromColl")
         cmd(photo, "Aggiungi parole chiave…", "keywords", "k")
         photo.addItem(.separator())
+        photo.addItem(.separator())
+        let left = String(utf16CodeUnits: [unichar(NSLeftArrowFunctionKey)], count: 1)
+        let right = String(utf16CodeUnits: [unichar(NSRightArrowFunctionKey)], count: 1)
+        cmd(photo, "Ruota a sinistra", "rotateLeft", left)
+        cmd(photo, "Ruota a destra", "rotateRight", right)
+        cmd(photo, "Esporta in JPEG…", "exportSel", "e", [.command, .shift])
+        photo.addItem(.separator())
         cmd(photo, "Converti (RAW → DNG, PNG → JPEG)…", "convertDng")
         cmd(photo, "Elimina dal disco…", "deleteFiles", "\u{8}")
 

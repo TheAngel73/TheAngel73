@@ -167,11 +167,7 @@ def forget(cat, thumb_dir, ids):
         db.execute(f"DELETE FROM photo_keywords WHERE photo_id IN ({chunk})")
         db.execute(f"DELETE FROM photos WHERE id IN ({chunk})")
     for pid in ids:
-        for size in ("m", "l"):
-            try:
-                os.remove(thumbs.thumb_file(thumb_dir, pid, size))
-            except OSError:
-                pass
+        thumbs.drop_cached(thumb_dir, pid)
 
 
 def _delete_file(path):

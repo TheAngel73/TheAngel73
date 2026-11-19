@@ -80,6 +80,10 @@ class Catalog:
         self.write_lock = threading.RLock()
         with self.write_lock:
             self.db.executescript(SCHEMA)
+            cols = {r[1] for r in self.db.execute("PRAGMA table_info(photos)")}
+            if "rotation" not in cols:      # cataloghi creati con versioni precedenti
+                self.db.execute("ALTER TABLE photos ADD COLUMN rotation INTEGER DEFAULT 0")
+                self.db.commit()
 
     @property
     def db(self):
@@ -115,6 +119,10 @@ class Catalog:
     def root_path(self, root_id):
         r = self.db.execute("SELECT path FROM roots WHERE id=?", (root_id,)).fetchone()
         return r["path"] if r else None
+
+    def rotation(self, photo_id):
+        r = self.db.execute("SELECT rotation FROM photos WHERE id=?", (photo_id,)).fetchone()
+        return (r[0] or 0) if r else 0
 
     def photo_path(self, photo_id):
         r = self.db.execute(

@@ -34,12 +34,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 IS_MAC = sys.platform == "darwin"
 
 
-def find_imghelper():
-    """Il convertitore 'fcimg' incluso nell'app per Mac (Contents/Resources/bin)."""
-    for p in (os.environ.get("FOTOCAT_IMGHELPER"), os.path.join(HERE, "..", "bin", "fcimg")):
-        if p and os.path.isfile(p) and os.access(p, os.X_OK):
-            return os.path.abspath(p)
-    return None
+find_imghelper = thumbs.find_imghelper
 
 
 def find_converter():
@@ -60,15 +55,7 @@ def _is_dng(path):
 
 
 def _drop_cached(thumb_dir, pid):
-    for size in ("m", "l"):
-        try:
-            os.remove(thumbs.thumb_file(thumb_dir, pid, size))
-        except OSError:
-            pass
-    try:
-        os.remove(os.path.join(thumb_dir, "_piena_risoluzione", f"{pid}.jpg"))
-    except OSError:
-        pass
+    thumbs.drop_cached(thumb_dir, pid)
 
 
 def _is_jpeg(path):

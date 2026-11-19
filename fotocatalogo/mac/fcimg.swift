@@ -1,10 +1,16 @@
 // fcimg — piccolo convertitore di immagini per FotoCatalogo (usa ImageIO di macOS).
 //
 //   fcimg tojpeg <sorgente> <destinazione> [qualità 0-1]
+//       Converte in JPEG alle dimensioni originali (usato per PNG -> JPEG).
 //
-// Converte in JPEG appoggiando le parti trasparenti su fondo bianco (un JPEG non
-// può avere trasparenza: senza questo passaggio diventerebbero nere).
-// Mantiene profilo colore, orientamento e dati EXIF/GPS/IPTC della sorgente.
+//   fcimg export <sorgente> <destinazione> [--quality 0-1] [--rotate 0|90|180|270]
+//                [--max N | --width N | --height N] [--nogps]
+//       Legge qualsiasi formato supportato da macOS (anche RAW, DNG, PSD, HEIC),
+//       applica l'orientamento della fotocamera e la rotazione (in senso orario),
+//       ridimensiona senza mai ingrandire (--max = bordo lungo) e scrive un JPEG.
+//
+// In entrambi i casi le parti trasparenti vanno su fondo bianco (un JPEG non può
+// essere trasparente) e si mantengono profilo colore e dati EXIF/GPS/IPTC.
 // Si compila con mac/crea_app.sh.
 
 import Foundation
@@ -17,41 +23,118 @@ func fail(_ message: String) -> Never {
 }
 
 let args = CommandLine.arguments
-guard args.count >= 4, args[1] == "tojpeg" else {
-    fail("uso: fcimg tojpeg <sorgente> <destinazione> [qualità 0-1]")
+guard args.count >= 4, args[1] == "tojpeg" || args[1] == "export" else {
+    fail("uso: fcimg tojpeg <sorgente> <destinazione> [qualità] | fcimg export <sorgente> <destinazione> [opzioni]")
 }
+let mode = args[1]
 let srcURL = URL(fileURLWithPath: args[2])
 let dstURL = URL(fileURLWithPath: args[3])
-let quality = args.count > 4 ? (Double(args[4]) ?? 0.92) : 0.92
 
-guard let source = CGImageSourceCreateWithURL(srcURL as CFURL, nil),
-      let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
-    fail("immagine non leggibile")
+var quality = 0.92
+var rotation = 0
+var maxEdge: Double? = nil
+var fixedWidth: Double? = nil
+var fixedHeight: Double? = nil
+var noGPS = false
+if mode == "tojpeg" {
+    if args.count > 4 { quality = Double(args[4]) ?? 0.92 }
+} else {
+    var i = 4
+    func value() -> String {
+        i += 1
+        guard i < args.count else { fail("valore mancante per \(args[i - 1])") }
+        return args[i]
+    }
+    while i < args.count {
+        switch args[i] {
+        case "--quality": quality = Double(value()) ?? 0.92
+        case "--rotate": rotation = ((Int(value()) ?? 0) % 360 + 360) % 360
+        case "--max": maxEdge = Double(value())
+        case "--width": fixedWidth = Double(value())
+        case "--height": fixedHeight = Double(value())
+        case "--nogps": noGPS = true
+        default: fail("opzione sconosciuta: \(args[i])")
+        }
+        i += 1
+    }
 }
+
+guard let source = CGImageSourceCreateWithURL(srcURL as CFURL, nil) else { fail("immagine non leggibile") }
 let props = (CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]) ?? [:]
 
-let width = image.width, height = image.height
-var space = CGColorSpace(name: CGColorSpace.sRGB)!
-if let own = image.colorSpace, own.model == .rgb { space = own }   // es. Display P3 dei telefoni
+var image: CGImage
+if mode == "tojpeg" {
+    guard let img = CGImageSourceCreateImageAtIndex(source, 0, nil) else { fail("immagine non leggibile") }
+    image = img
+} else {
+    // dimensioni già orientate e poi ruotate: servono per calcolare la scala
+    let pw = (props[kCGImagePropertyPixelWidth] as? NSNumber)?.doubleValue ?? 0
+    let ph = (props[kCGImagePropertyPixelHeight] as? NSNumber)?.doubleValue ?? 0
+    let orientation = (props[kCGImagePropertyOrientation] as? NSNumber)?.intValue ?? 1
+    let swapped = [5, 6, 7, 8].contains(orientation)
+    let ow = swapped ? ph : pw, oh = swapped ? pw : ph
+    let fw = (rotation == 90 || rotation == 270) ? oh : ow
+    let fh = (rotation == 90 || rotation == 270) ? ow : oh
+    var scale = 1.0
+    if fw > 0 && fh > 0 {
+        if let m = maxEdge { scale = min(scale, m / max(fw, fh)) }
+        if let w = fixedWidth { scale = min(scale, w / fw) }
+        if let h = fixedHeight { scale = min(scale, h / fh) }
+    }
+    let longest = max(ow, oh)
+    let maxPixels = longest > 0 ? max(1, Int((longest * scale).rounded())) : 100_000
+    let options: [CFString: Any] = [
+        kCGImageSourceCreateThumbnailFromImageAlways: true,   // dall'immagine vera, non dall'anteprima
+        kCGImageSourceCreateThumbnailWithTransform: true,     // applica l'orientamento della fotocamera
+        kCGImageSourceThumbnailMaxPixelSize: maxPixels,
+        kCGImageSourceShouldCacheImmediately: true,
+    ]
+    guard let img = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+        fail("immagine non leggibile")
+    }
+    image = img
+}
 
-guard let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+// disegno su fondo bianco, con la rotazione richiesta
+let iw = image.width, ih = image.height
+let turned = rotation == 90 || rotation == 270
+let cw = turned ? ih : iw, ch = turned ? iw : ih
+var space = CGColorSpace(name: CGColorSpace.sRGB)!
+if let own = image.colorSpace, own.model == .rgb { space = own }   // es. Display P3, Adobe RGB
+guard let ctx = CGContext(data: nil, width: cw, height: ch, bitsPerComponent: 8, bytesPerRow: 0,
                           space: space, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else {
     fail("memoria insufficiente")
 }
-let rect = CGRect(x: 0, y: 0, width: width, height: height)
 ctx.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
-ctx.fill(rect)
+ctx.fill(CGRect(x: 0, y: 0, width: cw, height: ch))
 ctx.interpolationQuality = .high
-ctx.draw(image, in: rect)
+switch rotation {
+case 90:  ctx.translateBy(x: 0, y: CGFloat(ch)); ctx.rotate(by: -.pi / 2)
+case 180: ctx.translateBy(x: CGFloat(cw), y: CGFloat(ch)); ctx.rotate(by: .pi)
+case 270: ctx.translateBy(x: CGFloat(cw), y: 0); ctx.rotate(by: .pi / 2)
+default: break
+}
+ctx.draw(image, in: CGRect(x: 0, y: 0, width: iw, height: ih))
 guard let flat = ctx.makeImage() else { fail("conversione non riuscita") }
 
 guard let dest = CGImageDestinationCreateWithURL(dstURL as CFURL, "public.jpeg" as CFString, 1, nil) else {
     fail("impossibile scrivere il file")
 }
-var options: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: quality]
-for key in [kCGImagePropertyExifDictionary, kCGImagePropertyGPSDictionary, kCGImagePropertyTIFFDictionary,
-            kCGImagePropertyIPTCDictionary, kCGImagePropertyOrientation] {
-    if let value = props[key] { options[key] = value }
+var out: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: quality]
+var keys = [kCGImagePropertyExifDictionary, kCGImagePropertyIPTCDictionary, kCGImagePropertyTIFFDictionary]
+if !noGPS { keys.append(kCGImagePropertyGPSDictionary) }
+for key in keys {
+    if let value = props[key] { out[key] = value }
 }
-CGImageDestinationAddImage(dest, flat, options as CFDictionary)
+if mode == "tojpeg" {
+    if let o = props[kCGImagePropertyOrientation] { out[kCGImagePropertyOrientation] = o }
+} else {
+    // i pixel sono già orientati: l'orientamento nel file deve essere "normale"
+    out[kCGImagePropertyOrientation] = 1
+    if var tiff = out[kCGImagePropertyTIFFDictionary] as? [CFString: Any] {
+        tiff[kCGImagePropertyTIFFOrientation] = 1
+        out[kCGImagePropertyTIFFDictionary] = tiff
+    }
+}
+CGImageDestinationAddImage(dest, flat, out as CFDictionary)
 guard CGImageDestinationFinalize(dest) else { fail("scrittura non riuscita") }

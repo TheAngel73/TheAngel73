@@ -26,8 +26,13 @@ const skey = k => "fc:" + (GLOBAL_KEYS.has(k) || !CAT ? "" : CAT.uid + ":") + k;
 // "v" cambia quando cambia il file: così il browser non mostra miniature vecchie
 const VERS = new Map();
 const qv = id => `?c=${CAT ? CAT.uid : ""}&v=${VERS.get(id) || ""}`;
-const thumbURL = id => `/thumb/${id}${qv(id)}`;
-const previewURL = id => `/preview/${id}${qv(id)}`;
+// Le immagini arrivano da un indirizzo diverso da quello dei comandi (127.0.0.1 invece di
+// localhost): il browser apre al massimo 6 collegamenti per indirizzo, e così i comandi
+// (clic, stelle, informazioni) non restano in coda dietro alle miniature in preparazione.
+const IMG_BASE = location.hostname === "localhost" ? `${location.protocol}//127.0.0.1:${location.port}`
+  : location.hostname === "127.0.0.1" ? `${location.protocol}//localhost:${location.port}` : "";
+const thumbURL = id => `${IMG_BASE}/thumb/${id}${qv(id)}`;
+const previewURL = id => `${IMG_BASE}/preview/${id}${qv(id)}`;
 const store = {
   get(k, d) { try { const v = localStorage.getItem(skey(k)); return v == null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem(skey(k), JSON.stringify(v)); } catch {} },
@@ -120,7 +125,7 @@ function render() {
     const it = itemAt(i);
     if (!it) loadPage(Math.floor(i / PAGE));
     let el = cells.get(i);
-    const key = it ? `${it.id}|${it.r}|${it.l}|${it.f}|${it.m}` : "?";
+    const key = it ? `${it.id}|${it.r}|${it.l}|${it.f}|${it.m}|${it.v}` : "?";
     if (!el || el._key !== key) {
       if (el) el.remove();
       el = makeCell(it, i); el._key = key;
@@ -130,6 +135,8 @@ function render() {
     el.classList.toggle("sel", !!it && S.sel.has(it.id));
     el.classList.toggle("cursor", i === S.cursor);
   }
+  const ahead = Math.floor(Math.min(S.total - 1, i1 + S.cols * 12) / PAGE);
+  if (S.total && !S.pages.has(ahead)) loadPage(ahead);
 }
 
 // tipo di file -> triangolino nell'angolo
@@ -558,6 +565,8 @@ async function showInfo(refresh = false) {
       <button data-open="photoshop" title="⌘E">Apri in Photoshop</button>
       <button data-open="finder" title="⌘R">Mostra nel Finder</button>
     </div>
+    <div class="row"><button data-rot="-90" title="⌘← oppure ⌘[">⟲ Ruota a sinistra</button><button data-rot="90" title="⌘→ oppure ⌘]">⟳ Ruota a destra</button>
+      <button data-act="export" title="⇧⌘E">Esporta JPEG…</button></div>
     <h4>Raccolte (${d.collections.length})</h4>
     <div class="chips">${d.collections.map(c => `<span class="chip" data-goto="collection:${c.id}" title="${esc(collPath(S.tree.collections.find(x => x.id === c.id) || c))}">${esc(c.name)}<button class="x" data-uncoll="${c.id}" title="Togli da questa raccolta">×</button></span>`).join("") || '<span class="small">In nessuna raccolta</span>'}</div>
     <div class="row"><button data-act="add-coll">＋ Aggiungi a raccolta…</button></div>
@@ -596,11 +605,13 @@ function showMulti(box) {
     <h4>Parole chiave</h4>
     <div class="row"><input id="kw-add" list="kw-list" placeholder="Aggiungi a tutte…"><button data-act="kw-add">＋</button></div>
     <h4>Apri</h4>
-    <div class="row"><button data-open="photoshop">Apri in Photoshop${S.sel.size > 50 ? " (prime 50)" : ""}</button></div>`;
+    <div class="row"><button data-open="photoshop">Apri in Photoshop${S.sel.size > 50 ? " (prime 50)" : ""}</button></div>
+    <div class="row"><button data-rot="-90">⟲ Ruota a sinistra</button><button data-rot="90">⟳ Ruota a destra</button></div>
+    <div class="row"><button data-act="export">Esporta in JPEG…</button></div>`;
 }
 
 $("#info").addEventListener("click", async e => {
-  const t = e.target.closest("[data-rate],[data-flag],[data-label],[data-open],[data-act],[data-uncoll],[data-unkw],[data-goto]");
+  const t = e.target.closest("[data-rate],[data-flag],[data-label],[data-open],[data-act],[data-uncoll],[data-unkw],[data-goto],[data-rot]");
   if (!t) return;
   e.preventDefault();
   const ids = [...S.sel];
@@ -611,6 +622,8 @@ $("#info").addEventListener("click", async e => {
   if (t.dataset.flag) { const cur = S.detail && S.sel.size === 1 ? S.detail.flag : null; return setMeta({flag: cur === +t.dataset.flag ? 0 : +t.dataset.flag}); }
   if (t.dataset.label !== undefined) return setMeta({label: t.dataset.label || null});
   if (t.dataset.open) return safe(() => api("/api/open", {ids, how: t.dataset.open}));
+  if (t.dataset.rot) return rotate(+t.dataset.rot);
+  if (t.dataset.act === "export") return exportDialog(ids, ids.length === 1 ? "la foto selezionata" : `${ids.length.toLocaleString("it-IT")} foto selezionate`);
   const act = t.dataset.act;
   if (act === "add-coll") return pickCollection(ids);
   if (act === "new-coll-sel") return newCollection(false, ids);
@@ -627,7 +640,7 @@ async function addKeywords() {
 // ================================================================ vista ingrandita (con zoom)
 // Clic: alterna "adatta allo schermo" / 100%. Rotellina (o pizzico sul trackpad): zoom.
 // Trascinando ci si sposta nell'immagine ingrandita.
-const fullURL = id => `/full/${id}${qv(id)}`;
+const fullURL = id => `${IMG_BASE}/full/${id}${qv(id)}`;
 const L = {i: -1, id: null, fitW: 0, fitH: 0, bx: 0, by: 0, z: 1, tx: 0, ty: 0, natW: 0, full: "no"};
 const stage = $("#loupe-stage"), limg = $("#loupe-img");
 let loupeIdx = -1;
@@ -803,8 +816,10 @@ document.addEventListener("keydown", async e => {
     if (e.key === "+" || e.key === "=") { e.preventDefault(); return loupeKeyZoom(1.5); }
     if (e.key === "-") { e.preventDefault(); return loupeKeyZoom(1 / 1.5); }
   }
-  if (loupe && (e.key === "ArrowRight" || e.key === "ArrowLeft")) { e.preventDefault(); return loupeStep(e.key === "ArrowRight" ? 1 : -1); }
-  const shortcut = mod && {a: "selectAll", e: "photoshop", r: "finder", k: "keywords", d: "selectNone", backspace: "deleteFiles"}[e.key.toLowerCase()];
+  if (loupe && !mod && (e.key === "ArrowRight" || e.key === "ArrowLeft")) { e.preventDefault(); return loupeStep(e.key === "ArrowRight" ? 1 : -1); }
+  const shortcut = mod && (e.shiftKey && e.key.toLowerCase() === "e" ? "exportSel" :
+    {a: "selectAll", e: "photoshop", r: "finder", k: "keywords", d: "selectNone", backspace: "deleteFiles",
+     "[": "rotateLeft", "]": "rotateRight", arrowleft: "rotateLeft", arrowright: "rotateRight"}[e.key.toLowerCase()]);
   // nell'app per Mac queste scorciatoie arrivano dalla barra dei menu
   if (shortcut && !NATIVE) { e.preventDefault(); return COMMANDS[shortcut](); }
   if (mod) return;
@@ -948,6 +963,8 @@ const COMMANDS = {
   switchCatalog: () => showCatalogScreen(null, false),
   convertDng: needSel(() => convertDng(selIds())),
   deleteFiles: needSel(() => deleteFiles(selIds())),
+  rotateLeft: needSel(() => rotate(-90)), rotateRight: needSel(() => rotate(90)),
+  exportSel: needSel(() => exportDialog(selIds(), S.sel.size === 1 ? "la foto selezionata" : `${S.sel.size.toLocaleString("it-IT")} foto selezionate`)),
   findDups: () => openDuplicates(),
   lockCatalog: () => lockCatalog(),
   zoomIn: () => { $("#zoom").value = +$("#zoom").value + 40; $("#zoom").dispatchEvent(new Event("input")); },
@@ -967,6 +984,8 @@ window.fc = {
   cmd(name) {
     if ($("#dlg").open && !["selectAll"].includes(name)) return;
     if (!CAT && !["selectAll", "help"].includes(name)) return;   // c'è già la schermata dei cataloghi
+    // mentre si scrive, ⌘← ⌘→ ⌘⌫ agiscono sul testo, non sulle foto
+    if (document.activeElement?.matches("input, textarea") && ["rotateLeft", "rotateRight", "deleteFiles"].includes(name)) return;
     COMMANDS[name]?.();
   },
   pickResult(id, path) { pickWaiters.get(id)?.(path); pickWaiters.delete(id); },
@@ -1068,7 +1087,8 @@ async function menuFor(t) {
   if (t.closest("#grid-scroll")) return [
     {label: "Seleziona tutte", key: "⌘A", run: COMMANDS.selectAll},
     {label: "Deseleziona", key: "⌘D", run: COMMANDS.selectNone, disabled: !S.sel.size},
-    "-", {label: "Genera anteprime di questa vista", run: COMMANDS.pregen},
+    "-", {label: "Esporta tutte le foto della vista in JPEG…", run: () => exportScope(null, "tutte le foto della vista")},
+    {label: "Genera anteprime di questa vista", run: COMMANDS.pregen},
     S.scope === "toconvert" && S.total && {label: "Converti tutti (RAW e PNG)…", run: convertAll},
     S.scope === "missing" && S.total && {label: "Rimuovi tutte dal catalogo…", danger: true, run: () => removeMissing(null)},
     {label: "Miniature", sub: [{label: "Più grandi", key: "⌘+", run: COMMANDS.zoomIn}, {label: "Più piccole", key: "⌘−", run: COMMANDS.zoomOut}]},
@@ -1103,6 +1123,10 @@ async function photoMenu() {
       {label: "Scartata", key: "X", checked: d && d.flag === -1, run: () => setMeta({flag: -1})},
       {label: "Nessuna", key: "U", checked: d && !d.flag, run: () => setMeta({flag: 0})}]},
     {label: "Aggiungi parole chiave…", key: "⌘K", run: COMMANDS.keywords},
+    "-",
+    {label: "Ruota a sinistra", key: "⌘←", run: COMMANDS.rotateLeft},
+    {label: "Ruota a destra", key: "⌘→", run: COMMANDS.rotateRight},
+    {label: `Esporta ${one ? "la foto" : "le foto"} in JPEG…`, key: "⇧⌘E", run: COMMANDS.exportSel},
     rawInSelection() && {label: "Converti (RAW → DNG, PNG → JPEG)…", run: COMMANDS.convertDng},
     "-",
     {label: `Elimina ${one ? "il file" : n.toLocaleString("it-IT") + " file"} dal disco…`, key: "⌘⌫", danger: true, run: COMMANDS.deleteFiles},
@@ -1126,6 +1150,7 @@ function collMenu(cid, fromChip = false) {
     c.set && {label: "Nuova raccolta in questo set…", run: () => newCollection(false, [], cid)},
     c.set && {label: "Nuovo set in questo set…", run: () => newCollection(true, [], cid)},
     {label: "Rinomina o sposta…", run: () => editCollection(cid)},
+    {label: c.set ? "Esporta il set in JPEG…" : "Esporta la raccolta in JPEG…", run: () => exportScope("collection:" + cid, `«${c.name}»`)},
     "-",
     {label: c.set ? "Elimina set…" : "Elimina raccolta…", danger: true, run: () => deleteCollection(cid)},
   ];
@@ -1141,6 +1166,7 @@ function folderMenu(fid) {
     {label: "Copia percorso", run: () => copyText(folderFullPath(fid))},
     "-",
     {label: `Sincronizza «${isRoot ? root.name : f.name}»`, run: () => safe(async () => { await api(`/api/folders/${fid}/rescan`, {}); pollJobs(); })},
+    {label: "Esporta la cartella in JPEG…", run: () => exportScope("folder:" + fid, `la cartella «${isRoot ? root.name : f.name}» (con le sottocartelle)`)},
     {label: "Genera anteprime di questa cartella", run: () => safe(async () => { await api("/api/thumbs/pregenerate", {scope: "folder:" + fid, deep: "1"}); toast("Generazione anteprime avviata"); pollJobs(); })},
     isRoot && "-",
     isRoot && {label: "Cambia percorso del NAS…", run: COMMANDS.relocate},
@@ -1523,6 +1549,71 @@ $("#dupscreen").addEventListener("change", e => {
   if (e.target.id === "dup-pref") { DUP.pref = e.target.value.trim(); store.set("dupPref", DUP.pref); DUP.choice.clear(); renderDup(); }
 });
 
+// ================================================================ rotazione (solo nel catalogo, i file non cambiano)
+async function rotate(dir) {
+  const ids = selIds(); if (!ids.length) return;
+  await safe(async () => {
+    const r = await api("/api/rotate", {ids, dir});
+    for (const [id, [v, o]] of Object.entries(r.versions)) VERS.set(+id, v);
+    for (const pg of S.pages.values()) for (const it of pg) { const x = r.versions[it.id]; if (x) { it.v = x[0]; it.o = x[1]; } }
+    render(); showInfo(true);
+    if (!$("#loupe").hidden && ids.includes(L.id)) openLoupe(loupeIdx);
+  });
+}
+$("#loupe-rotl").onclick = e => { e.stopPropagation(); rotate(-90); };
+$("#loupe-rotr").onclick = e => { e.stopPropagation(); rotate(90); };
+
+// ================================================================ esportazione in JPEG
+async function exportScope(scope, what) {
+  // cartella o raccolta: tutto il contenuto, senza i filtri in alto; altrimenti la vista con i filtri
+  const q = scope ? new URLSearchParams({scope, deep: "1", sort: "name", offset: 0, limit: 1000000, ids_only: 1}).toString()
+    : params({offset: 0, limit: 1000000, ids_only: 1});
+  const r = await safe(() => api(`/api/photos?${q}`));
+  if (r) exportDialog(r.ids, what);
+}
+async function exportDialog(ids, what) {
+  if (!ids.length) return toast("Non ci sono foto da esportare");
+  const o = {dest: "", mode: "long", size: 2048, quality: 90, nogps: false, ...store.get("export", {})};
+  const f = await dialog("Esporta in JPEG", `
+    <p>Esporta ${esc(what)}${ids.length > 1 ? ` (${ids.length.toLocaleString("it-IT")} file; i video vengono saltati)` : ""}.
+    Gli originali non vengono toccati; la rotazione del catalogo viene applicata.</p>
+    <label>Cartella di destinazione</label>
+    <div class="pickrow"><input type="text" name="dest" required value="${esc(o.dest)}" placeholder="/Users/…/Desktop/Esportate"><button type="button" data-pick>Scegli…</button></div>
+    <label>Dimensioni</label>
+    <div class="pickrow"><select name="mode">
+      <option value="long">Bordo lungo</option><option value="width">Larghezza</option>
+      <option value="height">Altezza</option><option value="original">Dimensioni originali</option></select>
+      <input type="number" name="size" min="16" max="20000" step="1" value="${o.size}" style="width:110px"> <span class="small" style="margin:0">pixel</span></div>
+    <p class="small" id="exp-hint"></p>
+    <label>Qualità JPEG: <b id="exp-q">${o.quality}</b></label>
+    <input type="range" name="quality" min="40" max="100" value="${o.quality}" style="width:100%">
+    <label class="check"><input type="checkbox" name="nogps" ${o.nogps ? "checked" : ""}> Togli la posizione GPS dai file esportati</label>`,
+    `Esporta ${ids.length.toLocaleString("it-IT")} file`, form => {
+      form.mode.value = o.mode;
+      const hint = () => {
+        const m = form.mode.value; form.size.disabled = m === "original";
+        $("#exp-hint").textContent = {long: "Il lato più lungo avrà al massimo questa misura, sia per le foto orizzontali sia per le verticali.",
+          width: "Tutte le foto avranno al massimo questa larghezza.", height: "Tutte le foto avranno al massimo questa altezza.",
+          original: "Le foto mantengono le loro dimensioni."}[m] + (m === "original" ? "" : " Le foto più piccole non vengono ingrandite.");
+      };
+      form.mode.onchange = hint; hint();
+      form.quality.oninput = () => $("#exp-q").textContent = form.quality.value;
+      form.querySelector("[data-pick]").onclick = () => pickInto(form.dest, "folder");
+    });
+  if (!f) return;
+  const opts = {dest: f.dest.value.trim(), mode: f.mode.value, size: +f.size.value || 2048, quality: +f.quality.value, nogps: f.nogps.checked};
+  store.set("export", opts);
+  await safe(async () => { await api("/api/export", {ids, options: opts}); toast("Esportazione avviata"); pollJobs(); });
+}
+async function exportSummary(r) {
+  const msg = `Esportati ${r.esportate.toLocaleString("it-IT")} file (${fmtBytes(r.byte)})`;
+  const rows = [...r.saltate, ...r.errori];
+  const f = await dialog(r.interrotta ? "Esportazione interrotta" : "Esportazione completata", `<p>${msg} in <code>${esc(r.dest)}</code>.</p>
+    ${rows.length ? `<h4>Non esportati (${rows.length})</h4><div class="list">${rows.slice(0, 200).map(([n, why]) =>
+      `<div><b>${esc(n)}</b> <span class="setname">${esc(why)}</span></div>`).join("")}</div>` : ""}`, NATIVE || navigator.platform.startsWith("Mac") ? "Mostra nel Finder" : "OK");
+  if (f && (NATIVE || navigator.platform.startsWith("Mac"))) safe(() => api("/api/export/reveal", {}));
+}
+
 // ================================================================ filtri
 let searchT;
 // filtri attivi evidenziati in colore, con ✕ per toglierli tutti
@@ -1566,6 +1657,7 @@ async function onJobDone(j) {
   if (j.status !== "done" || !j.result) return;
   const r = j.result;
   if (r.dng) { await loadTree(); reload(true); return dngSummary(r); }
+  if (r.export) return exportSummary(r);
   if (r.duplicates) {
     if (r.interrotta) return;
     if (!r.gruppi && !r.vuoti && !r.orfani) return toast("Nessun duplicato trovato 🎉");

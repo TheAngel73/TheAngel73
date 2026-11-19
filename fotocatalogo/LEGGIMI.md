@@ -81,6 +81,8 @@ presenti non vengono duplicate.
 | Nuove foto sul NAS | trovate da sole all'apertura del catalogo; in qualsiasi momento: **⟳** o tasto destro › Sincronizza |
 | Vedere i file ancora da convertire | **Catalogo › Da convertire** (tutto ciò che non è DNG, JPEG o PSD) |
 | Togliere dal catalogo foto cancellate | **Catalogo › File mancanti › Rimuovi tutte dal catalogo…**, oppure tasto destro › Rimuovi dal catalogo (o ⌫ in quella vista) |
+| Ruotare | **⌘←** / **⌘→** (anche ⌘[ e ⌘]), tasto destro, pannello a destra o ⟲ ⟳ nella vista ingrandita |
+| Esportare in JPEG | **⇧⌘E** sulla selezione, oppure tasto destro su cartella o raccolta › Esporta in JPEG… |
 | Tutte le altre azioni | **tasto destro** su foto, raccolte, cartelle e parole chiave |
 
 ## Conversione (RAW → DNG, PNG → JPEG)
@@ -118,6 +120,20 @@ Converti tutti (RAW e PNG)…**, oppure menu **Foto** dell'app.
 `.xmp`) e li toglie dal catalogo, con conferma esplicita. Sul NAS finiscono nel cestino di
 rete, se attivo; non passano dal Cestino del Mac.
 
+## Rotazione ed esportazione
+
+**Rotazione**: viene salvata nel catalogo, **senza modificare il file** (come in Lightroom).
+Vale per griglia, vista ingrandita ed esportazioni. Aprendo il file originale in Photoshop
+la foto appare con l'orientamento di prima.
+
+**Esporta in JPEG** (selezione, cartella con le sottocartelle, raccolta o tutta la vista):
+- **bordo lungo** (stessa misura massima per foto orizzontali e verticali), **larghezza**,
+  **altezza** oppure **dimensioni originali**; le foto più piccole non vengono ingrandite;
+- qualità regolabile; opzione per **togliere la posizione GPS**;
+- orientamento della fotocamera e rotazione del catalogo applicati, profilo colore e dati
+  EXIF mantenuti; i video vengono saltati;
+- nomi già presenti nella destinazione: «nome (2).jpg»; le impostazioni vengono ricordate.
+
 ## Sincronizzazione automatica
 
 All'apertura di un catalogo parte una **sincronizzazione rapida**, in background: controlla
@@ -128,6 +144,12 @@ le foto aggiunte (anche in cartelle nuove), quelle cancellate o spostate (segnat
 La prima volta non ha date di riferimento, quindi controlla tutte le cartelle e può
 richiedere qualche minuto. Le volte successive bastano pochi secondi. Se il NAS non è
 collegato, non tocca nulla.
+
+## Miniature
+
+Le miniature vengono create la prima volta che una foto compare e poi restano in cache.
+Mentre guardi una pagina, il motore prepara **in background** anche quelle delle foto
+successive, così scorrendo sono già pronte. Comandi e clic hanno sempre la precedenza.
 
 ## Come leggere le miniature
 
@@ -190,5 +212,6 @@ che se ne occupi Time Machine. Un catalogo protetto resta cifrato anche nel back
 | `exif.py` | lettura della data di scatto da JPEG e RAW |
 | `conversione.py` | conversione RAW → DNG e PNG → JPEG |
 | `gestione_file.py` | ricerca duplicati ed eliminazione dal disco |
+| `esporta.py` | esportazione in JPEG |
 | `static/` | interfaccia (HTML, CSS, JavaScript) |
-| `mac/` | app nativa per macOS (Swift), convertitore `fcimg` e script `crea_app.sh` |
+| `mac/` | app nativa per macOS (Swift), convertitore/esportatore `fcimg` e script `crea_app.sh` |

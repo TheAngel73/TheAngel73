@@ -27,6 +27,7 @@ from lightroom import import_lrcat  # noqa: E402
 import catalogs  # noqa: E402
 import conversione  # noqa: E402
 import gestione_file  # noqa: E402
+import esporta  # noqa: E402
 import thumbs  # noqa: E402
 
 PORT = int(os.environ.get("FOTOCAT_PORT", "8765"))
@@ -314,17 +315,20 @@ def list_photos(q):
     total = db.execute(f"SELECT count(*) FROM photos p WHERE {where}", args).fetchone()[0]
     rows = db.execute(
         f"""SELECT p.id, p.filename, p.ext, p.capture_time, p.rating, p.label, p.flag, p.missing,
-                   p.added_at, p.mtime
+                   p.added_at, p.mtime, p.rotation
             FROM photos p WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?""",
         args + [limit, offset]).fetchall()
+    # prepara in background le miniature di questa pagina (quelle visibili arrivano comunque prima)
+    thumbs.PREFETCH.add(cat, THUMB_DIR, [r["id"] for r in rows if not r["missing"]])
     return {"total": total, "offset": offset, "items": [
         {"id": r["id"], "n": r["filename"], "x": r["ext"], "t": r["capture_time"],
-         "r": r["rating"], "l": r["label"], "f": r["flag"], "m": r["missing"], "v": version(r)} for r in rows]}
+         "r": r["rating"], "l": r["label"], "f": r["flag"], "m": r["missing"], "v": version(r),
+         "o": r["rotation"] or 0} for r in rows]}
 
 
 def version(r):
     """Cambia quando cambia il file (es. dopo una conversione): evita miniature vecchie in cache."""
-    return format(zlib.crc32(f"{r['added_at']}|{r['mtime']}".encode()), "x")
+    return format(zlib.crc32(f"{r['added_at']}|{r['mtime']}|{r['rotation']}".encode()), "x")
 
 
 def remove_missing(ids):
@@ -344,11 +348,7 @@ def remove_missing(ids):
             db.execute(f"DELETE FROM photos WHERE id IN ({chunk})")
         db.commit()
     for pid in ids:
-        for size in ("m", "l"):
-            try:
-                os.remove(thumbs.thumb_file(THUMB_DIR, pid, size))
-            except OSError:
-                pass
+        thumbs.drop_cached(THUMB_DIR, pid)
     return {"removed": len(ids)}
 
 
@@ -747,6 +747,31 @@ class Handler(BaseHTTPRequestHandler):
             return job.as_dict()
         if route == "photos/remove-missing":
             return remove_missing(ids_of(body) if "ids" in body else None)
+        if route == "rotate":
+            ids, step = ids_of(body), 90 if int(body.get("dir", 90)) > 0 else 270
+            with cat.write_lock:
+                db.executemany("""UPDATE photos SET rotation=(COALESCE(rotation,0)+?)%360
+                                  WHERE id=? AND COALESCE(ext,'') NOT IN ({})""".format(
+                                      ",".join(repr(e) for e in sorted(VIDEO_EXT))),
+                               [(step, i) for i in ids])
+                db.commit()
+            vers = {}
+            for i in range(0, len(ids), 900):
+                chunk = ids[i:i + 900]
+                for r in db.execute(f"""SELECT id, added_at, mtime, rotation FROM photos
+                                        WHERE id IN ({','.join('?' * len(chunk))})""", chunk):
+                    vers[r["id"]] = [version(r), r["rotation"] or 0]
+            return {"versions": vers}
+        if route == "export":
+            ids, opts = ids_of(body), body.get("options", {})
+            job = start_job("Esportazione JPEG", lambda job: esporta.export(cat, ids, opts, job))
+            job.cancellable = True
+            return job.as_dict()
+        if route == "export/reveal":
+            dest = esporta.LAST.get("dest")
+            if dest and os.path.isdir(dest) and sys.platform == "darwin":
+                subprocess.Popen(["open", dest])
+            return None
         if route == "meta":
             return set_meta(body)
         if route == "keywords":
