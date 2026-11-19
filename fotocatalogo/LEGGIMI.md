@@ -242,3 +242,5 @@ che se ne occupi Time Machine. Un catalogo protetto resta cifrato anche nel back
 | `esporta.py` | esportazione in JPEG |
 | `static/` | interfaccia (HTML, CSS, JavaScript) |
 | `mac/` | app nativa per macOS (Swift), convertitore/esportatore `fcimg` e script `crea_app.sh` |
+
+Per chi sviluppa: architettura, decisioni e prove sono descritte in `SVILUPPO.md`.
