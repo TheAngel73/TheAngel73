@@ -463,7 +463,7 @@ $("#sidebar").addEventListener("click", async e => {
     return;
   }
   const li = e.target.closest("li[data-scope]"); if (!li) return;
-  if (e.target.classList.contains("tw") && e.target.textContent) {
+  if (e.target.closest(".tw")?.querySelector("svg")) {      // clic sulla freccia: apri/chiudi
     const key = li.dataset.coll ? "c" + li.dataset.coll : li.dataset.folder ? "f" + li.dataset.folder : "k" + li.dataset.scope.split(":")[1];
     return toggleExpand(key);
   }
