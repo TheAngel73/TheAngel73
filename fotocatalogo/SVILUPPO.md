@@ -55,7 +55,7 @@ messaggi, commenti e commit sono **in italiano**.
 | `exif.py` | lettore EXIF minimale (JPEG/TIFF/RAW) e data di ripresa dei video MP4/MOV |
 | `static/app.js` | tutta l'interfaccia (circa 1900 righe, divise in sezioni `// ====`) |
 | `mac/Provinia.swift` | finestra, menu di macOS, avvio e arresto del motore, finestre di scelta native, titolo con il nome del catalogo |
-| `mac/fcimg.swift` | `fcimg tojpeg …` e `fcimg export …` (ImageIO: orientamento, rotazione, ridimensionamento, EXIF) |
+| `mac/fcimg.swift` | `fcimg info …` (dati di scatto in JSON, solo metadati), `fcimg tojpeg …` e `fcimg export …` (ImageIO: orientamento, rotazione, ridimensionamento, EXIF) |
 
 ## Dati
 
@@ -147,6 +147,10 @@ sincronizzazione rapida). Le colonne nuove si aggiungono con `ALTER TABLE` in
   testo con `copy:`). Negli appunti vanno file URL; con una foto sola anche TIFF/JPEG a
   piena risoluzione tramite `ClipboardImageProvider`, preparato solo quando un'app incolla
   (`/full/ID`).
+- **Dati di scatto** nel pannello (fotocamera, obiettivo, focale, tempo, apertura, ISO):
+  letti alla selezione da `shooting_info` in `server.py` (`fcimg info` sul Mac, tutti i
+  formati; altrimenti `exif.read_exif(shooting=True)`, solo JPEG e RAW TIFF), tenuti in
+  memoria per (percorso, mtime). Non sono nel database. «Ultima modifica» è l'mtime del file.
 - **Lavori in background**: `start_job`, con avanzamento in `/api/jobs`.
   `job.cancellable` mostra «Interrompi»; `job.quick` (sincronizzazione rapida) si
   ferma da solo al cambio di catalogo. L'interfaccia reagisce ai risultati in

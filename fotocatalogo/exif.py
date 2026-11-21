@@ -9,7 +9,7 @@ import struct
 HEAD_BYTES = 256 * 1024
 
 
-def _parse_tiff(buf):
+def _parse_tiff(buf, shooting=False):
     out = {}
     if len(buf) < 8:
         return out
@@ -42,7 +42,16 @@ def _parse_tiff(buf):
                 val = u32(p + 8)
             elif typ == 2:
                 vo = p + 8 if cnt <= 4 else u32(p + 8)
-                val = buf[vo:vo + cnt].split(b"\0")[0].decode("ascii", "ignore")
+                val = buf[vo:vo + cnt].split(b"\0")[0].decode("utf-8", "ignore").strip()
+            elif typ in (5, 10) and cnt >= 1:          # frazione (tempo, apertura, focale)
+                vo = u32(p + 8)
+                if vo + 8 <= len(buf):
+                    num, den = struct.unpack_from(e + ("II" if typ == 5 else "ii"), buf, vo)
+                    val = num / den if den else None
+                else:
+                    val = None
+            elif typ == 3 and cnt > 1:
+                val = u16(p + 8)
             else:
                 val = None
             tags[tag] = val
@@ -53,12 +62,19 @@ def _parse_tiff(buf):
         if ifd0.get(0x0112):
             out["orientation"] = ifd0[0x0112]
         date = None
+        ex = {}
         if ifd0.get(0x8769):
             ex = read_ifd(ifd0[0x8769])
             date = ex.get(0x9003) or ex.get(0x9004)
             if ex.get(0xA002) and ex.get(0xA003):
                 out["width"], out["height"] = ex[0xA002], ex[0xA003]
         date = date or ifd0.get(0x0132)
+        if shooting:
+            for key, tag, d in (("make", 0x010F, ifd0), ("model", 0x0110, ifd0), ("exposure", 0x829A, ex),
+                                ("fnumber", 0x829D, ex), ("iso", 0x8827, ex), ("focal", 0x920A, ex),
+                                ("focal35", 0xA405, ex), ("lens", 0xA434, ex), ("lens_make", 0xA433, ex)):
+                if d.get(tag) not in (None, "", 0):
+                    out[key] = d[tag]
         if date and len(date) >= 19 and date[:4].isdigit() and date[:4] != "0000":
             out["capture"] = date[:10].replace(":", "-") + "T" + date[11:19]
     except (struct.error, IndexError):
@@ -66,7 +82,9 @@ def _parse_tiff(buf):
     return out
 
 
-def read_exif(path):
+def read_exif(path, shooting=False):
+    """Data, orientamento, dimensioni; con shooting=True anche fotocamera, obiettivo,
+    focale, tempo, apertura e ISO."""
     try:
         with open(path, "rb") as f:
             buf = f.read(HEAD_BYTES)
@@ -78,13 +96,13 @@ def read_exif(path):
             marker = buf[i + 1]
             ln = struct.unpack_from(">H", buf, i + 2)[0]
             if marker == 0xE1 and buf[i + 4:i + 10] == b"Exif\0\0":
-                return _parse_tiff(buf[i + 10:i + 2 + ln])
+                return _parse_tiff(buf[i + 10:i + 2 + ln], shooting)
             if marker == 0xDA:
                 break
             i += 2 + ln
         return {}
     if buf[:2] in (b"II", b"MM"):
-        return _parse_tiff(buf)
+        return _parse_tiff(buf, shooting)
     return {}
 
 

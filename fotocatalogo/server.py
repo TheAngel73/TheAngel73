@@ -4,6 +4,7 @@
 Avvio:  python3 server.py   (poi apri http://localhost:8765)
 Solo libreria standard di Python: non serve installare nulla.
 """
+import collections
 import json
 import os
 import zlib
@@ -31,6 +32,7 @@ import catalogs  # noqa: E402
 import conversione  # noqa: E402
 import gestione_file  # noqa: E402
 import esporta  # noqa: E402
+import exif  # noqa: E402
 import salva  # noqa: E402
 import thumbs  # noqa: E402
 
@@ -385,6 +387,96 @@ def remove_missing(ids):
     return {"removed": len(ids)}
 
 
+# ---------------------------------------------------------------- dati di scatto
+SHOT_CACHE = collections.OrderedDict()      # (percorso, mtime) -> dati, gli ultimi 3000
+MAKES = {"nikon corporation": "Nikon", "nikon": "Nikon", "canon": "Canon", "sony": "Sony",
+         "fujifilm": "Fujifilm", "olympus imaging corp.": "Olympus", "olympus corporation": "Olympus",
+         "om digital solutions": "OM System", "panasonic": "Panasonic", "pentax": "Pentax",
+         "ricoh imaging company, ltd.": "Ricoh", "leica camera ag": "Leica", "apple": "Apple",
+         "samsung": "Samsung", "dji": "DJI", "gopro": "GoPro", "hasselblad": "Hasselblad",
+         "sigma": "Sigma", "google": "Google", "xiaomi": "Xiaomi", "huawei": "Huawei"}
+
+
+def _camera_name(make, model):
+    make = (make or "").strip()
+    model = (model or "").strip()
+    nice = MAKES.get(make.lower(), make.title() if make.isupper() else make)
+    if not model:
+        return nice or None
+    first = nice.split()[0] if nice else ""
+    if first and model.lower().startswith(first.lower()):
+        return first + model[len(first):]          # «NIKON Z 6_2» -> «Nikon Z 6_2»
+    if nice:
+        return f"{nice} {model}"
+    return model
+
+
+def _shot_format(raw):
+    out = {}
+    cam = _camera_name(raw.get("make"), raw.get("model"))
+    if cam:
+        out["camera"] = cam
+    lens = (raw.get("lens") or "").strip()
+    if lens and lens not in ("----", "0.0 mm f/0.0"):
+        out["lens"] = lens
+    try:
+        f = float(raw.get("focal") or 0)
+        if f > 0:
+            txt = f"{round(f, 1):g} mm".replace(".", ",")
+            f35 = float(raw.get("focal35") or 0)
+            if f35 and abs(f35 - f) >= 1:
+                txt += f" (equivalente {f35:g} mm)"
+            out["focal"] = txt
+    except (TypeError, ValueError):
+        pass
+    try:
+        t = float(raw.get("exposure") or 0)
+        if t > 0:
+            out["exposure"] = (f"{t:g} s".replace(".", ",") if t >= 0.4
+                               else f"1/{round(1 / t)} s")
+    except (TypeError, ValueError, ZeroDivisionError):
+        pass
+    try:
+        fn = float(raw.get("fnumber") or 0)
+        if fn > 0:
+            out["fnumber"] = f"ƒ/{fn:.1f}".replace(".0", "").replace(".", ",")
+    except (TypeError, ValueError):
+        pass
+    try:
+        iso = int(float(raw.get("iso") or 0))
+        if iso > 0:
+            out["iso"] = f"ISO {iso}"
+    except (TypeError, ValueError):
+        pass
+    return out
+
+
+def shooting_info(path, mtime):
+    """Fotocamera, obiettivo, focale, tempo, apertura e ISO, letti dai metadati del file.
+    Sul Mac con ImageIO (fcimg info: tutti i formati, anche CR3, HEIC, PSD), altrimenti
+    con il lettore EXIF interno (JPEG e RAW basati su TIFF)."""
+    key = (path, mtime)
+    if key in SHOT_CACHE:
+        SHOT_CACHE.move_to_end(key)
+        return SHOT_CACHE[key]
+    raw = {}
+    helper = thumbs.find_imghelper()
+    if helper:
+        try:
+            r = subprocess.run([helper, "info", path], capture_output=True, timeout=15)
+            if r.returncode == 0:
+                raw = json.loads(r.stdout or b"{}")
+        except (OSError, subprocess.TimeoutExpired, ValueError):
+            raw = {}
+    if not raw:
+        raw = exif.read_exif(path, shooting=True)
+    info = _shot_format(raw)
+    SHOT_CACHE[key] = info
+    while len(SHOT_CACHE) > 3000:
+        SHOT_CACHE.popitem(last=False)
+    return info
+
+
 def photo_detail(pid):
     db = cat.db
     p = db.execute("""SELECT p.*, f.rel_path, r.path AS root, r.id AS root_id FROM photos p
@@ -395,6 +487,11 @@ def photo_detail(pid):
     d = dict(p)
     d["path"] = os.path.join(p["root"], p["rel_path"], p["filename"])
     d["v"] = version(p)
+    d["shot"] = {}
+    if not p["missing"] and (p["ext"] or "").lower() not in VIDEO_EXT:
+        full = resolve_path(d["path"])
+        if os.path.isfile(full):
+            d["shot"] = shooting_info(full, p["mtime"])
     d["collections"] = [dict(r) for r in db.execute(
         """SELECT c.id, c.name, c.parent_id FROM collection_photos cp
            JOIN collections c ON c.id=cp.collection_id WHERE cp.photo_id=? ORDER BY c.name""", (pid,))]

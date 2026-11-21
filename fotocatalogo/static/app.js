@@ -656,13 +656,27 @@ async function showInfo(refresh = false) {
     <h4>Informazioni</h4>
     <table>
       <tr><td>Data scatto</td><td>${fmtDate(d.capture_time)}</td></tr>
+      ${shotRows(d.shot)}
       <tr><td>Formato</td><td>${esc((d.ext || "").toUpperCase())}</td></tr>
       ${d.width ? `<tr><td>Dimensioni</td><td>${d.width} × ${d.height}</td></tr>` : ""}
-      <tr><td>Peso</td><td>${fmtSize(d.size)}</td></tr>
+      ${d.mtime ? `<tr><td>Ultima modifica</td><td>${fmtStamp(d.mtime)}</td></tr>` : ""}
       <tr><td>Cartella</td><td><a href="#" data-goto="folder:${d.folder_id}">${esc(folder)}</a></td></tr>
       <tr><td>In catalogo dal</td><td>${fmtDate(d.added_at)}</td></tr>
       ${d.missing ? `<tr><td>Stato</td><td style="color:var(--red)">File non trovato</td></tr>` : ""}
     </table>`;
+}
+
+// dati di scatto (solo quelli presenti nel file)
+function shotRows(x) {
+  if (!x) return "";
+  return [["Fotocamera", x.camera], ["Obiettivo", x.lens], ["Focale", x.focal], ["Tempo", x.exposure],
+    ["Apertura", x.fnumber], ["ISO", x.iso && x.iso.replace("ISO ", "")]]
+    .filter(([, v]) => v).map(([k, v]) => `<tr><td>${k}</td><td>${esc(v)}</td></tr>`).join("");
+}
+// data e ora da secondi (mtime del file)
+function fmtStamp(sec) {
+  const t = new Date(sec * 1000), p = n => String(n).padStart(2, "0");
+  return `${p(t.getDate())}/${p(t.getMonth() + 1)}/${t.getFullYear()} ${p(t.getHours())}:${p(t.getMinutes())}`;
 }
 
 function rateBars(r, l, f) {

@@ -9,6 +9,8 @@ catalogazione.
 - **Cartelle** come sul NAS, con o senza sottocartelle
 - **Raccolte e set di raccolte**: una foto può stare in quante raccolte vuoi, e il
   pannello a destra mostra sempre tutte le raccolte della foto selezionata
+- **Dati di scatto** nel pannello a destra: fotocamera, obiettivo, focale, tempo, apertura,
+  ISO (quando presenti nel file) e data dell'ultima modifica del file
 - **Parole chiave**, **stelle**, **etichette colore**, **bandierine** (scelta/scartata)
 - Ricerca per nome file, parola chiave o cartella, con filtri per anno, formato, stelle ed etichetta
 - **Importazione dal catalogo Lightroom** (`.lrcat`): cartelle, raccolte, set,

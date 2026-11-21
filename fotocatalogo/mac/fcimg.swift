@@ -9,7 +9,11 @@
 //       applica l'orientamento della fotocamera e la rotazione (in senso orario),
 //       ridimensiona senza mai ingrandire (--max = bordo lungo) e scrive un JPEG.
 //
-// In entrambi i casi le parti trasparenti vanno su fondo bianco (un JPEG non può
+//   fcimg info <file>
+//       Stampa in JSON i dati di scatto (fotocamera, obiettivo, focale, tempo,
+//       apertura, ISO) leggendo solo i metadati, senza decodificare l'immagine.
+//
+// In tojpeg ed export le parti trasparenti vanno su fondo bianco (un JPEG non può
 // essere trasparente) e si mantengono profilo colore e dati EXIF/GPS/IPTC.
 // Si compila con mac/crea_app.sh.
 
@@ -23,6 +27,35 @@ func fail(_ message: String) -> Never {
 }
 
 let args = CommandLine.arguments
+
+if args.count == 3 && args[1] == "info" {
+    let url = URL(fileURLWithPath: args[2])
+    let opts = [kCGImageSourceShouldCache: false] as CFDictionary
+    guard let src = CGImageSourceCreateWithURL(url as CFURL, opts),
+          let props = CGImageSourceCopyPropertiesAtIndex(src, 0, opts) as? [String: Any] else {
+        fail("metadati non leggibili")
+    }
+    let tiff = props[kCGImagePropertyTIFFDictionary as String] as? [String: Any] ?? [:]
+    let exif = props[kCGImagePropertyExifDictionary as String] as? [String: Any] ?? [:]
+    let aux = props[kCGImagePropertyExifAuxDictionary as String] as? [String: Any] ?? [:]
+    var out: [String: Any] = [:]
+    out["make"] = tiff[kCGImagePropertyTIFFMake as String]
+    out["model"] = tiff[kCGImagePropertyTIFFModel as String]
+    out["lens"] = exif[kCGImagePropertyExifLensModel as String] ?? aux[kCGImagePropertyExifAuxLensModel as String]
+    out["lens_make"] = exif[kCGImagePropertyExifLensMake as String]
+    out["focal"] = exif[kCGImagePropertyExifFocalLength as String]
+    out["focal35"] = exif[kCGImagePropertyExifFocalLenIn35mmFilm as String]
+    out["exposure"] = exif[kCGImagePropertyExifExposureTime as String]
+    out["fnumber"] = exif[kCGImagePropertyExifFNumber as String]
+    if let iso = exif[kCGImagePropertyExifISOSpeedRatings as String] as? [Any], let first = iso.first {
+        out["iso"] = first
+    }
+    let clean = out.filter { JSONSerialization.isValidJSONObject([$0.value]) }
+    let data = try! JSONSerialization.data(withJSONObject: clean)
+    FileHandle.standardOutput.write(data)
+    exit(0)
+}
+
 guard args.count >= 4, args[1] == "tojpeg" || args[1] == "export" else {
     fail("uso: fcimg tojpeg <sorgente> <destinazione> [qualità] | fcimg export <sorgente> <destinazione> [opzioni]")
 }
