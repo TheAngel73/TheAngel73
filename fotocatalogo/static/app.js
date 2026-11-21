@@ -307,6 +307,25 @@ async function setMeta(patch, ids = [...S.sel]) {
 }
 
 // ================================================================ barra laterale
+// icone vettoriali (16×16, tratto sottile, colore del testo)
+const svg = (body, cls = "") => `<svg class="i ${cls}" viewBox="0 0 16 16" aria-hidden="true">${body}</svg>`;
+const ICON = {
+  all: svg('<rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="9" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="2.5" y="9" width="4.5" height="4.5" rx="1"/><rect x="9" y="9" width="4.5" height="4.5" rx="1"/>'),
+  recent: svg('<circle cx="8" cy="8" r="5.5"/><path d="M8 5v3.2l2.1 1.4"/>'),
+  nocoll: svg('<rect x="2.5" y="5.5" width="9" height="8" rx="1.2" stroke-dasharray="2 1.7"/><path d="M4.5 3.5h7.8a1 1 0 0 1 1 1v6.8" stroke-dasharray="2 1.7"/>'),
+  toconvert: svg('<path d="M2.8 6h9l-2.3-2.3M13.2 10h-9l2.3 2.3"/>'),
+  video: svg('<rect x="2" y="3.5" width="12" height="9" rx="1.8"/><path d="M6.8 6.1v3.8l3.1-1.9z" fill="currentColor" stroke="none"/>'),
+  torename: svg('<path d="M10.4 3.1l2.5 2.5-7.1 7.1H3.3v-2.5z"/><path d="M9.1 4.4l2.5 2.5"/>'),
+  rejected: svg('<path d="M4 13.5V2.8M4 3.2h7.5l-1.6 2.6 1.6 2.6H4"/>'),
+  missing: svg('<path d="M8 2.7l5.8 10.1H2.2z"/><path d="M8 6.6v2.7"/><circle cx="8" cy="11" r=".6" fill="currentColor" stroke="none"/>'),
+  collection: svg('<path d="M5 3h7.5a1 1 0 0 1 1 1v7"/><rect x="2.5" y="5.2" width="9" height="8.3" rx="1.1"/><path d="M2.8 12.3l2.6-2.8 1.9 1.9 1.4-1.3 2.4 2.4"/><circle cx="8.6" cy="7.6" r=".8"/>', "coll"),
+  set: svg('<rect x="2" y="3" width="12" height="3.2" rx=".9"/><path d="M3.2 6.2v6a1 1 0 0 0 1 1h7.6a1 1 0 0 0 1-1v-6"/><path d="M6.4 8.7h3.2"/>', "set"),
+  folder: svg('<path d="M2.3 4.6a1 1 0 0 1 1-1h3.1l1.5 1.6h4.8a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3.3a1 1 0 0 1-1-1z"/>'),
+  drive: svg('<rect x="1.8" y="4" width="12.4" height="8" rx="1.6"/><path d="M1.8 9h12.4"/><circle cx="11.6" cy="10.6" r=".6" fill="currentColor" stroke="none"/>'),
+  tag: svg('<path d="M2.6 3.4v4.1l5.5 5.5a1 1 0 0 0 1.4 0l3.5-3.5a1 1 0 0 0 0-1.4L7.5 2.6H3.4a.8.8 0 0 0-.8.8z"/><circle cx="5.4" cy="5.4" r=".9"/>'),
+};
+const twisty = (has, open) => has ? svg('<path d="M6 4l4 4-4 4"/>', "chev" + (open ? " open" : "")) : "";
+
 function nodeHTML({icon, name, count, active, tw, acts = "", dot = ""}) {
   return `<div class="node${active ? " active" : ""}"><span class="tw">${tw ?? ""}</span>${dot}<span class="ic">${icon}</span>` +
     `<span class="nm" title="${esc(name)}">${esc(name)}</span><span class="acts">${acts}</span>` +
@@ -322,7 +341,7 @@ async function loadTree() {
   renderSidebar();
   const years = await api("/api/years");
   const fy = $("#f-year"), cur = fy.value;
-  fy.innerHTML = `<option value="">Tutti gli anni</option>` + years.map(y => `<option>${esc(y)}</option>`).join("");
+  fy.innerHTML = `<option value="">Anno</option>` + years.map(y => `<option>${esc(y)}</option>`).join("");
   fy.value = cur;
 }
 
@@ -354,13 +373,13 @@ function scopeTitle(scope) {
 function renderSidebar() {
   const t = S.tree; if (!t) return;
   // catalogo
-  const cat = [["all", "▦", "Tutte le foto", t.stats.total], ["recent", "◷", "Importazione più recente", null],
-    ["nocoll", "◌", "Senza raccolta", t.stats.nocoll],
-    ["toconvert", "◭", "Da convertire", t.stats.toconvert]];
-  if (t.stats.video) cat.push(["video", "▶", "Video", t.stats.video]);
-  cat.push(["torename", "✎", "Da rinominare", t.stats.torename]);
-  if (t.stats.rejected) cat.push(["rejected", "⊘", "Scartate", t.stats.rejected]);
-  if (t.stats.missing) cat.push(["missing", "⚠", "File mancanti", t.stats.missing]);
+  const cat = [["all", ICON.all, "Tutte le foto", t.stats.total], ["recent", ICON.recent, "Importazione più recente", null],
+    ["nocoll", ICON.nocoll, "Senza raccolta", t.stats.nocoll],
+    ["toconvert", ICON.toconvert, "Da convertire", t.stats.toconvert]];
+  if (t.stats.video) cat.push(["video", ICON.video, "Video", t.stats.video]);
+  cat.push(["torename", ICON.torename, "Da rinominare", t.stats.torename]);
+  if (t.stats.rejected) cat.push(["rejected", ICON.rejected, "Scartate", t.stats.rejected]);
+  if (t.stats.missing) cat.push(["missing", ICON.missing, "File mancanti", t.stats.missing]);
   $("#catalog-list").innerHTML = cat.map(([s, icon, name, count]) =>
     `<li data-scope="${s}">${nodeHTML({icon, name, count, active: S.scope === s})}</li>`).join("");
 
@@ -380,8 +399,8 @@ function renderSidebar() {
     const open = cf || S.expanded.has("c" + c.id);
     const acts = `<button data-edit-coll="${c.id}" title="Rinomina / sposta">✎</button><button data-del-coll="${c.id}" title="Elimina">🗑</button>`;
     return `<li data-scope="collection:${c.id}" data-coll="${c.id}" data-isset="${c.set}">` +
-      nodeHTML({icon: c.set ? "▤" : "▢", name: c.name, count: c.set ? null : c.count, active: S.scope === "collection:" + c.id,
-        tw: c.set ? (ch.length ? (open ? "▼" : "▶") : "") : "", acts}) +
+      nodeHTML({icon: c.set ? ICON.set : ICON.collection, name: c.name, count: c.set ? null : c.count, active: S.scope === "collection:" + c.id,
+        tw: c.set ? twisty(ch.length, open) : "", acts}) +
       (c.set && open && ch.length ? `<ul>${collHTML(ch)}</ul>` : "") + "</li>";
   }).join("");
   $("#coll-tree").innerHTML = collHTML(kids.get(null) || []) ||
@@ -394,7 +413,7 @@ function renderSidebar() {
   const folderHTML = list => list.map(f => {
     const ch = fk.get(f.id) || []; const open = S.expanded.has("f" + f.id);
     return `<li data-scope="folder:${f.id}" data-folder="${f.id}">` +
-      nodeHTML({icon: "▱", name: f.name, count: deepCount(f), active: S.scope === "folder:" + f.id, tw: ch.length ? (open ? "▼" : "▶") : ""}) +
+      nodeHTML({icon: ICON.folder, name: f.name, count: deepCount(f), active: S.scope === "folder:" + f.id, tw: twisty(ch.length, open)}) +
       (open && ch.length ? `<ul>${folderHTML(ch)}</ul>` : "") + "</li>";
   }).join("");
   $("#folder-tree").innerHTML = t.roots.map(r => {
@@ -403,8 +422,8 @@ function renderSidebar() {
     const ch = fk.get(top.id) || []; const open = S.expanded.has("f" + top.id);
     const acts = `<button data-rescan="${r.id}" title="Sincronizza (cerca foto nuove o spostate)">⟳</button><button data-del-root="${r.id}" title="Rimuovi dal catalogo">✕</button>`;
     return `<li data-scope="folder:${top.id}" data-folder="${top.id}" title="${esc(r.path)}">` +
-      nodeHTML({icon: "", name: r.name, count: deepCount(top), active: S.scope === "folder:" + top.id,
-        tw: ch.length ? (open ? "▼" : "▶") : "", acts, dot: `<span class="dot ${r.online ? "on" : "off"}" title="${r.online ? "Raggiungibile" : "Non raggiungibile: NAS scollegato?"}"></span>`}) +
+      nodeHTML({icon: ICON.drive, name: r.name, count: deepCount(top), active: S.scope === "folder:" + top.id,
+        tw: twisty(ch.length, open), acts, dot: `<span class="dot ${r.online ? "on" : "off"}" title="${r.online ? "Raggiungibile" : "Non raggiungibile: NAS scollegato?"}"></span>`}) +
       (open && ch.length ? `<ul>${folderHTML(ch)}</ul>` : "") + "</li>";
   }).join("") || `<li class="small">Nessuna cartella.</li>`;
 
@@ -413,13 +432,13 @@ function renderSidebar() {
   const kk = groupBy(t.keywords, "parent");
   const kwHTML = list => list.map(k => {
     const ch = kk.get(k.id) || []; const open = S.expanded.has("k" + k.id);
-    return `<li data-scope="keyword:${k.id}">` + nodeHTML({icon: "#", name: k.name, count: k.count,
-      active: S.scope === "keyword:" + k.id, tw: ch.length ? (open ? "▼" : "▶") : ""}) +
+    return `<li data-scope="keyword:${k.id}">` + nodeHTML({icon: ICON.tag, name: k.name, count: k.count,
+      active: S.scope === "keyword:" + k.id, tw: twisty(ch.length, open)}) +
       (open && ch.length ? `<ul>${kwHTML(ch)}</ul>` : "") + "</li>";
   }).join("");
   $("#kw-tree").innerHTML = kf
     ? t.keywords.filter(k => k.name.toLowerCase().includes(kf)).slice(0, 300).map(k =>
-      `<li data-scope="keyword:${k.id}">${nodeHTML({icon: "#", name: k.name, count: k.count, active: S.scope === "keyword:" + k.id})}</li>`).join("")
+      `<li data-scope="keyword:${k.id}">${nodeHTML({icon: ICON.tag, name: k.name, count: k.count, active: S.scope === "keyword:" + k.id})}</li>`).join("")
     : kwHTML(kk.get(0) || []) || `<li class="small">Nessuna parola chiave.</li>`;
   $("#kw-list")?.remove();
   document.body.insertAdjacentHTML("beforeend", `<datalist id="kw-list">${t.keywords.map(k => `<option value="${esc(k.name)}">`).join("")}</datalist>`);

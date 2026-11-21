@@ -148,6 +148,83 @@ final class ClipboardImageProvider: NSObject, NSPasteboardItemDataProvider {
 
 let videoExtensions: Set<String> = ["mov", "mp4", "m4v", "avi", "mkv", "mts", "m2ts", "3gp", "mpg", "mpeg", "wmv", "webm"]
 
+// MARK: schermata di avvio e «Informazioni su Provinia»
+//
+// L'immagine (Resources/about.png, 1536×1024 @2x, bordi trasparenti con la finestra
+// già disegnata) si mostra in una finestra senza bordi. All'avvio resta finché
+// l'interfaccia è pronta (almeno 1,5 s); un clic o un tasto la chiudono.
+final class SplashWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+}
+
+final class Splash: NSObject {
+    var window: NSWindow?
+    var monitor: Any?
+    var shownAt = Date()
+
+    var isShown: Bool { window != nil }
+
+    func show(over parent: NSWindow?, about: Bool) {
+        if let w = window { w.makeKeyAndOrderFront(nil); return }
+        guard let url = Bundle.main.url(forResource: "about", withExtension: "png"),
+              let img = NSImage(contentsOf: url) else { return }
+        let size = NSSize(width: 768, height: 512)
+        img.size = size
+        let w = SplashWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless],
+                             backing: .buffered, defer: false)
+        w.isOpaque = false
+        w.backgroundColor = .clear
+        w.hasShadow = true
+        w.isReleasedWhenClosed = false
+        w.level = .floating
+        let iv = NSImageView(frame: NSRect(origin: .zero, size: size))
+        iv.image = img
+        iv.imageScaling = .scaleProportionallyUpOrDown
+        let content = NSView(frame: iv.frame)
+        content.addSubview(iv)
+        if about {
+            let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+            let label = NSTextField(labelWithString: "Versione \(v)")
+            label.font = NSFont.systemFont(ofSize: 10)
+            label.textColor = NSColor(calibratedRed: 0.45, green: 0.41, blue: 0.37, alpha: 1)
+            label.frame = NSRect(x: 43, y: 58, width: 300, height: 14)
+            content.addSubview(label)
+        }
+        w.contentView = content
+        if let p = parent, p.isVisible {
+            w.setFrameOrigin(NSPoint(x: p.frame.midX - size.width / 2, y: p.frame.midY - size.height / 2))
+        } else {
+            w.center()
+        }
+        w.alphaValue = 0
+        w.makeKeyAndOrderFront(nil)
+        w.invalidateShadow()
+        NSAnimationContext.runAnimationGroup { $0.duration = 0.2; w.animator().alphaValue = 1 }
+        window = w
+        shownAt = Date()
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .keyDown]) { [weak self] e in
+            guard let self = self, self.window != nil else { return e }
+            let onSplash = e.window === self.window
+            self.close()
+            return onSplash ? nil : e
+        }
+    }
+
+    /// Chiude con dissolvenza, ma non prima di `minimum` secondi dalla comparsa.
+    func close(minimum: TimeInterval = 0) {
+        guard let w = window else { return }
+        let wait = minimum - Date().timeIntervalSince(shownAt)
+        if wait > 0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self] in self?.close() }
+            return
+        }
+        window = nil
+        if let m = monitor { NSEvent.removeMonitor(m); monitor = nil }
+        NSAnimationContext.runAnimationGroup({ $0.duration = 0.3; w.animator().alphaValue = 0 },
+                                             completionHandler: { w.orderOut(nil) })
+    }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                          WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate {
     var window: NSWindow!
@@ -155,7 +232,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     var server: Process?
     var quitting = false
     var titleObserver: NSKeyValueObservation?
-    var clipboardProvider: ClipboardImageProvider?   // tenuto in vita finché servono gli appunti
+    var clipboardProvider: ClipboardImageProvider?
+    let splash = Splash()
+    var startupSplash = true   // tenuto in vita finché servono gli appunti
 
     // MARK: avvio
 
@@ -192,6 +271,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         NSApp.activate(ignoringOtherApps: true)
 
         showMessage("Avvio in corso…")
+        splash.show(over: window, about: false)
+        // in ogni caso non resta più di 10 secondi
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { self.endStartupSplash() }
         startServer()
     }
 
@@ -273,9 +355,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         }
     }
 
+    func endStartupSplash() {
+        guard startupSplash else { return }
+        startupSplash = false
+        splash.close(minimum: 1.5)
+    }
+
+    @objc func showAbout(_ sender: Any?) {
+        startupSplash = false
+        splash.show(over: window, about: true)
+    }
+
+    // l'interfaccia è pronta: via la schermata di avvio
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if webView.url?.host == "localhost" { endStartupSplash() }
+    }
+
     func serverStopped(_ status: Int32) {
         server = nil
         if quitting { return }
+        endStartupSplash()
         showMessage("Il motore si è fermato (codice \(status)).", log: true)
     }
 
@@ -447,7 +546,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         }
 
         let app = submenu("Provinia")
-        sys(app, "Informazioni su Provinia", #selector(NSApplication.orderFrontStandardAboutPanel(_:)))
+        sys(app, "Informazioni su Provinia", #selector(showAbout(_:)), target: self)
         app.addItem(.separator())
         sys(app, "Mostra cartella dei cataloghi", #selector(showDataFolder(_:)), target: self)
         app.addItem(.separator())

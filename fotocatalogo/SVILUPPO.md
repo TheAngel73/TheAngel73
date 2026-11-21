@@ -21,7 +21,7 @@ messaggi, commenti e commit sono **in italiano**.
   `Crea app.command` → `mac/crea_app.sh`, che richiede gli strumenti per
   sviluppatori di Apple. L'app pesa meno di 1 MB e include una copia di `*.py` e `static/`.
   **Dopo ogni modifica l'utente deve rilanciare `Crea app.command`.**
-- Icona: `mac/Provinia.icns` (fornita dall'utente; `static/icona.png` ne è un estratto da 128 px).
+- Schermata di avvio e «Informazioni su»: `Provinia about.png` (dell'utente, 1536×1024 @2x, bordi trasparenti con la finestra già disegnata; il `.psd` è il sorgente), copiata in `Resources/about.png` e mostrata da `Splash` in `mac/Provinia.swift`: all'avvio finché l'interfaccia è caricata (almeno 1,5 s, al massimo 10). Font dell'interfaccia: **Inter** (`static/inter.woff2`, licenza OFL in `static/inter-LICENSE.txt`), incluso nell'app; icone della barra laterale: SVG in `ICON` (`app.js`). Icona: `mac/Provinia.icns` (fornita dall'utente; `static/icona.png` ne è un estratto da 128 px).
 - Avvio alternativo nel browser: `Avvia Provinia.command`, cioè `python3 server.py`.
 
 ## Principi da non rompere

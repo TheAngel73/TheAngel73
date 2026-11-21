@@ -27,24 +27,24 @@
   </div>
   <input id="search" type="search" placeholder="Cerca nome file, parola chiave, cartella…">
   <select id="f-rating" title="Valutazione minima">
-    <option value="">Tutte le stelle</option>
+    <option value="">Stelle</option>
     <option value="1">★ e più</option><option value="2">★★ e più</option>
     <option value="3">★★★ e più</option><option value="4">★★★★ e più</option>
     <option value="5">★★★★★</option>
   </select>
   <select id="f-label" title="Etichetta colore">
-    <option value="">Tutte le etichette</option>
+    <option value="">Etichette</option>
     <option value="red">Rossa</option><option value="yellow">Gialla</option>
     <option value="green">Verde</option><option value="blue">Blu</option>
     <option value="purple">Viola</option><option value="none">Nessuna</option>
   </select>
   <select id="f-flag" title="Bandierina">
-    <option value="">Tutte le bandierine</option><option value="1">Scelte</option>
+    <option value="">Bandierine</option><option value="1">Scelte</option>
     <option value="0">Senza bandierina</option><option value="-1">Scartate</option>
   </select>
-  <select id="f-year" title="Anno"><option value="">Tutti gli anni</option></select>
+  <select id="f-year" title="Anno"><option value="">Anno</option></select>
   <select id="f-ext" title="Tipo di file">
-    <option value="">Tutti i formati</option>
+    <option value="">Formato</option>
     <option value="jpg,jpeg">JPEG</option>
     <option value="heic,heif">HEIC</option>
     <option value="psd,psb">PSD</option>
@@ -72,8 +72,8 @@
     </section>
     <section>
       <h3>Raccolte <span class="h-actions">
-        <button class="mini" data-act="new-coll" title="Nuova raccolta">＋</button>
-        <button class="mini" data-act="new-set" title="Nuovo set di raccolte">▤</button></span></h3>
+        <button class="mini" data-act="new-coll" title="Nuova raccolta"><svg class="i" viewBox="0 0 16 16"><path d="M8 3.5v9M3.5 8h9"/></svg></button>
+        <button class="mini" data-act="new-set" title="Nuovo set di raccolte"><svg class="i" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="3.2" rx=".9"/><path d="M3.2 6.2v6a1 1 0 0 0 1 1h7.6a1 1 0 0 0 1-1v-6"/><path d="M6.4 8.7h3.2"/></svg></button></span></h3>
       <input class="filter" id="coll-filter" placeholder="Filtra raccolte…">
       <ul class="tree" id="coll-tree"></ul>
     </section>

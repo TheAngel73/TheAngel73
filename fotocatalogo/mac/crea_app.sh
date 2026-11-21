@@ -25,10 +25,11 @@ swiftc -O -swift-version 5 -o "$APP/Contents/Resources/bin/fcimg" fcimg.swift
 
 echo "› Copio il motore e l'interfaccia…"
 cp "$SRC"/*.py "$APP/Contents/Resources/app/"
-cp "$SRC"/static/* "$APP/Contents/Resources/app/static/"
+cp "$SRC"/static/* "$APP/Contents/Resources/app/static/"   # anche il font Inter (inter.woff2)
 
 echo "› Icona…"
 cp Provinia.icns "$APP/Contents/Resources/AppIcon.icns"
+cp "$SRC/Provinia about.png" "$APP/Contents/Resources/about.png"   # avvio e «Informazioni su»
 
 VERSION="$(date +%Y.%m.%d)"
 cat > "$APP/Contents/Info.plist" <<PLIST

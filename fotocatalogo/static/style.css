@@ -1,12 +1,18 @@
+/* Inter (SIL Open Font License, vedi inter-LICENSE.txt), incluso nell'app: nessuna connessione */
+@font-face { font-family: "Inter"; src: url("/static/inter.woff2") format("woff2");
+  font-weight: 100 900; font-style: normal; font-display: block; }
 :root {
   --bg: #1e1e1f; --panel: #262628; --panel2: #2e2e31; --line: #3a3a3d;
-  --text: #d9d9db; --dim: #8e8e93; --accent: #4a90e2; --sel: #3d6fa8;
+  --text: #d4d4d6; --dim: #8a8a90; --accent: #4a90e2; --sel: #3d6fa8;
   --red: #e5534b; --yellow: #e0b93a; --green: #57ab5a; --blue: #4a90e2; --purple: #a371f7;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
-  font: 13px -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; overflow: hidden; }
-body { position: fixed; inset: 0; display: grid; grid-template-rows: 46px minmax(0, 1fr) 28px; }
+  font: 13px/1.35 "Inter", -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; overflow: hidden;
+  font-feature-settings: "cv11", "ss03"; letter-spacing: -.003em;
+  -webkit-font-smoothing: antialiased; }
+body { position: fixed; inset: 0; display: grid; grid-template-rows: 46px minmax(0, 1fr) 28px;
+  grid-template-columns: minmax(0, 1fr); }
 a { color: #8fb8ea; }
 button, input, select { font: inherit; color: var(--text); }
 button { background: var(--panel2); border: 1px solid var(--line); border-radius: 5px;
@@ -20,7 +26,13 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
   background: var(--panel); border-bottom: 1px solid var(--line); }
 .brand { font-weight: 600; letter-spacing: .3px; margin-right: 6px; display: flex; align-items: center; gap: 7px; }
 .brand img { width: 22px; height: 22px; }
-#search { flex: 1; min-width: 160px; }
+#search { flex: 1; min-width: 140px; }
+#topbar select, #topbar input, #topbar > button, .menu-wrap > button { font-size: 12px; }
+#topbar select { width: 118px; min-width: 70px; flex: 0 1 118px; }
+#topbar { min-width: 0; overflow: hidden; }
+#topbar > button, .menu-wrap > button { white-space: nowrap; flex: none; }
+#sidebar h3 .mini svg.i { width: 13px; height: 13px; }
+#sidebar h3 .mini { display: inline-flex; align-items: center; justify-content: center; height: 20px; }
 #zoom { width: 110px; }
 .menu-wrap { position: relative; }
 .menu { position: absolute; top: 32px; left: 0; z-index: 50; background: var(--panel2);
@@ -34,7 +46,7 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
 #sidebar { border-right: 1px solid var(--line); padding: 6px 0 30px; }
 #info { border-left: 1px solid var(--line); padding: 12px; }
 #sidebar section { padding: 4px 10px 10px; border-bottom: 1px solid var(--line); }
-#sidebar h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--dim);
+#sidebar h3 { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--dim);
   margin: 8px 0 6px; display: flex; justify-content: space-between; align-items: center; }
 .mini { padding: 0 6px; font-size: 12px; line-height: 18px; }
 .filter { width: 100%; margin-bottom: 6px; font-size: 12px; }
@@ -42,15 +54,22 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
 
 .tree, .tree ul { list-style: none; margin: 0; padding: 0; }
 .tree ul { padding-left: 14px; }
-.node { display: flex; align-items: center; gap: 4px; padding: 2px 4px; border-radius: 4px;
-  cursor: pointer; white-space: nowrap; }
+.node { display: flex; align-items: center; gap: 5px; padding: 3px 5px; border-radius: 5px;
+  cursor: pointer; white-space: nowrap; color: #c9c9cc; }
 .node:hover { background: var(--panel2); }
 .node.active { background: var(--sel); color: #fff; }
 .node.drop { outline: 2px solid var(--accent); background: #2b3d55; }
-.node .tw { width: 12px; color: var(--dim); text-align: center; flex: none; font-size: 9px; }
-.node .ic { flex: none; width: 15px; text-align: center; opacity: .8; }
+.node .tw { width: 12px; color: var(--dim); flex: none; display: flex; align-items: center; justify-content: center; }
+.node .ic { flex: none; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; color: #9a9aa0; }
+.node.active .ic, .node.active .tw { color: #fff; }
+/* icone vettoriali della barra laterale */
+svg.i { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.25;
+  stroke-linecap: round; stroke-linejoin: round; display: block; }
+svg.i.coll { color: #8fb3de; } .node.active svg.i.coll { color: #fff; }
+svg.i.chev { width: 11px; height: 11px; stroke-width: 1.6; transition: transform .12s ease; }
+svg.i.chev.open { transform: rotate(90deg); }
 .node .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; }
-.node .ct { color: var(--dim); font-size: 11px; }
+.node .ct { color: var(--dim); font-size: 11px; font-variant-numeric: tabular-nums; }
 .node.active .ct { color: #dde; }
 .node .acts { display: none; gap: 2px; }
 .node:hover .acts { display: flex; }

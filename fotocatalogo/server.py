@@ -676,8 +676,10 @@ class Handler(BaseHTTPRequestHandler):
             if parts[0] == "static" and len(parts) == 2 and "/" not in parts[1] and ".." not in parts[1]:
                 p = os.path.join(STATIC, parts[1])
                 ctype = {"js": "text/javascript; charset=utf-8", "css": "text/css; charset=utf-8",
-                         "svg": "image/svg+xml", "png": "image/png"}.get(p.rsplit(".", 1)[-1], "application/octet-stream")
-                return self.send_file(p, ctype, False) if os.path.isfile(p) else self.not_found()
+                         "svg": "image/svg+xml", "png": "image/png", "woff2": "font/woff2",
+                         "txt": "text/plain; charset=utf-8"}.get(p.rsplit(".", 1)[-1], "application/octet-stream")
+                return (self.send_file(p, ctype, ctype == "font/woff2") if os.path.isfile(p)
+                        else self.not_found())
             if u.path == "/api/catalogs":
                 return self.send_json(catalogs_state())
             if u.path == "/api/dng":
