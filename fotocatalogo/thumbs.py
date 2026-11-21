@@ -32,6 +32,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+from time import monotonic as time_now
 
 from catalog import VIDEO_EXT  # noqa: E402
 
@@ -74,7 +75,7 @@ BG_SLOTS = threading.Semaphore(3)         # lavoro «Genera anteprime»
 
 def wait_viewer_idle():
     """Il lavoro in background aspetta che chi guarda abbia ricevuto le sue miniature."""
-    while _gen_slots.busy:
+    while _gen_slots.busy or PREFETCH.busy():
         threading.Event().wait(0.15)
 
 _failed = set()
@@ -137,11 +138,17 @@ def _make_mac(src, dst, px):
                  "-Z", str(px), src, "--out", dst])
 
 
+# solo per le prove fuori dal Mac: simula un NAS lento (secondi per miniatura)
+_TEST_DELAY = float(os.environ.get("FOTOCAT_TEST_THUMB_DELAY", "0") or 0)
+
+
 def _make_pillow(src, dst, px, rot=0):
     try:
         from PIL import Image, ImageOps
     except ImportError:
         return False
+    if _TEST_DELAY:
+        threading.Event().wait(_TEST_DELAY)
     try:
         with Image.open(src) as im:
             im = ImageOps.exif_transpose(im)
@@ -213,14 +220,26 @@ def get_thumb(cat, cache_dir, photo_id, size="m", slots=_gen_slots, alive=None):
 
 # ---------------------------------------------------------------- preparazione in background
 class Prefetcher:
-    WORKERS = 2
+    """Generatore delle miniature della griglia, con due code:
+    - prio: le miniature mancanti che sono sullo schermo ADESSO. La pagina la sostituisce
+      a ogni cambio di vista o scorrimento (want), quindi si lavora sempre su ciò che si
+      sta guardando;
+    - q: tutte le altre della vista e delle pagine caricate, in background (le più recenti
+      davanti). Al massimo BG_MAX lavoratori e solo quando prio è vuota.
+    """
+    WORKERS = 4
+    BG_MAX = 2
     MAX_QUEUE = 3000
 
     def __init__(self):
         self.q = collections.deque()
         self.queued = set()
+        self.prio = collections.deque()
+        self.bg_active = 0
         self.cv = threading.Condition()
+        self.done_cv = threading.Condition()
         self.gen = 0
+        self.want_seq = 0
         self.started = False
 
     def _start(self):
@@ -242,28 +261,73 @@ class Prefetcher:
                 self.queued.discard(self.q.pop()[3])
             self.cv.notify_all()
 
+    @staticmethod
+    def state(cache_dir, pid):
+        if os.path.exists(thumb_file(cache_dir, pid, "m")):
+            return 1
+        return -1 if (pid, "m") in _failed else 0
+
+    def want(self, cat, cache_dir, ids, timeout=8.0):
+        """Le miniature sullo schermo: sostituisce la coda prioritaria e aspetta (al massimo
+        timeout secondi) che almeno una sia pronta. Restituisce lo stato di ciascuna:
+        1 pronta, -1 impossibile da creare, 0 non ancora."""
+        todo = [i for i in ids if self.state(cache_dir, i) == 0]
+        with self.cv:
+            self._start()
+            self.prio = collections.deque((self.gen, cat, cache_dir, i) for i in todo)
+            self.cv.notify_all()
+        with self.done_cv:
+            self.want_seq += 1               # la richiesta precedente risponde subito
+            mine = self.want_seq
+            self.done_cv.notify_all()
+        end = time_now() + timeout
+        with self.done_cv:
+            while todo and self.want_seq == mine and all(self.state(cache_dir, i) == 0 for i in todo):
+                left = end - time_now()
+                if left <= 0:
+                    break
+                self.done_cv.wait(min(left, 1.0))
+        return {i: self.state(cache_dir, i) for i in ids}
+
+    def busy(self):
+        return bool(self.prio)
+
     def clear(self):
         with self.cv:
             self.gen += 1
             self.q.clear()
             self.queued.clear()
+            self.prio.clear()
 
     def _work(self):
         while True:
             with self.cv:
-                while not self.q:
+                while True:
+                    if self.prio:
+                        gen, cat, cache_dir, pid = self.prio.popleft()
+                        background = False
+                        break
+                    if self.q and self.bg_active < self.BG_MAX:
+                        gen, cat, cache_dir, pid = self.q.popleft()
+                        self.queued.discard(pid)
+                        background = True
+                        self.bg_active += 1
+                        break
                     self.cv.wait()
-                gen, cat, cache_dir, pid = self.q.popleft()
-                self.queued.discard(pid)
-                if gen != self.gen:
-                    continue
             try:
-                wait_viewer_idle()
-                if gen != self.gen:
-                    continue
-                _base_thumb(cat, cache_dir, pid, "m", None)
+                if gen == self.gen:
+                    if background:
+                        wait_viewer_idle()
+                    _base_thumb(cat, cache_dir, pid, "m", None)
             except Exception:  # noqa: BLE001  (catalogo chiuso nel frattempo, NAS staccato…)
                 pass
+            finally:
+                with self.cv:
+                    if background:
+                        self.bg_active -= 1
+                    self.cv.notify_all()
+                with self.done_cv:
+                    self.done_cv.notify_all()
 
 
 PREFETCH = Prefetcher()

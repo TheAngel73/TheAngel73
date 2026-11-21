@@ -123,15 +123,25 @@ sincronizzazione rapida). Le colonne nuove si aggiungono con `ALTER TABLE` in
   miniature dei cataloghi protetti si inviano con `Cache-Control: no-store`.
   Chiusura del motore (SIGTERM) → `close_current()` → l'immagine cifrata viene
   smontata.
-- **Priorità delle miniature** (`thumbs.py`): le richieste di chi guarda hanno 4 posti
-  propri (`LifoSlots`: il posto libero va all'ultima richiesta, così cambiando cartella
-  la nuova vista passa davanti) e, prima di generare, controllano che il browser stia
-  ancora aspettando (`client_alive` in `server.py`). Preparazione in background e lavoro
-  «Genera anteprime» (`BG_SLOTS`, interrompibile) si fermano finché `_gen_slots.busy`.
-  Nella pagina, `dropCell` toglie `src` alle miniature non ancora caricate quando una
-  cella sparisce: senza, WebKit le scarica comunque e la nuova vista resta in coda.
-  Sintomo che ha portato a tutto questo: entrando in una cartella da 5 foto mentre
-  si finiva una da 2500, le 5 miniature arrivavano molto dopo.
+- **Priorità delle miniature** (`thumbs.py`, `requestThumbs` in `app.js`). Le pagine di
+  `/api/photos` dicono per ogni foto se la miniatura è pronta (`th`: 1 pronta, 0 da creare,
+  -1 impossibile). La griglia usa `<img>` **solo per quelle pronte**; per le mancanti
+  mostra un segnaposto e chiede `POST /api/thumbs/want` con gli id **sullo schermo**:
+  la lista sostituisce la coda prioritaria (`Prefetcher.prio`), così cambiando vista o
+  scorrendo si lavora subito su ciò che si guarda. La chiamata aspetta fino a 8 s che
+  almeno una sia pronta; una chiamata nuova fa rispondere subito la precedente
+  (`want_seq`), così non si accumulano collegamenti in attesa. Quattro lavoratori: la
+  coda prioritaria ha la precedenza, il background (tutte le foto delle pagine caricate)
+  ne usa al massimo 2 e solo quando la coda prioritaria è vuota; «Genera anteprime»
+  (`BG_SLOTS`, interrompibile) si ferma finché c'è lavoro prioritario.
+  **Perché così**: WebKit non annulla le immagini che spariscono dalla pagina, quindi
+  con le `<img>` le miniature della vista precedente restavano in coda davanti a quelle
+  nuove (cartella da 15 foto lentissima dopo una da 400). Chromium invece le annulla:
+  per riprodurre il problema nelle prove bisogna simulare le richieste rimaste in coda.
+  Le richieste dirette a `/thumb/ID` (pannello info, duplicati) restano sincrone, con
+  posti propri assegnati all'ultima arrivata (`LifoSlots`) e il controllo
+  `client_alive`. Per le prove: `FOTOCAT_TEST_THUMB_DELAY=0.6` rallenta le miniature
+  create con Pillow (solo fuori dal Mac), come su un NAS.
 - **⌘C** (solo app): la voce Copia chiama `copyAction` in Swift, che chiede alla pagina
   `fc.copyIds()` (null se si sta scrivendo o c'è del testo selezionato: allora copia il
   testo con `copy:`). Negli appunti vanno file URL; con una foto sola anche TIFF/JPEG a

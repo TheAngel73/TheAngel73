@@ -125,7 +125,7 @@ function render() {
     const it = itemAt(i);
     if (!it) loadPage(Math.floor(i / PAGE));
     let el = cells.get(i);
-    const key = it ? `${it.id}|${it.r}|${it.l}|${it.f}|${it.m}|${it.v}` : "?";
+    const key = it ? `${it.id}|${it.r}|${it.l}|${it.f}|${it.m}|${it.v}|${it.th}` : "?";
     if (!el || el._key !== key) {
       if (el) el.remove();
       el = makeCell(it, i); el._key = key;
@@ -137,6 +137,34 @@ function render() {
   }
   const ahead = Math.floor(Math.min(S.total - 1, i1 + S.cols * 12) / PAGE);
   if (S.total && !S.pages.has(ahead)) loadPage(ahead);
+  wantThumbs();
+}
+
+// ---------------------------------------------------------------- miniature mancanti
+// Le miniature non ancora create non si chiedono con <img>: WebKit non annulla davvero
+// le immagini che spariscono e quelle della vista precedente resterebbero in coda davanti.
+// La pagina dice invece al motore quali mancano SULLO SCHERMO (la lista sostituisce la
+// precedente, quindi cambiando vista si passa subito alla nuova) e le mostra appena pronte.
+const TW = {seq: 0, timer: null, inflight: 0};
+function wantThumbs() {
+  clearTimeout(TW.timer);
+  TW.timer = setTimeout(requestThumbs, 60);
+}
+async function requestThumbs() {
+  const ids = [];
+  for (const [i] of cells) { const it = itemAt(i); if (it && it.th === 0 && !it.m) ids.push(it.id); }
+  if (!ids.length || !CAT) return;
+  const seq = ++TW.seq, version = S.version;
+  TW.inflight++;
+  let r = null;
+  try { r = await api("/api/thumbs/want", {ids}); } catch { r = null; }
+  finally { TW.inflight--; }
+  if (!r || version !== S.version) return;
+  let changed = false;
+  for (const [id, st] of Object.entries(r.state)) if (st) { patchItems([+id], {th: st}); changed = true; }
+  if (changed) render();
+  // l'ultima richiesta riparte finché sullo schermo manca ancora qualcosa
+  if (seq === TW.seq) { if (changed) wantThumbs(); else TW.timer = setTimeout(requestThumbs, 400); }
 }
 
 // tipo di file -> triangolino nell'angolo
@@ -173,12 +201,14 @@ function makeCell(it, i) {
   if (it.l) el.classList.add("lab", "lab-" + it.l);
   const ft = fileType(it.x);
   const stars = it.r ? "★".repeat(it.r) : "";
-  el.innerHTML = `<div class="im"><img loading="lazy" decoding="async" alt="" src="${thumbURL(it.id)}"></div>
+  const pending = it.th === 0 && !it.m;          // miniatura in preparazione (vedi wantThumbs)
+  el.innerHTML = `<div class="im">${pending ? `<span class="ph wait">${esc(it.x || "")}</span>` : `<img loading="lazy" decoding="async" alt="" src="${thumbURL(it.id)}">`}</div>
     ${ft && ft[0] !== "video" ? `<span class="ftype ft-${ft[0]}" title="${ft[1]}"></span>` : ""}
     <div class="tl${ft && ft[0] !== "video" ? " after-tri" : ""}">${ft && ft[0] === "video" ? `<span class="vbadge" title="${ft[1]}">▶ ${esc(it.x.toUpperCase())}</span>` : ""}${it.m ? '<span class="miss" title="File non trovato">⚠ mancante</span>' : ""}</div>
     ${it.f === 1 ? '<span class="flag" title="Scelta">⚑</span>' : ""}
     <div class="cap"${it.l ? ` title="Etichetta ${LABELS[it.l] || ""}"` : ""}><span class="fn" title="${esc(it.n)}">${esc(it.n)}</span><span class="stars">${stars}</span></div>`;
   const img = el.querySelector("img");
+  if (!img) return el;
   img.draggable = false;
   img.onerror = () => { img.replaceWith(Object.assign(document.createElement("span"), {className: "ph", textContent: it.x || "?"})); };
   return el;

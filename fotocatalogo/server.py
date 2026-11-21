@@ -351,10 +351,12 @@ def list_photos(q):
         args + [limit, offset]).fetchall()
     # prepara in background le miniature di questa pagina (quelle visibili arrivano comunque prima)
     thumbs.PREFETCH.add(cat, THUMB_DIR, [r["id"] for r in rows if not r["missing"]])
+    # th: miniatura già pronta (1), impossibile (-1) o da creare (0): la griglia mostra
+    # subito quelle pronte e chiede le altre con /api/thumbs/want
     return {"total": total, "offset": offset, "items": [
         {"id": r["id"], "n": r["filename"], "x": r["ext"], "t": r["capture_time"],
          "r": r["rating"], "l": r["label"], "f": r["flag"], "m": r["missing"], "v": version(r),
-         "o": r["rotation"] or 0} for r in rows]}
+         "o": r["rotation"] or 0, "th": thumbs.PREFETCH.state(THUMB_DIR, r["id"])} for r in rows]}
 
 
 def version(r):
@@ -977,6 +979,10 @@ class Handler(BaseHTTPRequestHandler):
             if not os.path.exists(path):
                 raise ValueError(f"File non trovato: {path}")
             return start_job("Importazione Lightroom", lambda job: import_lrcat(cat, path, job)).as_dict()
+        if route == "thumbs/want":
+            # miniature sullo schermo adesso: passano davanti a tutto
+            res = thumbs.PREFETCH.want(cat, THUMB_DIR, ids_of(body)[:400], timeout=8)
+            return {"state": {str(k): v for k, v in res.items()}}
         if route == "thumbs/pregenerate":
             return pregenerate(body).as_dict()
         if route in ("convert", "convert/dng"):
