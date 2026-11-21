@@ -13,7 +13,16 @@ mai i file: si applica alle copie in cache e alle esportazioni.
 
 Preparazione in background: quando l'interfaccia carica una pagina di foto, le
 loro miniature vengono create in anticipo da due lavoratori a bassa priorità,
-così scorrendo sono già pronte. Le richieste di chi guarda passano davanti.
+così scorrendo sono già pronte.
+
+Priorità: le miniature richieste da chi guarda passano davanti a tutto.
+- Hanno posti riservati (_gen_slots) che la preparazione in background e il lavoro
+  «Genera anteprime» non usano; questi ultimi si fermano finché c'è una richiesta
+  di chi guarda in corso o in attesa.
+- I posti si assegnano all'ultima richiesta arrivata (LIFO): cambiando cartella, le
+  miniature della nuova vista passano davanti a quelle della vista precedente.
+- Una richiesta il cui browser ha già rinunciato (cella sparita) viene scartata
+  prima di generare (alive).
 """
 import collections
 import glob
@@ -29,7 +38,45 @@ from catalog import VIDEO_EXT  # noqa: E402
 SIZES = {"m": 480, "l": 2048}
 IS_MAC = sys.platform == "darwin"
 HERE = os.path.dirname(os.path.abspath(__file__))
-_gen_slots = threading.Semaphore(4)       # richieste di chi sta guardando
+class LifoSlots:
+    """Come un semaforo, ma il posto libero va all'ultima richiesta arrivata.
+    busy conta le richieste in corso o in attesa (per fermare il lavoro in background)."""
+
+    def __init__(self, n):
+        self.free = n
+        self.busy = 0
+        self.lock = threading.Lock()
+        self.waiters = []
+
+    def __enter__(self):
+        with self.lock:
+            self.busy += 1
+            if self.free > 0 and not self.waiters:
+                self.free -= 1
+                return self
+            ev = threading.Event()
+            self.waiters.append(ev)
+        ev.wait()                       # il posto viene passato da chi esce
+        return self
+
+    def __exit__(self, *exc):
+        with self.lock:
+            self.busy -= 1
+            if self.waiters:
+                self.waiters.pop().set()
+            else:
+                self.free += 1
+
+
+_gen_slots = LifoSlots(4)                 # richieste di chi sta guardando
+BG_SLOTS = threading.Semaphore(3)         # lavoro «Genera anteprime»
+
+
+def wait_viewer_idle():
+    """Il lavoro in background aspetta che chi guarda abbia ricevuto le sue miniature."""
+    while _gen_slots.busy:
+        threading.Event().wait(0.15)
+
 _failed = set()
 _locks = {}
 _locks_guard = threading.Lock()
@@ -115,7 +162,7 @@ def _rotate_copy(src, dst, rot):
 
 
 # ---------------------------------------------------------------- miniature e anteprime
-def _base_thumb(cat, cache_dir, photo_id, size, slots):
+def _base_thumb(cat, cache_dir, photo_id, size, slots, alive=None):
     dst = thumb_file(cache_dir, photo_id, size)
     if os.path.exists(dst):
         return dst
@@ -133,6 +180,8 @@ def _base_thumb(cat, cache_dir, photo_id, size, slots):
         part = dst + f".{threading.get_ident()}.part.jpg"
         if slots:
             with slots:
+                if alive and not alive():
+                    return None          # chi l'ha chiesta non la aspetta più
                 ok = (_make_mac if IS_MAC else _make_pillow)(src, part, SIZES[size])
         else:
             ok = (_make_mac if IS_MAC else _make_pillow)(src, part, SIZES[size])
@@ -147,9 +196,9 @@ def _base_thumb(cat, cache_dir, photo_id, size, slots):
         return None
 
 
-def get_thumb(cat, cache_dir, photo_id, size="m", slots=_gen_slots):
+def get_thumb(cat, cache_dir, photo_id, size="m", slots=_gen_slots, alive=None):
     """Percorso della miniatura (già ruotata se serve), generandola se necessario."""
-    base = _base_thumb(cat, cache_dir, photo_id, size, slots)
+    base = _base_thumb(cat, cache_dir, photo_id, size, slots, alive)
     rot = cat.rotation(photo_id) if base else 0
     if not base or not rot:
         return base
@@ -209,6 +258,9 @@ class Prefetcher:
                 if gen != self.gen:
                     continue
             try:
+                wait_viewer_idle()
+                if gen != self.gen:
+                    continue
                 _base_thumb(cat, cache_dir, pid, "m", None)
             except Exception:  # noqa: BLE001  (catalogo chiuso nel frattempo, NAS staccato…)
                 pass

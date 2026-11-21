@@ -90,6 +90,8 @@ presenti non vengono duplicate.
 | Rinominare una foto | **clic sul nome** della foto già selezionata (come nel Finder), oppure **F2**, oppure clic sul nome nel pannello a destra · **Invio** conferma, **Esc** annulla |
 | Rinominare con nome e numero | seleziona più foto e **F2**, oppure tasto destro › Rinomina con nome e numero…; **Catalogo › Da rinominare** per i nomi della fotocamera |
 | Copiare foto nel Finder | trascina le foto selezionate sulla scrivania o in una cartella del Finder (solo nell'app) |
+| Copiare foto negli appunti | **⌘C** sulle foto selezionate, poi **⌘V** nel Finder, in Mail, Messaggi, Photoshop… (solo nell'app) |
+| Eliminare tutte le scartate | **Libreria › Elimina dal disco tutte le scartate…**, oppure **Catalogo › Scartate** › Elimina tutte dal disco… |
 | Salvare una raccolta | tasto destro su una raccolta o un set › **Salva raccolta…** |
 | Tutte le altre azioni | **tasto destro** su foto, raccolte, cartelle e parole chiave |
 
@@ -127,6 +129,16 @@ Converti tutti (RAW e PNG)…**, oppure menu **Foto** dell'app.
 **Elimina dal disco**: tasto destro › Elimina dal disco… (⌘⌫). Cancella i file (e i loro
 `.xmp`) e li toglie dal catalogo, con conferma esplicita. Sul NAS finiscono nel cestino di
 rete, se attivo; non passano dal Cestino del Mac.
+
+**Foto scartate**: **Catalogo › Scartate** mostra tutte le foto con la bandierina ✕ (tasto
+**X**), in qualunque cartella. Da lì, o da **Libreria › Elimina dal disco tutte le
+scartate…**, si eliminano tutte insieme dal disco, con la stessa conferma di sopra. I filtri
+in alto non contano: vengono eliminate tutte le scartate del catalogo.
+
+**Copiare negli appunti** (⌘C, solo nell'app): le foto selezionate vanno negli appunti come
+file, come nel Finder: ⌘V nel Finder ne crea una copia, in Mail o Messaggi le allega. Con una
+sola foto, le app che incollano immagini (es. Photoshop › Incolla) ricevono la foto a piena
+risoluzione, con la rotazione del catalogo. Se stai scrivendo in un campo, ⌘C copia il testo.
 
 ## Rotazione ed esportazione
 

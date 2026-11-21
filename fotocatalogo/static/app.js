@@ -91,7 +91,7 @@ async function loadPage(p) {
 async function reload(keepScroll = false) {
   S.version++;
   S.pages.clear(); S.loading.clear();
-  for (const el of cells.values()) el.remove();
+  for (const el of cells.values()) dropCell(el);
   cells.clear();
   if (!keepScroll) { S.sel.clear(); S.cursor = S.anchor = -1; scroller.scrollTop = 0; }
   await loadPage(0);
@@ -120,7 +120,7 @@ function render() {
   const top = scroller.scrollTop, h = scroller.clientHeight;
   const r0 = Math.max(0, Math.floor(top / S.ch) - 1), r1 = Math.ceil((top + h) / S.ch) + 1;
   const i0 = r0 * S.cols, i1 = Math.min(S.total, r1 * S.cols);
-  for (const [i, el] of cells) if (i < i0 || i >= i1) { el.remove(); cells.delete(i); }
+  for (const [i, el] of cells) if (i < i0 || i >= i1) { dropCell(el); cells.delete(i); }
   for (let i = i0; i < i1; i++) {
     const it = itemAt(i);
     if (!it) loadPage(Math.floor(i / PAGE));
@@ -153,6 +153,15 @@ function fileType(x) {
   if (x === "psd" || x === "psb") return ["psd", "Photoshop (" + x.toUpperCase() + ")"];
   if (RAW_PROP.has(x)) return ["raw", "RAW proprietario (" + x.toUpperCase() + ") da convertire"];
   return null;
+}
+
+// Una cella che sparisce (scorrimento, cambio di cartella) interrompe il caricamento della
+// sua miniatura: altrimenti WebKit la scarica comunque e le miniature della nuova vista
+// restano in coda dietro a quelle che non servono più.
+function dropCell(el) {
+  const img = el.querySelector("img");
+  if (img && !img.complete) { img.onerror = null; img.removeAttribute("src"); }
+  el.remove();
 }
 
 function makeCell(it, i) {
@@ -293,11 +302,12 @@ function setScope(scope) {
   $("#btn-convert-all").hidden = scope !== "toconvert";
   $("#btn-remove-missing").hidden = scope !== "missing";
   $("#btn-rename-all").hidden = scope !== "torename";
+  $("#btn-delete-rejected").hidden = scope !== "rejected";
   renderSidebar(); reload();
 }
 function scopeTitle(scope) {
   const [k, v] = scope.split(":"); const t = S.tree; if (!t) return "";
-  const fixed = {all: "Tutte le foto", nocoll: "Foto senza raccolta", toconvert: "Da convertire (non DNG, JPEG, HEIC, PSD o video)", video: "Video", torename: "Da rinominare (nomi della fotocamera)", missing: "File mancanti", recent: "Importazione più recente"};
+  const fixed = {all: "Tutte le foto", nocoll: "Foto senza raccolta", toconvert: "Da convertire (non DNG, JPEG, HEIC, PSD o video)", video: "Video", torename: "Da rinominare (nomi della fotocamera)", rejected: "Scartate (bandierina ✕), in tutto il catalogo", missing: "File mancanti", recent: "Importazione più recente"};
   if (fixed[k]) return fixed[k];
   if (k === "collection") { const c = t.collections.find(c => c.id == v); return c ? (c.set ? "Set: " : "Raccolta: ") + c.name : "?"; }
   if (k === "keyword") { const c = t.keywords.find(c => c.id == v); return c ? "Parola chiave: " + c.name : "?"; }
@@ -319,6 +329,7 @@ function renderSidebar() {
     ["toconvert", "◭", "Da convertire", t.stats.toconvert]];
   if (t.stats.video) cat.push(["video", "▶", "Video", t.stats.video]);
   cat.push(["torename", "✎", "Da rinominare", t.stats.torename]);
+  if (t.stats.rejected) cat.push(["rejected", "⊘", "Scartate", t.stats.rejected]);
   if (t.stats.missing) cat.push(["missing", "⚠", "File mancanti", t.stats.missing]);
   $("#catalog-list").innerHTML = cat.map(([s, icon, name, count]) =>
     `<li data-scope="${s}">${nodeHTML({icon, name, count, active: S.scope === s})}</li>`).join("");
@@ -843,13 +854,14 @@ document.addEventListener("keydown", async e => {
   // nell'app per Mac queste scorciatoie arrivano dalla barra dei menu
   if (shortcut && !NATIVE) { e.preventDefault(); return COMMANDS[shortcut](); }
   if (mod) return;
-  if (/^[0-5]$/.test(e.key)) return setMeta({rating: +e.key});
+  // ogni tasto gestito va "consumato" (preventDefault), altrimenti il Mac emette il suono d'avviso
+  if (/^[0-5]$/.test(e.key)) { e.preventDefault(); return setMeta({rating: +e.key}); }
   const lab = {"6": "red", "7": "yellow", "8": "green", "9": "blue"}[e.key];
-  if (lab) { const cur = S.sel.size === 1 && S.detail ? S.detail.label : null; return setMeta({label: cur === lab ? null : lab}); }
+  if (lab) { e.preventDefault(); const cur = S.sel.size === 1 && S.detail ? S.detail.label : null; return setMeta({label: cur === lab ? null : lab}); }
   const k = e.key.toLowerCase();
-  if (k === "p") return setMeta({flag: 1});
-  if (k === "x") return setMeta({flag: -1});
-  if (k === "u") return setMeta({flag: 0});
+  if (k === "p") { e.preventDefault(); return setMeta({flag: 1}); }
+  if (k === "x") { e.preventDefault(); return setMeta({flag: -1}); }
+  if (k === "u") { e.preventDefault(); return setMeta({flag: 0}); }
   if (k === "c" || k === "b") { e.preventDefault(); return pickCollection([...S.sel]); }
   if (e.key === "F2" && !NATIVE) { e.preventDefault(); return COMMANDS.renameSel(); }   // nell'app: menu Foto
   if (e.key === "Enter" || e.key === " ") { if (S.cursor >= 0) { e.preventDefault(); loupe ? closeLoupe() : openLoupe(S.cursor); } return; }
@@ -953,6 +965,7 @@ $("#menu-library").addEventListener("click", e => {
   if (a === "help") helpDialog();
   if (a === "pregen") COMMANDS.pregen();
   if (a === "dups") COMMANDS.findDups();
+  if (a === "del-rejected") deleteRejected();
 });
 
 // ================================================================ comandi (tastiera, menu dell'app, tasto destro)
@@ -984,6 +997,7 @@ const COMMANDS = {
   switchCatalog: () => showCatalogScreen(null, false),
   convertDng: needSel(() => convertDng(selIds())),
   deleteFiles: needSel(() => deleteFiles(selIds())),
+  deleteRejected: () => deleteRejected(),
   renameSel: needSel(() => S.sel.size === 1 ? startInlineRename(selIds()[0]) : renameDialog(selIds())),
   renameNum: needSel(() => renameDialog(selIds())),
   moveSel: needSel(() => moveDialog(selIds())),
@@ -1011,6 +1025,18 @@ window.fc = {
     // mentre si scrive, ⌘← ⌘→ ⌘⌫ agiscono sul testo, non sulle foto
     if (document.activeElement?.matches("input, textarea") && ["rotateLeft", "rotateRight", "deleteFiles"].includes(name)) return;
     COMMANDS[name]?.();
+  },
+  // ⌘C dal menu dell'app: le foto selezionate da copiare, oppure null se si sta copiando del testo
+  copyIds() {
+    const a = document.activeElement;
+    if ($("#dlg").open || !$("#catscreen").hidden || !$("#dupscreen").hidden) return null;
+    if (a && a.matches("input, textarea, select")) return null;
+    if (String(window.getSelection() || "").trim()) return null;
+    return S.sel.size ? [...S.sel] : null;
+  },
+  copied(n, missing) {
+    if (!n) return toast("Nessun file da copiare (il NAS è collegato?)", true);
+    toast(`${n === 1 ? "Foto copiata" : n.toLocaleString("it-IT") + " foto copiate"}: incolla nel Finder, in Mail, Messaggi…` + (missing ? ` (${missing} mancanti)` : ""));
   },
   dragEnded() { setTimeout(() => { S.nativeDrag = null; }, 400); },
   pickResult(id, path) { pickWaiters.get(id)?.(path); pickWaiters.delete(id); },
@@ -1123,6 +1149,7 @@ async function menuFor(t) {
     S.scope === "toconvert" && S.total && {label: "Converti tutti (RAW e PNG)…", run: convertAll},
     S.scope === "missing" && S.total && {label: "Rimuovi tutte dal catalogo…", danger: true, run: () => removeMissing(null)},
     S.scope === "torename" && S.total && {label: "Rinomina tutte…", run: renameAll},
+    S.scope === "rejected" && S.total && {label: "Elimina dal disco tutte le scartate…", danger: true, run: deleteRejected},
     {label: "Miniature", sub: [{label: "Più grandi", key: "⌘+", run: COMMANDS.zoomIn}, {label: "Più piccole", key: "⌘−", run: COMMANDS.zoomOut}]},
   ];
   return null;
@@ -1451,11 +1478,20 @@ $("#btn-remove-missing").onclick = () => removeMissing(null);
 
 // ================================================================ elimina dal disco
 const fmtBytes = b => b >= 1e9 ? (b / 1e9).toFixed(1).replace(".", ",") + " GB" : b >= 1e6 ? Math.round(b / 1e6) + " MB" : Math.round(b / 1e3) + " KB";
-async function deleteFiles(ids) {
+// tutte le foto con la bandierina «scartata», in qualunque cartella (i filtri in alto non contano)
+async function deleteRejected() {
+  const r = await safe(() => api(`/api/photos?${new URLSearchParams({scope: "rejected", offset: 0, limit: 1000000, ids_only: 1})}`));
+  if (!r) return;
+  if (!r.ids.length) return toast("Non ci sono foto scartate");
+  deleteFiles(r.ids, `tutte le foto scartate del catalogo (${r.ids.length.toLocaleString("it-IT")} file, in qualunque cartella)`);
+}
+$("#btn-delete-rejected").onclick = deleteRejected;
+
+async function deleteFiles(ids, what = null) {
   if (!ids.length) return;
   const n = ids.length.toLocaleString("it-IT");
   const f = await dialog(`Elimina ${n} file dal disco`, `
-    <p>Stai per <b>cancellare dal disco ${ids.length === 1 ? "il file selezionato" : `${n} file`}</b> (e gli eventuali .xmp),
+    <p>Stai per <b>cancellare dal disco ${what ? esc(what) : ids.length === 1 ? "il file selezionato" : `${n} file`}</b> (e gli eventuali .xmp),
     che verranno tolti anche dal catalogo, con le loro raccolte e parole chiave.</p>
     <p class="warn">Sul NAS i file finiscono nel cestino di rete, se è attivo. Non passano dal Cestino del Mac.</p>
     <label class="check"><input type="checkbox" name="ok" required> Ho capito, elimina i file</label>`, `Elimina ${n} file`);
@@ -2046,6 +2082,7 @@ async function onJobDone(j) {
   $("#btn-convert-all").hidden = S.scope !== "toconvert";
   $("#btn-remove-missing").hidden = S.scope !== "missing";
   $("#btn-rename-all").hidden = S.scope !== "torename";
+  $("#btn-delete-rejected").hidden = S.scope !== "rejected";
   renderSidebar();
   await reload();
   pollJobs();

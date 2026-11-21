@@ -123,6 +123,20 @@ sincronizzazione rapida). Le colonne nuove si aggiungono con `ALTER TABLE` in
   miniature dei cataloghi protetti si inviano con `Cache-Control: no-store`.
   Chiusura del motore (SIGTERM) → `close_current()` → l'immagine cifrata viene
   smontata.
+- **Priorità delle miniature** (`thumbs.py`): le richieste di chi guarda hanno 4 posti
+  propri (`LifoSlots`: il posto libero va all'ultima richiesta, così cambiando cartella
+  la nuova vista passa davanti) e, prima di generare, controllano che il browser stia
+  ancora aspettando (`client_alive` in `server.py`). Preparazione in background e lavoro
+  «Genera anteprime» (`BG_SLOTS`, interrompibile) si fermano finché `_gen_slots.busy`.
+  Nella pagina, `dropCell` toglie `src` alle miniature non ancora caricate quando una
+  cella sparisce: senza, WebKit le scarica comunque e la nuova vista resta in coda.
+  Sintomo che ha portato a tutto questo: entrando in una cartella da 5 foto mentre
+  si finiva una da 2500, le 5 miniature arrivavano molto dopo.
+- **⌘C** (solo app): la voce Copia chiama `copyAction` in Swift, che chiede alla pagina
+  `fc.copyIds()` (null se si sta scrivendo o c'è del testo selezionato: allora copia il
+  testo con `copy:`). Negli appunti vanno file URL; con una foto sola anche TIFF/JPEG a
+  piena risoluzione tramite `ClipboardImageProvider`, preparato solo quando un'app incolla
+  (`/full/ID`).
 - **Lavori in background**: `start_job`, con avanzamento in `/api/jobs`.
   `job.cancellable` mostra «Interrompi»; `job.quick` (sincronizzazione rapida) si
   ferma da solo al cambio di catalogo. L'interfaccia reagisce ai risultati in
@@ -139,8 +153,8 @@ sincronizzazione rapida). Le colonne nuove si aggiungono con `ALTER TABLE` in
   Le immagini nelle celle hanno `draggable=false`.
 - `effectAllowed = "copyMove"`, altrimenti il rilascio con effetto «sposta» sulle
   cartelle viene annullato.
-- Esc va segnalato con `preventDefault()` quando fa qualcosa, altrimenti macOS
-  emette il suono d'errore.
+- **Ogni tasto gestito va segnalato con `preventDefault()`** (Esc, numeri, P, X, U…):
+  un `keydown` non consumato risale ad AppKit, che emette il suono d'avviso.
 - **Trascinare le foto (app per Mac) = trascinare i file veri.** Nell'app il `dragstart`
   delle miniature viene annullato: la pagina manda `{cmd:"drag", ids}` a Swift
   (`FCWebView.requestDrag`), che chiede i percorsi a `POST /api/paths` e avvia un

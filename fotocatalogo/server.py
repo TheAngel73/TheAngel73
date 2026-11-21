@@ -7,7 +7,9 @@ Solo libreria standard di Python: non serve installare nulla.
 import json
 import os
 import zlib
+import select
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -204,6 +206,17 @@ def catalogs_post(action, body):
     raise ValueError("Comando sconosciuto")
 
 
+def client_alive(sock):
+    """False se il browser ha chiuso la connessione (non vuole più la risposta)."""
+    try:
+        ready, _, _ = select.select([sock], [], [], 0)
+        if ready:
+            return sock.recv(1, socket.MSG_PEEK) != b""
+        return True
+    except (OSError, ValueError):
+        return False
+
+
 def rollback(c):
     """Annulla una modifica al database rimasta a metà per un errore (altrimenti il
     catalogo resterebbe occupato e le operazioni successive aspetterebbero)."""
@@ -265,6 +278,8 @@ def scope_filter(scope, deep=True):
         return "NOT EXISTS (SELECT 1 FROM collection_photos cp WHERE cp.photo_id=p.id)", []
     if kind == "missing":
         return "p.missing=1", []
+    if kind == "rejected":
+        return "p.flag=-1", []
     if kind == "recent":
         return "p.added_at >= (SELECT datetime(max(added_at), '-1 day') FROM photos)", []
     return "1", []
@@ -412,7 +427,8 @@ def tree():
            ({','.join(repr(e) for e in NOT_TO_CONVERT)})) AS toconvert,
         (SELECT count(*) FROM photos p WHERE p.ext IN
            ({','.join(repr(e) for e in sorted(VIDEO_EXT))})) AS video,
-        (SELECT count(*) FROM photos p WHERE fc_camname(p.filename)=1) AS torename
+        (SELECT count(*) FROM photos p WHERE fc_camname(p.filename)=1) AS torename,
+        (SELECT count(*) FROM photos p WHERE p.flag=-1) AS rejected
         FROM photos""").fetchone()
     return {"roots": roots, "folders": folders, "collections": colls, "keywords": kws,
             "stats": dict(stats)}
@@ -529,7 +545,10 @@ def pregenerate(scope_q):
         lock = threading.Lock()
 
         def one(pid):
-            thumbs.get_thumb(cat, THUMB_DIR, pid, "m")
+            if job.cancelled:
+                return
+            thumbs.wait_viewer_idle()          # chi guarda la griglia ha la precedenza
+            thumbs.get_thumb(cat, THUMB_DIR, pid, "m", slots=thumbs.BG_SLOTS)
             with lock:
                 done[0] += 1
                 if done[0] % 20 == 0 or done[0] == len(todo):
@@ -537,7 +556,9 @@ def pregenerate(scope_q):
         with ThreadPoolExecutor(4) as ex:
             list(ex.map(one, todo))
         return {"create": len(todo)}
-    return start_job("Generazione anteprime", run)
+    job = start_job("Generazione anteprime", run)
+    job.cancellable = True
+    return job
 
 
 def delete_collection(cid):
@@ -673,7 +694,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_file(path, ctype, private=private)
             if parts[0] in ("thumb", "preview") and len(parts) == 2:
                 c, tdir, private = cat, THUMB_DIR, CURRENT.protected
-                path = thumbs.get_thumb(c, tdir, int(parts[1]), "m" if parts[0] == "thumb" else "l")
+                path = thumbs.get_thumb(c, tdir, int(parts[1]), "m" if parts[0] == "thumb" else "l",
+                                        alive=lambda: client_alive(self.connection))
                 return self.send_file(path, "image/jpeg", private=private) if path else self.not_found()
             if u.path == "/api/tree":
                 return self.send_json(tree())

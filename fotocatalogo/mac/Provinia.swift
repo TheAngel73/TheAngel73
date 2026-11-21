@@ -89,20 +89,64 @@ final class FCWebView: WKWebView {
     }
 
     func requestDrag(ids: [Int]) {
-        var req = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/api/paths")!)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try? JSONSerialization.data(withJSONObject: ["ids": ids])
-        req.timeoutInterval = 5
-        URLSession.shared.dataTask(with: req) { data, _, _ in
-            var paths: [String] = []
-            if let data = data, let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                paths = obj["paths"] as? [String] ?? []
-            }
-            DispatchQueue.main.async { self.startFileDrag(paths: paths) }
-        }.resume()
+        fetchPaths(ids: ids) { paths in self.startFileDrag(paths: paths) }
     }
 }
+
+/// Percorsi dei file esistenti per queste foto, chiesti al motore (risposta sul thread principale).
+func fetchPaths(ids: [Int], _ done: @escaping ([String]) -> Void) {
+    var req = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/api/paths")!)
+    req.httpMethod = "POST"
+    req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    req.httpBody = try? JSONSerialization.data(withJSONObject: ["ids": ids])
+    req.timeoutInterval = 10
+    URLSession.shared.dataTask(with: req) { data, _, _ in
+        var paths: [String] = []
+        if let data = data, let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            paths = obj["paths"] as? [String] ?? []
+        }
+        DispatchQueue.main.async { done(paths) }
+    }.resume()
+}
+
+// MARK: ⌘C — copiare le foto negli appunti
+//
+// Negli appunti vanno i file (come ⌘C nel Finder): si incollano nel Finder, in Mail,
+// Messaggi, WhatsApp… Con una sola foto si offre anche l'immagine, a piena risoluzione,
+// per le app che incollano immagini (es. Photoshop): viene preparata solo se un'app la
+// chiede davvero, perché per un RAW richiede qualche secondo.
+final class ClipboardImageProvider: NSObject, NSPasteboardItemDataProvider {
+    static let jpeg = NSPasteboard.PasteboardType("public.jpeg")
+    let photoId: Int
+    init(photoId: Int) { self.photoId = photoId }
+
+    func pasteboard(_ pasteboard: NSPasteboard?, item: NSPasteboardItem,
+                    provideDataForType type: NSPasteboard.PasteboardType) {
+        var jpegData: Data?
+        let sem = DispatchSemaphore(value: 0)
+        var req = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/full/\(photoId)")!)
+        req.timeoutInterval = 120
+        URLSession.shared.dataTask(with: req) { data, resp, _ in
+            if (resp as? HTTPURLResponse)?.statusCode == 200 { jpegData = data }
+            sem.signal()
+        }.resume()
+        _ = sem.wait(timeout: .now() + 125)
+        guard let data = jpegData else { return }
+        if type == ClipboardImageProvider.jpeg {
+            if data.starts(with: [0xFF, 0xD8, 0xFF]) { item.setData(data, forType: type) }
+            else if let rep = NSBitmapImageRep(data: data),
+                    let j = rep.representation(using: .jpeg, properties: [.compressionFactor: 0.95]) {
+                item.setData(j, forType: type)
+            }
+        } else if type == .tiff, let rep = NSBitmapImageRep(data: data), let t = rep.tiffRepresentation {
+            item.setData(t, forType: .tiff)
+        }
+    }
+
+    func pasteboardFinishedWithDataProvider(_ pasteboard: NSPasteboard) {}
+}
+
+let videoExtensions: Set<String> = ["mov", "mp4", "m4v", "avi", "mkv", "mts", "m2ts", "3gp", "mpg", "mpeg", "wmv", "webm"]
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                          WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate {
@@ -111,6 +155,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     var server: Process?
     var quitting = false
     var titleObserver: NSKeyValueObservation?
+    var clipboardProvider: ClipboardImageProvider?   // tenuto in vita finché servono gli appunti
 
     // MARK: avvio
 
@@ -330,6 +375,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
 
     @objc func reloadUI(_ sender: Any?) { startServer() }
 
+    // ⌘C: se si sta scrivendo o è selezionato del testo copia il testo, altrimenti le foto
+    @objc func copyAction(_ sender: Any?) {
+        webView.evaluateJavaScript("window.fc && fc.copyIds ? fc.copyIds() : null") { result, _ in
+            let ids = (result as? [Any])?.compactMap { ($0 as? NSNumber)?.intValue } ?? []
+            if ids.isEmpty {
+                NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: sender)
+                return
+            }
+            fetchPaths(ids: ids) { paths in self.copyFiles(paths, ids: ids) }
+        }
+    }
+
+    func copyFiles(_ paths: [String], ids: [Int]) {
+        if !paths.isEmpty {
+            let pb = NSPasteboard.general
+            pb.clearContents()
+            clipboardProvider = nil
+            var items: [NSPasteboardItem] = []
+            for path in paths {
+                let item = NSPasteboardItem()
+                item.setString(URL(fileURLWithPath: path).absoluteString, forType: .fileURL)
+                items.append(item)
+            }
+            let ext = (paths[0] as NSString).pathExtension.lowercased()
+            if paths.count == 1 && ids.count == 1 && !videoExtensions.contains(ext) {
+                let provider = ClipboardImageProvider(photoId: ids[0])
+                items[0].setDataProvider(provider, forTypes: [.tiff, ClipboardImageProvider.jpeg])
+                clipboardProvider = provider
+            }
+            pb.writeObjects(items)
+        }
+        webView.evaluateJavaScript("window.fc && fc.copied(\(paths.count), \(ids.count - paths.count))", completionHandler: nil)
+    }
+
     @objc func showLog(_ sender: Any?) {
         NSWorkspace.shared.open(URL(fileURLWithPath: logPath))
     }
@@ -389,6 +468,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         cmd(lib, "Importa catalogo Lightroom…", "importLr", "i", [.command, .shift])
         lib.addItem(.separator())
         cmd(lib, "Trova duplicati…", "findDups")
+        cmd(lib, "Elimina dal disco tutte le scartate…", "deleteRejected")
         cmd(lib, "Genera anteprime della vista corrente", "pregen")
         cmd(lib, "Cambia percorso del NAS…", "relocate")
 
@@ -397,7 +477,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         sys(edit, "Ripeti", Selector(("redo:")), "z", [.command, .shift])
         edit.addItem(.separator())
         sys(edit, "Taglia", #selector(NSText.cut(_:)), "x")
-        sys(edit, "Copia", #selector(NSText.copy(_:)), "c")
+        sys(edit, "Copia", #selector(copyAction(_:)), "c", target: self)
         sys(edit, "Incolla", #selector(NSText.paste(_:)), "v")
         cmd(edit, "Seleziona tutto", "selectAll", "a")
         cmd(edit, "Deseleziona", "selectNone", "d")
