@@ -184,8 +184,11 @@ sincronizzazione rapida). Le colonne nuove si aggiungono con `ALTER TABLE` in
   il Finder riceveva solo il testo e creava un ritaglio `.textClipping`).
 - **Finestra**: la pagina è vincolata a `window.contentLayoutGuide` (sotto la barra del
   titolo), `FCWebView.acceptsFirstMouse` è `true` e chiusa la schermata di avvio la
-  finestra principale torna key. Introdotti dopo la segnalazione «su un Mac nuovo il
-  pulsante Libreria non fa nulla» (causa non confermata al momento della scrittura).
+  finestra principale torna key (precauzioni aggiunte cercando un altro problema).
+- **Mai `overflow: hidden` su `#topbar`**: il menu «Libreria» si apre sotto la barra e
+  verrebbe tagliato via. Era la causa vera di «il pulsante Libreria non fa nulla».
+  Nei test, `isVisible()` di Playwright non se ne accorge: controllare con
+  `elementFromPoint` o con uno screenshot.
 - **Errori dell'interfaccia**: uno script in `index.html` (prima di `app.js`) li mostra in
   una barra rossa e li manda a `POST /api/clientlog`, che li scrive nel registro
   (`~/Library/Logs/Provinia.log`, Aiuto › Mostra registro) con lo user agent.
