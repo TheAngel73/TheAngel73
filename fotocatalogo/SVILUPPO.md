@@ -54,7 +54,7 @@ messaggi, commenti e commit sono **in italiano**.
 | `salva.py` | «Salva raccolta…»: copia gli originali di una raccolta o di un set ricreando la struttura in cartelle |
 | `exif.py` | lettore EXIF minimale (JPEG/TIFF/RAW: data, dimensioni, dati di scatto, **GPS**) e data e posizione dei video MP4/MOV |
 | `luoghi.py` | nome del luogo dalle coordinate (località più vicina, dati in `dati/`) |
-| `static/app.js` | tutta l'interfaccia (circa 2300 righe, divise in sezioni `// ====`) |
+| `static/app.js` | tutta l'interfaccia (circa 2200 righe, divise in sezioni `// ====`) |
 | `static/mappa.js` | mappa dei luoghi (canvas, Mercatore, raggruppamento dei punti, filtro per area) |
 | `static/mondo*.json` | contorni del mondo per la mappa (Natural Earth), `inter.woff2` font, `icona.png` |
 | `dati/` | `luoghi.tsv.gz` (località GeoNames), `paesi.json` (nomi italiani), `LICENZE.txt` |
