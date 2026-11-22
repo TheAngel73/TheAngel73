@@ -632,6 +632,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         cmd(photo, "Elimina dal disco…", "deleteFiles", "\u{8}")
 
         let view = submenu("Vista")
+        cmd(view, "Mappa dei luoghi…", "map", "m", [.command, .option])
+        view.addItem(.separator())
         cmd(view, "Miniature più grandi", "zoomIn", "+")
         cmd(view, "Miniature più piccole", "zoomOut", "-")
         view.addItem(.separator())

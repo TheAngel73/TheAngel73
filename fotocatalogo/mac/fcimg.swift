@@ -11,7 +11,8 @@
 //
 //   fcimg info <file>
 //       Stampa in JSON i dati di scatto (fotocamera, obiettivo, focale, tempo,
-//       apertura, ISO) leggendo solo i metadati, senza decodificare l'immagine.
+//       apertura, ISO) e la posizione GPS (lat, lon), leggendo solo i metadati,
+//       senza decodificare l'immagine.
 //
 // In tojpeg ed export le parti trasparenti vanno su fondo bianco (un JPEG non può
 // essere trasparente) e si mantengono profilo colore e dati EXIF/GPS/IPTC.
@@ -49,6 +50,16 @@ if args.count == 3 && args[1] == "info" {
     out["fnumber"] = exif[kCGImagePropertyExifFNumber as String]
     if let iso = exif[kCGImagePropertyExifISOSpeedRatings as String] as? [Any], let first = iso.first {
         out["iso"] = first
+    }
+    if let gps = props[kCGImagePropertyGPSDictionary as String] as? [String: Any],
+       var lat = (gps[kCGImagePropertyGPSLatitude as String] as? NSNumber)?.doubleValue,
+       var lon = (gps[kCGImagePropertyGPSLongitude as String] as? NSNumber)?.doubleValue {
+        if (gps[kCGImagePropertyGPSLatitudeRef as String] as? String)?.uppercased() == "S" { lat = -lat }
+        if (gps[kCGImagePropertyGPSLongitudeRef as String] as? String)?.uppercased() == "W" { lon = -lon }
+        if (lat != 0 || lon != 0) && abs(lat) <= 90 && abs(lon) <= 180 {
+            out["lat"] = lat
+            out["lon"] = lon
+        }
     }
     let clean = out.filter { JSONSerialization.isValidJSONObject([$0.value]) }
     let data = try! JSONSerialization.data(withJSONObject: clean)

@@ -26,12 +26,7 @@
     </div>
   </div>
   <input id="search" type="search" placeholder="Cerca nome file, parola chiave, cartella…">
-  <select id="f-rating" title="Valutazione minima">
-    <option value="">Stelle</option>
-    <option value="1">★ e più</option><option value="2">★★ e più</option>
-    <option value="3">★★★ e più</option><option value="4">★★★★ e più</option>
-    <option value="5">★★★★★</option>
-  </select>
+  <button id="f-geo" type="button" title="Filtra per luogo: mappa delle foto con posizione GPS"><svg class="i" viewBox="0 0 16 16"><path d="M8 14.2s4.6-4.3 4.6-7.9A4.6 4.6 0 0 0 3.4 6.3c0 3.6 4.6 7.9 4.6 7.9z"/><circle cx="8" cy="6.3" r="1.6"/></svg><span id="f-geo-label">Luogo</span></button>
   <select id="f-label" title="Etichetta colore">
     <option value="">Etichette</option>
     <option value="red">Rossa</option><option value="yellow">Gialla</option>
@@ -121,6 +116,7 @@
 <div id="toast" hidden></div>
 <div id="catscreen" hidden></div>
 <div id="dupscreen" hidden></div>
+<div id="mapscreen" hidden></div>
 
 <script>
 // Errori dell'interfaccia: finiscono nel registro (Aiuto › Mostra registro) e in una
@@ -133,10 +129,14 @@
     if (!b) { b = document.createElement("div"); b.id = "fatal"; document.body.appendChild(b); b.onclick = function () { b.remove(); }; }
     b.textContent = "Errore nell'interfaccia: " + msg + " (clic per chiudere; dettagli in Aiuto › Mostra registro)";
   }
-  window.addEventListener("error", function (e) { report((e.message || "errore") + (e.filename ? " — " + e.filename.split("/").pop() + ":" + e.lineno : "")); });
+  window.addEventListener("error", function (e) {
+    // avviso innocuo di WebKit, non è un errore
+    if (/ResizeObserver loop/.test(e.message || "")) return;
+    report((e.message || "errore") + (e.filename ? " — " + e.filename.split("/").pop() + ":" + e.lineno : "")); });
   window.addEventListener("unhandledrejection", function (e) { report((e.reason && (e.reason.stack || e.reason.message)) || e.reason); });
 })();
 </script>
 <script src="/static/app.js"></script>
+<script src="/static/mappa.js"></script>
 </body>
 </html>

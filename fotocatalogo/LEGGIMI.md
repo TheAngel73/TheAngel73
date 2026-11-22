@@ -93,6 +93,7 @@ presenti non vengono duplicate.
 | Rinominare con nome e numero | seleziona più foto e **F2**, oppure tasto destro › Rinomina con nome e numero…; **Catalogo › Da rinominare** per i nomi della fotocamera |
 | Copiare foto nel Finder | trascina le foto selezionate sulla scrivania o in una cartella del Finder (solo nell'app) |
 | Copiare foto negli appunti | **⌘C** sulle foto selezionate, poi **⌘V** nel Finder, in Mail, Messaggi, Photoshop… (solo nell'app) |
+| Cercare per luogo | pulsante **Luogo** in alto (o **Vista › Mappa dei luoghi…**, ⌥⌘M): clic su un cerchio, oppure **⇧ + trascina** per un'area, oppure «Mostra le foto di quest'area» |
 | Eliminare tutte le scartate | **Libreria › Elimina dal disco tutte le scartate…**, oppure **Catalogo › Scartate** › Elimina tutte dal disco… |
 | Salvare una raccolta | tasto destro su una raccolta o un set › **Salva raccolta…** |
 | Tutte le altre azioni | **tasto destro** su foto, raccolte, cartelle e parole chiave |
@@ -136,6 +137,17 @@ rete, se attivo; non passano dal Cestino del Mac.
 **X**), in qualunque cartella. Da lì, o da **Libreria › Elimina dal disco tutte le
 scartate…**, si eliminano tutte insieme dal disco, con la stessa conferma di sopra. I filtri
 in alto non contano: vengono eliminate tutte le scartate del catalogo.
+
+**Luoghi (GPS)**: il pulsante **Luogo** in alto apre una mappa del mondo con i punti dove
+sono state scattate le foto della vista corrente (cartella, raccolta, ricerca…). I punti vicini
+si raggruppano in cerchi con il numero di foto. Si sposta trascinando e si ingrandisce con la
+rotellina o il pizzico. Un **clic su un cerchio** mostra le sue foto; **⇧ + trascina** sceglie
+un'area; **Mostra le foto di quest'area** usa ciò che si vede. L'area diventa un filtro, come gli
+altri: il pulsante si colora e la ✕ in alto lo toglie. Nel pannello informazioni, le foto con
+posizione hanno la riga **Posizione** con «Sulla mappa» e «Apri in Mappe».
+Le posizioni si leggono dai file (JPEG, RAW, HEIC, video di smartphone…). Per le foto già in
+catalogo la lettura avviene una volta, in background («Posizioni GPS» nella barra in basso):
+si può interrompere e riprende da dove era rimasta. La mappa funziona senza internet.
 
 **Copiare negli appunti** (⌘C, solo nell'app): le foto selezionate vanno negli appunti come
 file, come nel Finder: ⌘V nel Finder ne crea una copia, in Mail o Messaggi le allega. Con una

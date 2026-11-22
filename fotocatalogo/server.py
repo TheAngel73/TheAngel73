@@ -25,7 +25,7 @@ from urllib.parse import parse_qs, urlparse
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-from catalog import PHOTO_EXT, nfc, now, resolve_path  # noqa: E402
+from catalog import EXIF_EXT, PHOTO_EXT, QT_EXT, nfc, now, resolve_path  # noqa: E402
 CHUNK = 1024 * 1024
 from lightroom import import_lrcat  # noqa: E402
 import catalogs  # noqa: E402
@@ -98,7 +98,105 @@ def jobs_running():
 
 def start_quick_sync():
     if cat.db.execute("SELECT 1 FROM roots LIMIT 1").fetchone():
-        start_job("Sincronizzazione rapida", lambda job: cat.quick_sync(job), quick=True)
+        start_job("Sincronizzazione rapida", lambda job: and_gps(cat.quick_sync(job)), quick=True)
+
+
+# ---------------------------------------------------------------- posizioni GPS
+def read_gps(path, ext):
+    """(lat, lon) di un file, oppure None. Lettore interno per JPEG, RAW TIFF e video
+    MP4/MOV; sul Mac ImageIO (fcimg info) per tutto il resto (HEIC, CR3, PSD, PNG…)."""
+    ext = (ext or "").lower()
+    if ext in EXIF_EXT:
+        ex = exif.read_exif(path, head=128 * 1024)
+        if ex.get("gps_beyond"):
+            ex = exif.read_exif(path, head=4 * 1024 * 1024)
+        if "lat" in ex:
+            return ex["lat"], ex["lon"]
+        if ext not in ("tif", "tiff") or not thumbs.find_imghelper():
+            return None
+    elif ext in QT_EXT:
+        ex = exif.read_video(path)
+        return (ex["lat"], ex["lon"]) if "lat" in ex else None
+    elif ext in VIDEO_EXT:
+        return None
+    helper = thumbs.find_imghelper()
+    if not helper:
+        return None
+    try:
+        r = subprocess.run([helper, "info", path], capture_output=True, timeout=20)
+        d = json.loads(r.stdout or b"{}") if r.returncode == 0 else {}
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return None
+    if isinstance(d.get("lat"), (int, float)) and isinstance(d.get("lon"), (int, float)):
+        return round(d["lat"], 6), round(d["lon"], 6)
+    return None
+
+
+def gps_pending():
+    return cat.db.execute("SELECT count(*) FROM photos WHERE gps_read=0 AND missing=0").fetchone()[0]
+
+
+def start_gps_job():
+    """Legge in background le posizioni delle foto non ancora lette (es. un catalogo creato
+    prima di questa funzione). Si può interrompere: riprende da dove era rimasto."""
+    if cat is None or any(j.label == "Posizioni GPS" and j.status == "running" for j in JOBS.values()):
+        return
+    if not gps_pending():
+        return
+    job_cat = cat
+
+    def run(job):
+        rows = job_cat.db.execute("""SELECT id, ext FROM photos WHERE gps_read=0 AND missing=0
+                                     ORDER BY capture_time DESC""").fetchall()
+        total, found, batch = len(rows), 0, []
+
+        def flush():
+            if batch:
+                with job_cat.write_lock:
+                    job_cat.db.executemany("UPDATE photos SET gps_lat=?, gps_lon=?, gps_read=1 WHERE id=?", batch)
+                    job_cat.db.commit()
+                batch.clear()
+        job.update(0, f"Posizioni GPS: 0 / {total}", total=total)
+        for n, (pid, ext) in enumerate(rows, 1):
+            if job.cancelled or job_cat.closed:
+                break
+            thumbs.wait_viewer_idle()           # le miniature di chi guarda hanno la precedenza
+            path = job_cat.photo_path(pid)
+            if path and os.path.exists(path):   # NAS scollegato: si riproverà la prossima volta
+                pos = read_gps(path, ext)
+                found += bool(pos)
+                batch.append((pos[0] if pos else None, pos[1] if pos else None, pid))
+            if len(batch) >= 200:
+                flush()
+            if n % 50 == 0 or n == total:
+                job.update(n, f"Posizioni GPS: {n} / {total} ({found} con posizione)")
+        flush()
+        return {"gps": True, "lette": total, "trovate": found, "interrotta": job.cancelled}
+    job = start_job("Posizioni GPS", run, quick=True)
+    job.cancellable = True
+
+
+def and_gps(res):
+    """Dopo una sincronizzazione: legge le posizioni dei file nuovi che ne hanno bisogno."""
+    try:
+        start_gps_job()
+    except Exception:  # noqa: BLE001
+        traceback.print_exc()
+    return res
+
+
+def gps_points(q):
+    """Punti della mappa per la vista corrente (tutti i filtri tranne l'area): posizioni
+    arrotondate a ~100 m con il numero di foto in ciascuna."""
+    q = dict(q)
+    q.pop("geo", None)
+    where, args, _ = build_query(q)
+    db = cat.db
+    rows = db.execute(f"""SELECT round(p.gps_lat, 3), round(p.gps_lon, 3), count(*) FROM photos p
+                          WHERE {where} AND p.gps_lat IS NOT NULL GROUP BY 1, 2""", args).fetchall()
+    total = db.execute(f"SELECT count(*) FROM photos p WHERE {where}", args).fetchone()[0]
+    return {"points": [list(r) for r in rows], "total": total, "with": sum(r[2] for r in rows),
+            "pending": gps_pending()}
 
 
 def close_current():
@@ -311,6 +409,19 @@ def build_query(q):
                             JOIN keywords k ON k.id=pk.keyword_id WHERE k.name LIKE ?)
                             OR p.folder_id IN (SELECT id FROM folders WHERE rel_path LIKE ?))""")
             args += [like, like, like]
+    if q.get("geo"):                        # area della mappa: sud, ovest, nord, est
+        try:
+            s_, w_, n_, e_ = (float(x) for x in q["geo"].split(","))
+        except ValueError:
+            s_ = w_ = n_ = e_ = 0.0
+        where.append("p.gps_lat BETWEEN ? AND ?")
+        args += [s_, n_]
+        if w_ <= e_:
+            where.append("p.gps_lon BETWEEN ? AND ?")
+            args += [w_, e_]
+        else:                               # area che attraversa la linea del cambio di data
+            where.append("(p.gps_lon >= ? OR p.gps_lon <= ?)")
+            args += [w_, e_]
     if q.get("rating"):
         where.append("p.rating >= ?")
         args.append(int(q["rating"]))
@@ -773,9 +884,9 @@ class Handler(BaseHTTPRequestHandler):
             if parts[0] == "static" and len(parts) == 2 and "/" not in parts[1] and ".." not in parts[1]:
                 p = os.path.join(STATIC, parts[1])
                 ctype = {"js": "text/javascript; charset=utf-8", "css": "text/css; charset=utf-8",
-                         "svg": "image/svg+xml", "png": "image/png", "woff2": "font/woff2",
+                         "svg": "image/svg+xml", "png": "image/png", "woff2": "font/woff2", "json": "application/json",
                          "txt": "text/plain; charset=utf-8"}.get(p.rsplit(".", 1)[-1], "application/octet-stream")
-                return (self.send_file(p, ctype, ctype == "font/woff2") if os.path.isfile(p)
+                return (self.send_file(p, ctype, ctype in ("font/woff2", "application/json")) if os.path.isfile(p)
                         else self.not_found())
             if u.path == "/api/catalogs":
                 return self.send_json(catalogs_state())
@@ -800,6 +911,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_file(path, "image/jpeg", private=private) if path else self.not_found()
             if u.path == "/api/tree":
                 return self.send_json(tree())
+            if u.path == "/api/gps":
+                return self.send_json(gps_points(q))
             if u.path == "/api/photos":
                 return self.send_json(list_photos(q))
             if parts[:2] == ["api", "photo"] and len(parts) == 3:
@@ -1056,7 +1169,7 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("Cartella sconosciuta")
             label = os.path.basename(f["rel_path"]) or "cartella"
             return start_job(f"Sincronizzazione {label}",
-                             lambda job: cat.scan_root(f["root_id"], job, f["rel_path"])).as_dict()
+                             lambda job: and_gps(cat.scan_root(f["root_id"], job, f["rel_path"]))).as_dict()
         if route == "open":
             return open_photos(ids_of(body), body.get("how", "default"), body.get("folder"))
         if route == "roots/add":
@@ -1067,11 +1180,11 @@ class Handler(BaseHTTPRequestHandler):
                 rid = cat.get_or_create_root(path)
                 db.commit()
             return start_job(f"Scansione {os.path.basename(path)}",
-                             lambda job: cat.scan_root(rid, job)).as_dict()
+                             lambda job: and_gps(cat.scan_root(rid, job))).as_dict()
         if parts[1] == "roots" and len(parts) == 4:
             rid, action = int(parts[2]), parts[3]
             if action == "rescan":
-                return start_job("Sincronizzazione cartella", lambda job: cat.scan_root(rid, job)).as_dict()
+                return start_job("Sincronizzazione cartella", lambda job: and_gps(cat.scan_root(rid, job))).as_dict()
             if action == "delete":
                 return remove_root(rid)
         if route == "roots/relocate":

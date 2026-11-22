@@ -61,7 +61,7 @@ const S = {
 function params(extra = {}) {
   const [sort, dir] = $("#sort").value.split(":");
   const p = {scope: S.scope, deep: $("#deep").checked ? "1" : "0", q: $("#search").value,
-    rating: $("#f-rating").value, label: $("#f-label").value, flag: $("#f-flag").value,
+    geo: S.geo ? `${S.geo.s},${S.geo.w},${S.geo.n},${S.geo.e}` : "", label: $("#f-label").value, flag: $("#f-flag").value,
     year: $("#f-year").value, ext: $("#f-ext").value, sort, dir, ...extra};
   return new URLSearchParams(Object.entries(p).filter(([, v]) => v !== "" && v != null)).toString();
 }
@@ -660,6 +660,8 @@ async function showInfo(refresh = false) {
       <tr><td>Formato</td><td>${esc((d.ext || "").toUpperCase())}</td></tr>
       ${d.width ? `<tr><td>Dimensioni</td><td>${d.width} × ${d.height}</td></tr>` : ""}
       ${d.mtime ? `<tr><td>Ultima modifica</td><td>${fmtStamp(d.mtime)}</td></tr>` : ""}
+      ${d.gps_lat != null ? `<tr><td>Posizione</td><td>${fmtCoord(d.gps_lat, d.gps_lon)}<br>
+        <a href="#" data-map-focus="${d.gps_lat},${d.gps_lon}">Sulla mappa</a> · <a href="#" data-apple-maps="${d.gps_lat},${d.gps_lon}">Apri in Mappe</a></td></tr>` : ""}
       <tr><td>Cartella</td><td><a href="#" data-goto="folder:${d.folder_id}">${esc(folder)}</a></td></tr>
       <tr><td>In catalogo dal</td><td>${fmtDate(d.added_at)}</td></tr>
       ${d.missing ? `<tr><td>Stato</td><td style="color:var(--red)">File non trovato</td></tr>` : ""}
@@ -673,6 +675,16 @@ function shotRows(x) {
     ["Apertura", x.fnumber], ["ISO", x.iso && x.iso.replace("ISO ", "")]]
     .filter(([, v]) => v).map(([k, v]) => `<tr><td>${k}</td><td>${esc(v)}</td></tr>`).join("");
 }
+const fmtCoord = (la, lo) => `${Math.abs(la).toFixed(4).replace(".", ",")}° ${la >= 0 ? "N" : "S"}, ${Math.abs(lo).toFixed(4).replace(".", ",")}° ${lo >= 0 ? "E" : "O"}`;
+$("#info").addEventListener("click", e => {
+  const f = e.target.closest("[data-map-focus]"), m = e.target.closest("[data-apple-maps]");
+  if (!f && !m) return;
+  e.preventDefault();
+  const [la, lo] = (f || m).dataset[f ? "mapFocus" : "appleMaps"].split(",").map(Number);
+  if (f) return openMap({focus: [la, lo]});
+  const url = `https://maps.apple.com/?ll=${la},${lo}&q=${encodeURIComponent(S.detail?.filename || "Foto")}`;
+  NATIVE ? (location.href = url) : window.open(url, "_blank");    // nell'app si apre Mappe
+});
 // data e ora da secondi (mtime del file)
 function fmtStamp(sec) {
   const t = new Date(sec * 1000), p = n => String(n).padStart(2, "0");
@@ -890,8 +902,9 @@ function loupeKeyZoom(f) {
 // ================================================================ tastiera
 document.addEventListener("keydown", async e => {
   if (e.target.matches("input, select, textarea") || $("#dlg").open) return;
-  if (!$("#dupscreen").hidden || !$("#catscreen").hidden) {      // schermate a tutta pagina: niente tasti della griglia
+  if (!$("#dupscreen").hidden || !$("#catscreen").hidden || !$("#mapscreen").hidden) {      // schermate a tutta pagina: niente tasti della griglia
     if (e.key === "Escape" && !$("#dupscreen").hidden) { e.preventDefault(); $("#dupscreen").hidden = true; }
+    if (e.key === "Escape" && !$("#mapscreen").hidden) { e.preventDefault(); closeMap(); }
     return;
   }
   const loupe = !$("#loupe").hidden;
@@ -1061,6 +1074,7 @@ const COMMANDS = {
   convertDng: needSel(() => convertDng(selIds())),
   deleteFiles: needSel(() => deleteFiles(selIds())),
   deleteRejected: () => deleteRejected(),
+  map: () => openMap(),
   renameSel: needSel(() => S.sel.size === 1 ? startInlineRename(selIds()[0]) : renameDialog(selIds())),
   renameNum: needSel(() => renameDialog(selIds())),
   moveSel: needSel(() => moveDialog(selIds())),
@@ -1092,7 +1106,7 @@ window.fc = {
   // ⌘C dal menu dell'app: le foto selezionate da copiare, oppure null se si sta copiando del testo
   copyIds() {
     const a = document.activeElement;
-    if ($("#dlg").open || !$("#catscreen").hidden || !$("#dupscreen").hidden) return null;
+    if ($("#dlg").open || !$("#catscreen").hidden || !$("#dupscreen").hidden || !$("#mapscreen").hidden) return null;
     if (a && a.matches("input, textarea, select")) return null;
     if (String(window.getSelection() || "").trim()) return null;
     return S.sel.size ? [...S.sel] : null;
@@ -2059,15 +2073,20 @@ async function importDrop(dt, fid) {
 // ================================================================ filtri
 let searchT;
 // filtri attivi evidenziati in colore, con ✕ per toglierli tutti
-const FILTERS = ["#search", "#f-rating", "#f-label", "#f-flag", "#f-year", "#f-ext"];
+const FILTERS = ["#search", "#f-label", "#f-flag", "#f-year", "#f-ext"];
 function markFilters() {
   let any = false;
   for (const id of FILTERS) { const on = $(id).value.trim() !== ""; $(id).classList.toggle("on", on); any ||= on; }
+  // filtro luogo: area scelta sulla mappa
+  $("#f-geo").classList.toggle("on", !!S.geo);
+  $("#f-geo-label").textContent = S.geo ? "Area sulla mappa" : "Luogo";
+  any ||= !!S.geo;
   $("#clear-filters").hidden = !any;
 }
-$("#clear-filters").onclick = () => { for (const id of FILTERS) $(id).value = ""; markFilters(); reload(); };
+$("#clear-filters").onclick = () => { for (const id of FILTERS) $(id).value = ""; S.geo = null; markFilters(); reload(); };
+$("#f-geo").onclick = () => openMap();
 $("#search").addEventListener("input", () => { markFilters(); clearTimeout(searchT); searchT = setTimeout(() => reload(), 300); });
-for (const id of ["#f-rating", "#f-label", "#f-flag", "#f-year", "#f-ext", "#sort", "#deep"])
+for (const id of ["#f-label", "#f-flag", "#f-year", "#f-ext", "#sort", "#deep"])
   $(id).addEventListener("change", () => { if (id === "#sort") store.set("sort", $("#sort").value); markFilters(); reload(); });
 $("#sort").value = store.get("sort", "date:asc");
 
@@ -2101,6 +2120,7 @@ async function onJobDone(j) {
   if (r.dng) { await loadTree(); reload(true); return dngSummary(r); }
   if (r.export) return exportSummary(r);
   if (r.saved) return saveSummary(r);
+  if (r.gps) return;
   if (r.moved || r.renamed) { await loadTree(); reload(true); showInfo(true); return fileOpSummary(r); }
   if (r.duplicates) {
     if (r.interrotta) return;

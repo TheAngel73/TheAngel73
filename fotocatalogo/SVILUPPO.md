@@ -147,6 +147,17 @@ sincronizzazione rapida). Le colonne nuove si aggiungono con `ALTER TABLE` in
   testo con `copy:`). Negli appunti vanno file URL; con una foto sola anche TIFF/JPEG a
   piena risoluzione tramite `ClipboardImageProvider`, preparato solo quando un'app incolla
   (`/full/ID`).
+- **Posizioni GPS e mappa**: colonne `gps_lat`, `gps_lon`, `gps_read` (1 = file già letto,
+  anche se senza posizione). I file nuovi si leggono all'importazione (`read_meta`, `gps_done`);
+  il resto con il lavoro «Posizioni GPS» (`start_gps_job`, `quick`, interrompibile, riparte da
+  dove era), avviato dopo ogni sincronizzazione (`and_gps`). Lettura: `exif.py` (IFD GPS di
+  JPEG/RAW TIFF; ISO 6709 nei video MP4/MOV), sul Mac `fcimg info` per HEIC, CR3, PSD, PNG.
+  Filtro `geo=sud,ovest,nord,est` in `build_query` (anche oltre il cambio di data);
+  `GET /api/gps` dà i punti della vista (arrotondati a ~100 m). Mappa: `static/mappa.js`, canvas,
+  Mercatore; contorni in `static/mondo.json` (1:50M) e `mondo-dettaglio.json` (1:10M, griglia
+  più fine, caricato quando si ingrandisce), generati con `strumenti/crea_mappa.py` da
+  world-atlas (Natural Earth, pubblico dominio; licenze in `static/mondo-LICENSE.txt`). Il
+  filtro «Stelle» è stato tolto dalla barra (l'utente non usa le valutazioni; i dati restano).
 - **Dati di scatto** nel pannello (fotocamera, obiettivo, focale, tempo, apertura, ISO):
   letti alla selezione da `shooting_info` in `server.py` (`fcimg info` sul Mac, tutti i
   formati; altrimenti `exif.read_exif(shooting=True)`, solo JPEG e RAW TIFF), tenuti in

@@ -9,7 +9,7 @@ import threading
 import time
 import unicodedata
 
-from exif import read_exif, read_video_date
+from exif import read_exif, read_video
 
 PHOTO_EXT = {
     "jpg", "jpeg", "jpe", "png", "tif", "tiff", "psd", "psb", "heic", "heif",
@@ -96,6 +96,13 @@ class Catalog:
             cols = {r[1] for r in self.db.execute("PRAGMA table_info(photos)")}
             if "rotation" not in cols:      # cataloghi creati con versioni precedenti
                 self.db.execute("ALTER TABLE photos ADD COLUMN rotation INTEGER DEFAULT 0")
+                self.db.commit()
+            if "gps_read" not in cols:
+                # posizione GPS; gps_read=1 quando il file è già stato letto (anche se senza posizione)
+                self.db.execute("ALTER TABLE photos ADD COLUMN gps_lat REAL")
+                self.db.execute("ALTER TABLE photos ADD COLUMN gps_lon REAL")
+                self.db.execute("ALTER TABLE photos ADD COLUMN gps_read INTEGER DEFAULT 0")
+                self.db.execute("CREATE INDEX IF NOT EXISTS ix_photos_gps ON photos(gps_lat, gps_lon)")
                 self.db.commit()
 
     @property
@@ -352,9 +359,10 @@ class Catalog:
             fid = self.ensure_folder(root_id, rel)
             cur = self.db.execute(
                 """INSERT OR IGNORE INTO photos(folder_id, filename, ext, size, mtime, capture_time,
-                   width, height, orientation, added_at) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                   width, height, orientation, added_at, gps_lat, gps_lon, gps_read)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (fid, name, ext, st.st_size, st.st_mtime, cap, ex.get("width"), ex.get("height"),
-                 ex.get("orientation"), now()))
+                 ex.get("orientation"), now(), ex.get("lat"), ex.get("lon"), gps_done(ext, ex)))
             self.db.commit()
             return cur.lastrowid if cur.rowcount else None
 
@@ -401,9 +409,11 @@ class Catalog:
             ts = now()
             db.executemany(
                 """INSERT OR IGNORE INTO photos(folder_id, filename, ext, size, mtime, capture_time,
-                   width, height, orientation, added_at) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                   width, height, orientation, added_at, gps_lat, gps_lon, gps_read)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 [(fid, name, ext, size, mt, cap, ex.get("width"), ex.get("height"),
-                  ex.get("orientation"), ts) for name, ext, size, mt, cap, ex in new])
+                  ex.get("orientation"), ts, ex.get("lat"), ex.get("lon"), gps_done(ext, ex))
+                 for name, ext, size, mt, cap, ex in new])
             db.executemany("UPDATE photos SET missing=0 WHERE id=?", [(i,) for i in back])
             db.executemany("UPDATE photos SET missing=1 WHERE id=?", [(i,) for i in gone])
             db.commit()
@@ -414,8 +424,16 @@ def read_meta(full, ext):
     if ext in EXIF_EXT:
         return read_exif(full)
     if ext in QT_EXT:
-        return {"capture": read_video_date(full)}
+        return read_video(full)
     return {}
+
+
+def gps_done(ext, ex):
+    """1 se la posizione GPS è già stata cercata durante la lettura dei metadati;
+    0 se resta da fare in background (altri formati, o posizione più avanti nel file)."""
+    if "lat" in ex:
+        return 1
+    return 1 if (ext in EXIF_EXT or ext in QT_EXT) and not ex.get("gps_beyond") else 0
 
 
 def resolve_path(path):

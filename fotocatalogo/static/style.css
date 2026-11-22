@@ -263,7 +263,7 @@ dialog h4 { margin: 14px 0 4px; font-size: 12px; color: var(--dim); }
 dialog ul { margin: 6px 0; padding-left: 20px; line-height: 1.6; }
 
 /* filtri attivi */
-#topbar select.on, #topbar input.on { color: #6fb1ff; border-color: var(--accent); background: #1d2a3a; font-weight: 600; }
+#topbar select.on, #topbar input.on, #topbar #f-geo.on { color: #6fb1ff; border-color: var(--accent); background: #1d2a3a; font-weight: 600; }
 #clear-filters { padding: 2px 8px; color: #6fb1ff; border-color: var(--accent); }
 #clear-filters[hidden] { display: none; }
 #btn-remove-missing, #btn-delete-rejected { margin-left: 12px; padding: 1px 10px; font-size: 12px; color: #ff8a80; }
@@ -313,3 +313,27 @@ dialog .pickrow > div label { margin-top: 10px; }
 /* errori dell'interfaccia (vedi index.html) */
 #fatal { position: fixed; left: 0; right: 0; bottom: 0; z-index: 9999; padding: 8px 14px;
   background: #b3362f; color: #fff; font-size: 12px; cursor: pointer; }
+
+/* filtro luogo e mappa (mappa.js) */
+#f-geo { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; flex: none; font-size: 12px;
+  background: #18181a; padding: 4px 9px; }
+#f-geo svg.i { width: 14px; height: 14px; }
+#mapscreen { position: fixed; inset: 0; z-index: 60; background: var(--bg); display: grid;
+  grid-template-rows: auto minmax(0, 1fr); }
+#mapscreen[hidden] { display: none; }
+.map-head { display: flex; align-items: center; gap: 14px; padding: 10px 16px; background: var(--panel);
+  border-bottom: 1px solid var(--line); }
+.map-head h2 { margin: 0; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 7px; }
+.map-head h2 svg.i { width: 17px; height: 17px; color: #ff6b4a; }
+.map-info { color: var(--dim); font-size: 12px; flex: 1; }
+.map-info b { color: var(--text); font-weight: 600; }
+.map-pending { color: #e0b93a; }
+.map-acts { display: flex; gap: 6px; }
+.map-acts button { font-size: 12px; }
+.map-stage { position: relative; overflow: hidden; }
+#map-canvas { display: block; cursor: grab; }
+#map-tip { position: absolute; pointer-events: none; background: rgba(20,20,22,.92); color: #fff; font-size: 12px;
+  padding: 4px 8px; border-radius: 5px; border: 1px solid var(--line); white-space: nowrap; }
+.map-hint { position: absolute; left: 12px; bottom: 10px; font-size: 11px; color: #9a9aa0; pointer-events: none;
+  background: rgba(21,24,28,.75); padding: 4px 8px; border-radius: 5px; }
+.map-hint b { color: #ccc; font-weight: 600; }
