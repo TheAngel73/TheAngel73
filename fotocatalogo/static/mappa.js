@@ -15,6 +15,9 @@ const MAP = {
   clusters: [], drag: null, sel: null, hover: null, focus: null, raf: 0,
 };
 const W0 = 8192;
+// Versione dei contorni: va cambiata ogni volta che si rigenerano mondo*.json, così chi li
+// ha già in memoria (Safari, Firefox) scarica quelli nuovi.
+const MAP_DATA_V = 2;
 const mercX = lon => (lon + 180) / 360 * W0;
 const mercY = lat => {
   const la = Math.max(-85, Math.min(85, lat)) * Math.PI / 180;
@@ -54,7 +57,7 @@ async function openMap(opts = {}) {
   mapBindEvents(cv);
   try {
     if (!MAP.world) {
-      MAP.world = await (await fetch("/static/mondo.json")).json();
+      MAP.world = await (await fetch(`/static/mondo.json?v=${MAP_DATA_V}`)).json();
       MAP.land = new Path2D(MAP.world.land);
       MAP.borders = new Path2D(MAP.world.borders);
     }
@@ -132,7 +135,7 @@ function mapPaint() {
   const detail = k >= 1.5;
   if (detail && !MAP.landD && !MAP.loadingD) {
     MAP.loadingD = true;
-    fetch("/static/mondo-dettaglio.json").then(r => r.json()).then(w => {
+    fetch(`/static/mondo-dettaglio.json?v=${MAP_DATA_V}`).then(r => r.json()).then(w => {
       MAP.landD = new Path2D(w.land); MAP.bordersD = new Path2D(w.borders); MAP.wD = w.w; mapDraw();
     }).catch(() => {});
   }

@@ -904,7 +904,7 @@ class Handler(BaseHTTPRequestHandler):
                 ctype = {"js": "text/javascript; charset=utf-8", "css": "text/css; charset=utf-8",
                          "svg": "image/svg+xml", "png": "image/png", "woff2": "font/woff2", "json": "application/json",
                          "txt": "text/plain; charset=utf-8"}.get(p.rsplit(".", 1)[-1], "application/octet-stream")
-                return (self.send_file(p, ctype, ctype in ("font/woff2", "application/json")) if os.path.isfile(p)
+                return (self.send_file(p, ctype, ctype == "font/woff2") if os.path.isfile(p)
                         else self.not_found())
             if u.path == "/api/catalogs":
                 return self.send_json(catalogs_state())
