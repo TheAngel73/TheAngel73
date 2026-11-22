@@ -182,6 +182,13 @@ sincronizzazione rapida). Le colonne nuove si aggiungono con `ALTER TABLE` in
   Tentativo precedente fallito: aggiungere file al trascinamento di WebKit (override di
   `dragImage…`, «unavailable» in Swift; con il runtime ObjC non veniva comunque chiamato:
   il Finder riceveva solo il testo e creava un ritaglio `.textClipping`).
+- **Finestra**: la pagina è vincolata a `window.contentLayoutGuide` (sotto la barra del
+  titolo), `FCWebView.acceptsFirstMouse` è `true` e chiusa la schermata di avvio la
+  finestra principale torna key. Introdotti dopo la segnalazione «su un Mac nuovo il
+  pulsante Libreria non fa nulla» (causa non confermata al momento della scrittura).
+- **Errori dell'interfaccia**: uno script in `index.html` (prima di `app.js`) li mostra in
+  una barra rossa e li manda a `POST /api/clientlog`, che li scrive nel registro
+  (`~/Library/Logs/Provinia.log`, Aiuto › Mostra registro) con lo user agent.
 - `<dialog>` richiede macOS 12.3 o successivo (`LSMinimumSystemVersion`).
 
 ## Strumenti di macOS usati (sul Linux di sviluppo non ci sono)

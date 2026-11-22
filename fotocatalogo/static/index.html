@@ -122,6 +122,21 @@
 <div id="catscreen" hidden></div>
 <div id="dupscreen" hidden></div>
 
+<script>
+// Errori dell'interfaccia: finiscono nel registro (Aiuto › Mostra registro) e in una
+// barra rossa in basso, così un problema su un altro Mac si vede e si può diagnosticare.
+(function () {
+  function report(msg) {
+    try { fetch("/api/clientlog", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({msg: String(msg), ua: navigator.userAgent})}); } catch (e) {}
+    var b = document.getElementById("fatal");
+    if (!b) { b = document.createElement("div"); b.id = "fatal"; document.body.appendChild(b); b.onclick = function () { b.remove(); }; }
+    b.textContent = "Errore nell'interfaccia: " + msg + " (clic per chiudere; dettagli in Aiuto › Mostra registro)";
+  }
+  window.addEventListener("error", function (e) { report((e.message || "errore") + (e.filename ? " — " + e.filename.split("/").pop() + ":" + e.lineno : "")); });
+  window.addEventListener("unhandledrejection", function (e) { report((e.reason && (e.reason.stack || e.reason.message)) || e.reason); });
+})();
+</script>
 <script src="/static/app.js"></script>
 </body>
 </html>

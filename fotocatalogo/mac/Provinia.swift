@@ -51,6 +51,8 @@ final class FileDragSource: NSObject, NSDraggingSource {
 }
 
 final class FCWebView: WKWebView {
+    // il primo clic su una finestra non attiva agisce subito (non serve cliccare due volte)
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     var onDragEnd: (() -> Void)?
     let dragSource = FileDragSource()
 
@@ -159,6 +161,7 @@ final class SplashWindow: NSWindow {
 
 final class Splash: NSObject {
     var window: NSWindow?
+    weak var parent: NSWindow?
     var monitor: Any?
     var shownAt = Date()
 
@@ -166,6 +169,7 @@ final class Splash: NSObject {
 
     func show(over parent: NSWindow?, about: Bool) {
         if let w = window { w.makeKeyAndOrderFront(nil); return }
+        self.parent = parent
         guard let url = Bundle.main.url(forResource: "about", withExtension: "png"),
               let img = NSImage(contentsOf: url) else { return }
         let size = NSSize(width: 768, height: 512)
@@ -221,7 +225,11 @@ final class Splash: NSObject {
         window = nil
         if let m = monitor { NSEvent.removeMonitor(m); monitor = nil }
         NSAnimationContext.runAnimationGroup({ $0.duration = 0.3; w.animator().alphaValue = 0 },
-                                             completionHandler: { w.orderOut(nil) })
+                                             completionHandler: { [weak self] in
+                                                 w.orderOut(nil)
+                                                 // la finestra principale torna a ricevere clic e tasti
+                                                 self?.parent?.makeKeyAndOrderFront(nil)
+                                             })
     }
 }
 
@@ -263,7 +271,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         window.backgroundColor = NSColor(calibratedWhite: 0.12, alpha: 1)
         window.minSize = NSSize(width: 960, height: 600)
         window.collectionBehavior = [.fullScreenPrimary]
-        window.contentView = webView
+        // La pagina sta SOTTO la barra del titolo (contentLayoutGuide): con le versioni più
+        // recenti di macOS il contenuto può finire dietro la barra, che ne ruba i clic
+        // (es. il pulsante «Libreria» in alto).
+        let container = NSView()
+        container.wantsLayer = true
+        container.layer?.backgroundColor = NSColor(calibratedWhite: 0.12, alpha: 1).cgColor
+        window.contentView = container
+        webView.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(webView)
+        let guide = window.contentLayoutGuide as? NSLayoutGuide
+        NSLayoutConstraint.activate([
+            webView.topAnchor.constraint(equalTo: guide?.topAnchor ?? container.topAnchor),
+            webView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            webView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
         window.delegate = self
         window.center()
         window.setFrameAutosaveName("FotoCatalogoFinestra")   // ricorda posizione e dimensioni (nome storico)

@@ -885,6 +885,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(res if res is not None else {"ok": True})
             if parts[:2] == ["api", "pick"]:
                 return self.send_json({"path": pick_path(body.get("kind", "folder"))})
+            if parts[:2] == ["api", "clientlog"]:          # errori dell'interfaccia -> registro
+                print(f"[interfaccia] {str(body.get('msg'))[:2000]} | {str(body.get('ua'))[:300]}", flush=True)
+                return self.send_json({"ok": True})
             if cat is None:
                 return self.send_json({"error": "Nessun catalogo aperto", "nocatalog": True}, 409)
             res = self.post(parts, body)
