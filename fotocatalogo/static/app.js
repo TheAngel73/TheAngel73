@@ -664,6 +664,7 @@ async function showInfo(refresh = false) {
       <tr><td>Formato</td><td>${esc((d.ext || "").toUpperCase())}</td></tr>
       ${d.width ? `<tr><td>Dimensioni</td><td>${d.width} × ${d.height}</td></tr>` : ""}
       ${d.mtime ? `<tr><td>Ultima modifica</td><td>${fmtStamp(d.mtime)}</td></tr>` : ""}
+      ${d.place ? `<tr><td>Luogo</td><td><a href="#" data-search-place="${esc(d.place.replace(/^vicino a /, "").split(",")[0])}" title="Cerca le foto scattate qui">${esc(d.place)}</a></td></tr>` : ""}
       ${d.gps_lat != null ? `<tr><td>Posizione</td><td>${fmtCoord(d.gps_lat, d.gps_lon)}<br>
         <a href="#" data-map-focus="${d.gps_lat},${d.gps_lon}">Sulla mappa</a> · <a href="#" data-apple-maps="${d.gps_lat},${d.gps_lon}">Apri in Mappe</a></td></tr>` : ""}
       <tr><td>Cartella</td><td><a href="#" data-goto="folder:${d.folder_id}">${esc(folder)}</a></td></tr>
@@ -681,6 +682,8 @@ function shotRows(x) {
 }
 const fmtCoord = (la, lo) => `${Math.abs(la).toFixed(4).replace(".", ",")}° ${la >= 0 ? "N" : "S"}, ${Math.abs(lo).toFixed(4).replace(".", ",")}° ${lo >= 0 ? "E" : "O"}`;
 $("#info").addEventListener("click", e => {
+  const sp = e.target.closest("[data-search-place]");
+  if (sp) { e.preventDefault(); $("#search").value = sp.dataset.searchPlace; setScope("all"); markFilters(); return; }
   const f = e.target.closest("[data-map-focus]"), m = e.target.closest("[data-apple-maps]");
   if (!f && !m) return;
   e.preventDefault();

@@ -149,6 +149,12 @@ Le posizioni si leggono dai file (JPEG, RAW, HEIC, video di smartphone…). Per 
 catalogo la lettura avviene una volta, in background («Posizioni GPS» nella barra in basso):
 si può interrompere e riprende da dove era rimasta. La mappa funziona senza internet.
 
+**Nomi dei luoghi**: dalle coordinate si ricava la località più vicina, anche piccola (tutte quelle
+con almeno 1000 abitanti): «Cuceglio, Piemonte», «Reykjavík, Islanda». Compare nel pannello
+informazioni (un clic cerca tutte le foto di quel luogo) e passando sopra i cerchi della mappa.
+Si può anche **cercare**: scrivere «Napoli» o «Piemonte» nella ricerca trova le foto scattate lì.
+Anche questo funziona senza internet (dati GeoNames, CC BY 4.0; vedi `dati/LICENZE.txt`).
+
 **Copiare negli appunti** (⌘C, solo nell'app): le foto selezionate vanno negli appunti come
 file, come nel Finder: ⌘V nel Finder ne crea una copia, in Mail o Messaggi le allega. Con una
 sola foto, le app che incollano immagini (es. Photoshop › Incolla) ricevono la foto a piena

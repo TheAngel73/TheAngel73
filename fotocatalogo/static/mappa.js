@@ -156,13 +156,14 @@ function mapPaint() {
   }
   // punti raggruppati per vicinanza sullo schermo
   const cell = 26, groups = new Map();
-  for (const [la, lo, n] of MAP.data?.points || []) {
+  for (const [la, lo, n, place] of MAP.data?.points || []) {
     const x = mercX(lo) * k + tx, y = mercY(la) * k + ty;
     if (x < -30 || y < -30 || x > MAP.w + 30 || y > MAP.h + 30) continue;
     const key = Math.floor(x / cell) + ":" + Math.floor(y / cell);
     let g = groups.get(key);
-    if (!g) groups.set(key, g = {n: 0, sx: 0, sy: 0, s: 90, nn: -90, w: 180, e: -180});
+    if (!g) groups.set(key, g = {n: 0, sx: 0, sy: 0, s: 90, nn: -90, w: 180, e: -180, top: 0, place: ""});
     g.n += n; g.sx += x * n; g.sy += y * n;
+    if (n > g.top && place) { g.top = n; g.place = place; }   // il luogo con più foto del gruppo
     g.s = Math.min(g.s, la); g.nn = Math.max(g.nn, la); g.w = Math.min(g.w, lo); g.e = Math.max(g.e, lo);
   }
   MAP.clusters = [];
@@ -235,7 +236,9 @@ function mapBindEvents(cv) {
     if (c !== MAP.hover) { MAP.hover = c; mapDraw(); }
     cv.style.cursor = c ? "pointer" : "grab";
     if (c) {
-      tip.hidden = false; tip.textContent = `${c.n.toLocaleString("it-IT")} foto · clic per vederle`;
+      tip.hidden = false;
+      tip.innerHTML = (c.place ? `<b>${esc(c.place.replace(/^vicino a /, "dintorni di "))}</b><br>` : "") +
+        `${c.n.toLocaleString("it-IT")} foto · clic per vederle`;
       tip.style.left = x + 14 + "px"; tip.style.top = y + 10 + "px";
     } else tip.hidden = true;
   }

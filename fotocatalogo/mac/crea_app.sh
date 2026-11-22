@@ -25,6 +25,7 @@ swiftc -O -swift-version 5 -o "$APP/Contents/Resources/bin/fcimg" fcimg.swift
 
 echo "› Copio il motore e l'interfaccia…"
 cp "$SRC"/*.py "$APP/Contents/Resources/app/"
+cp -R "$SRC/dati" "$APP/Contents/Resources/app/"   # località per i nomi dei luoghi
 cp "$SRC"/static/* "$APP/Contents/Resources/app/static/"   # anche il font Inter (inter.woff2)
 
 echo "› Icona…"

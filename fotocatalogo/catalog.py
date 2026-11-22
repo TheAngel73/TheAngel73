@@ -104,6 +104,11 @@ class Catalog:
                 self.db.execute("ALTER TABLE photos ADD COLUMN gps_read INTEGER DEFAULT 0")
                 self.db.execute("CREATE INDEX IF NOT EXISTS ix_photos_gps ON photos(gps_lat, gps_lon)")
                 self.db.commit()
+            if "place" not in cols:         # nome del luogo dalle coordinate (luoghi.py)
+                self.db.execute("ALTER TABLE photos ADD COLUMN place TEXT")
+                self.db.commit()
+            self.db.execute("CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT)")
+            self.db.commit()
 
     @property
     def db(self):

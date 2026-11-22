@@ -169,6 +169,12 @@ sincronizzazione rapida). Le colonne nuove si aggiungono con `ALTER TABLE` in
   **Dopo aver rigenerato `mondo*.json` aumentare `MAP_DATA_V` in `mappa.js`**: Safari e
   Firefox tengono in memoria i file statici e continuerebbero a mostrare quelli vecchi
   (è successo: strisce sparite in Chrome ma non nell'app né in Firefox).
+- **Nomi dei luoghi** (`luoghi.py`): località più vicina da `dati/luoghi.tsv.gz` (GeoNames via
+  all-the-cities, solo comuni e località: niente quartieri `PPLX`), griglia di 1°, ~1 ms a
+  ricerca. Nomi italiani per le città note (`ITALIANO`), regioni italiane (`REGIONI`), paesi da
+  `dati/paesi.json`. Salvati in `photos.place` (anche cercabili): li calcola il lavoro
+  «Posizioni GPS» (`fill_places`); cambiando `luoghi.VERSION` vengono ricalcolati tutti (tabella
+  `meta`). Dati rigenerabili con `strumenti/crea_luoghi.js`; `crea_app.sh` copia `dati/`.
 - **Dati di scatto** nel pannello (fotocamera, obiettivo, focale, tempo, apertura, ISO):
   letti alla selezione da `shooting_info` in `server.py` (`fcimg info` sul Mac, tutti i
   formati; altrimenti `exif.read_exif(shooting=True)`, solo JPEG e RAW TIFF), tenuti in

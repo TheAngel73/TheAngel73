@@ -34,6 +34,7 @@ import gestione_file  # noqa: E402
 import esporta  # noqa: E402
 import exif  # noqa: E402
 import salva  # noqa: E402
+import luoghi  # noqa: E402
 import thumbs  # noqa: E402
 
 PORT = int(os.environ.get("FOTOCAT_PORT", "8765"))
@@ -141,16 +142,42 @@ def gps_pending():
     return cat.db.execute("SELECT count(*) FROM photos WHERE gps_read=0 AND missing=0").fetchone()[0]
 
 
+def places_pending(c):
+    """Foto con posizione ma senza nome del luogo (o con nomi di una versione precedente)."""
+    r = c.db.execute("SELECT v FROM meta WHERE k='luoghi'").fetchone()
+    if not r or r[0] != luoghi.VERSION:
+        with c.write_lock:
+            c.db.execute("UPDATE photos SET place=NULL")
+            c.db.execute("INSERT OR REPLACE INTO meta VALUES('luoghi', ?)", (luoghi.VERSION,))
+            c.db.commit()
+    return c.db.execute("SELECT count(*) FROM photos WHERE gps_lat IS NOT NULL AND place IS NULL").fetchone()[0]
+
+
+def fill_places(c, job=None):
+    """Dà un nome del luogo alle foto che hanno la posizione (veloce: niente accesso ai file)."""
+    rows = c.db.execute("SELECT id, gps_lat, gps_lon FROM photos WHERE gps_lat IS NOT NULL AND place IS NULL").fetchall()
+    for i in range(0, len(rows), 500):
+        if job and job.cancelled:
+            break
+        upd = [(luoghi.place_name(la, lo) or "", pid) for pid, la, lo in rows[i:i + 500]]
+        with c.write_lock:
+            c.db.executemany("UPDATE photos SET place=? WHERE id=?", upd)
+            c.db.commit()
+        if job:
+            job.update(None, f"Nomi dei luoghi: {min(i + 500, len(rows))} / {len(rows)}")
+
+
 def start_gps_job():
     """Legge in background le posizioni delle foto non ancora lette (es. un catalogo creato
     prima di questa funzione). Si può interrompere: riprende da dove era rimasto."""
     if cat is None or any(j.label == "Posizioni GPS" and j.status == "running" for j in JOBS.values()):
         return
-    if not gps_pending():
+    if not gps_pending() and not places_pending(cat):
         return
     job_cat = cat
 
     def run(job):
+        fill_places(job_cat, job)
         rows = job_cat.db.execute("""SELECT id, ext FROM photos WHERE gps_read=0 AND missing=0
                                      ORDER BY capture_time DESC""").fetchall()
         total, found, batch = len(rows), 0, []
@@ -158,7 +185,7 @@ def start_gps_job():
         def flush():
             if batch:
                 with job_cat.write_lock:
-                    job_cat.db.executemany("UPDATE photos SET gps_lat=?, gps_lon=?, gps_read=1 WHERE id=?", batch)
+                    job_cat.db.executemany("UPDATE photos SET gps_lat=?, gps_lon=?, place=?, gps_read=1 WHERE id=?", batch)
                     job_cat.db.commit()
                 batch.clear()
         job.update(0, f"Posizioni GPS: 0 / {total}", total=total)
@@ -173,10 +200,11 @@ def start_gps_job():
                 if path and os.path.exists(path):   # NAS scollegato: si riproverà la prossima volta
                     pos = read_gps(path, ext)
                     found += bool(pos)
-                    batch.append((pos[0] if pos else None, pos[1] if pos else None, pid))
+                    batch.append((pos[0] if pos else None, pos[1] if pos else None,
+                                  (luoghi.place_name(*pos) or "") if pos else None, pid))
             except Exception as e:  # noqa: BLE001  un file strano non deve fermare tutto
                 print(f"Posizioni GPS: file saltato {path or pid}: {e!r}", flush=True)
-                batch.append((None, None, pid))
+                batch.append((None, None, None, pid))
             if len(batch) >= 200:
                 flush()
             if n % 50 == 0 or n == total:
@@ -184,6 +212,7 @@ def start_gps_job():
             if n % 5000 == 0:
                 print(f"Posizioni GPS: {n} / {total} ({found} con posizione)", flush=True)
         flush()
+        fill_places(job_cat, job)            # foto con posizione arrivate nel frattempo (importazioni)
         print(f"Posizioni GPS: {'interrotta' if job.cancelled else 'fine'} dopo {n if rows else 0} foto, "
               f"{found} con posizione", flush=True)
         return {"gps": True, "lette": total, "trovate": found, "interrotta": job.cancelled}
@@ -207,7 +236,7 @@ def gps_points(q):
     q.pop("geo", None)
     where, args, _ = build_query(q)
     db = cat.db
-    rows = db.execute(f"""SELECT round(p.gps_lat, 3), round(p.gps_lon, 3), count(*) FROM photos p
+    rows = db.execute(f"""SELECT round(p.gps_lat, 3), round(p.gps_lon, 3), count(*), max(p.place) FROM photos p
                           WHERE {where} AND p.gps_lat IS NOT NULL GROUP BY 1, 2""", args).fetchall()
     total = db.execute(f"SELECT count(*) FROM photos p WHERE {where}", args).fetchone()[0]
     pending = gps_pending()
@@ -423,10 +452,10 @@ def build_query(q):
     if text:
         for word in text.split():
             like = f"%{word}%"
-            where.append("""(p.filename LIKE ? OR p.id IN (SELECT pk.photo_id FROM photo_keywords pk
+            where.append("""(p.filename LIKE ? OR p.place LIKE ? OR p.id IN (SELECT pk.photo_id FROM photo_keywords pk
                             JOIN keywords k ON k.id=pk.keyword_id WHERE k.name LIKE ?)
                             OR p.folder_id IN (SELECT id FROM folders WHERE rel_path LIKE ?))""")
-            args += [like, like, like]
+            args += [like, like, like, like]
     if q.get("geo"):                        # area della mappa: sud, ovest, nord, est
         try:
             s_, w_, n_, e_ = (float(x) for x in q["geo"].split(","))
