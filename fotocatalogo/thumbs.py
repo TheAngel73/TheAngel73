@@ -73,12 +73,17 @@ _gen_slots = LifoSlots(4)                 # richieste di chi sta guardando
 BG_SLOTS = threading.Semaphore(3)         # lavoro «Genera anteprime»
 
 
-def wait_viewer_idle():
-    """Il lavoro in background aspetta che chi guarda abbia ricevuto le sue miniature."""
-    while _gen_slots.busy or PREFETCH.busy():
+def wait_viewer_idle(limit=3.0):
+    """Il lavoro in background aspetta che chi guarda abbia ricevuto le sue miniature,
+    ma al massimo `limit` secondi: non deve mai fermarsi del tutto (es. una miniatura
+    che non si riesce a creare e che la pagina continua a chiedere)."""
+    end = time_now() + limit
+    while (_gen_slots.busy or PREFETCH.busy()) and time_now() < end:
         threading.Event().wait(0.15)
 
 _failed = set()
+_unavailable = {}      # id -> momento: file non raggiungibile (NAS?), si riprova dopo UNAVAILABLE_S
+UNAVAILABLE_S = 300
 _locks = {}
 _locks_guard = threading.Lock()
 
@@ -94,6 +99,7 @@ def find_imghelper():
 def reset():
     """Da chiamare quando si cambia catalogo (gli id delle foto ricominciano)."""
     _failed.clear()
+    _unavailable.clear()
     with _locks_guard:
         _locks.clear()
     PREFETCH.clear()
@@ -182,7 +188,9 @@ def _base_thumb(cat, cache_dir, photo_id, size, slots, alive=None):
             return dst
         src = cat.photo_path(photo_id)
         if not src or not os.path.exists(src):
-            return None   # NAS non collegato o file spostato: non segnare come fallita
+            _unavailable[photo_id] = time_now()   # NAS non collegato o file spostato:
+            return None                           # non è un errore definitivo, si riproverà
+        _unavailable.pop(photo_id, None)
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         part = dst + f".{threading.get_ident()}.part.jpg"
         if slots:
@@ -265,7 +273,12 @@ class Prefetcher:
     def state(cache_dir, pid):
         if os.path.exists(thumb_file(cache_dir, pid, "m")):
             return 1
-        return -1 if (pid, "m") in _failed else 0
+        if (pid, "m") in _failed:
+            return -1
+        t = _unavailable.get(pid)
+        if t is not None and time_now() - t < UNAVAILABLE_S:
+            return -1                      # per ora non si può: la pagina smette di chiederla
+        return 0
 
     def want(self, cat, cache_dir, ids, timeout=8.0):
         """Le miniature sullo schermo: sostituisce la coda prioritaria e aspetta (al massimo

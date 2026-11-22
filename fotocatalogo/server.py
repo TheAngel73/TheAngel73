@@ -98,7 +98,12 @@ def jobs_running():
 
 def start_quick_sync():
     if cat.db.execute("SELECT 1 FROM roots LIMIT 1").fetchone():
-        start_job("Sincronizzazione rapida", lambda job: and_gps(cat.quick_sync(job)), quick=True)
+        def run(job):
+            try:
+                return cat.quick_sync(job)
+            finally:
+                and_gps(None)               # anche se la sincronizzazione non riesce (es. NAS)
+        start_job("Sincronizzazione rapida", run, quick=True)
 
 
 # ---------------------------------------------------------------- posizioni GPS
@@ -157,20 +162,30 @@ def start_gps_job():
                     job_cat.db.commit()
                 batch.clear()
         job.update(0, f"Posizioni GPS: 0 / {total}", total=total)
+        print(f"Posizioni GPS: inizio, {total} foto da leggere", flush=True)
         for n, (pid, ext) in enumerate(rows, 1):
             if job.cancelled or job_cat.closed:
                 break
             thumbs.wait_viewer_idle()           # le miniature di chi guarda hanno la precedenza
-            path = job_cat.photo_path(pid)
-            if path and os.path.exists(path):   # NAS scollegato: si riproverà la prossima volta
-                pos = read_gps(path, ext)
-                found += bool(pos)
-                batch.append((pos[0] if pos else None, pos[1] if pos else None, pid))
+            path = None
+            try:
+                path = job_cat.photo_path(pid)
+                if path and os.path.exists(path):   # NAS scollegato: si riproverà la prossima volta
+                    pos = read_gps(path, ext)
+                    found += bool(pos)
+                    batch.append((pos[0] if pos else None, pos[1] if pos else None, pid))
+            except Exception as e:  # noqa: BLE001  un file strano non deve fermare tutto
+                print(f"Posizioni GPS: file saltato {path or pid}: {e!r}", flush=True)
+                batch.append((None, None, pid))
             if len(batch) >= 200:
                 flush()
             if n % 50 == 0 or n == total:
                 job.update(n, f"Posizioni GPS: {n} / {total} ({found} con posizione)")
+            if n % 5000 == 0:
+                print(f"Posizioni GPS: {n} / {total} ({found} con posizione)", flush=True)
         flush()
+        print(f"Posizioni GPS: {'interrotta' if job.cancelled else 'fine'} dopo {n if rows else 0} foto, "
+              f"{found} con posizione", flush=True)
         return {"gps": True, "lette": total, "trovate": found, "interrotta": job.cancelled}
     job = start_job("Posizioni GPS", run, quick=True)
     job.cancellable = True
@@ -195,8 +210,11 @@ def gps_points(q):
     rows = db.execute(f"""SELECT round(p.gps_lat, 3), round(p.gps_lon, 3), count(*) FROM photos p
                           WHERE {where} AND p.gps_lat IS NOT NULL GROUP BY 1, 2""", args).fetchall()
     total = db.execute(f"SELECT count(*) FROM photos p WHERE {where}", args).fetchone()[0]
+    pending = gps_pending()
+    if pending:
+        start_gps_job()                     # se per qualche motivo non è partita, parte ora
     return {"points": [list(r) for r in rows], "total": total, "with": sum(r[2] for r in rows),
-            "pending": gps_pending()}
+            "pending": pending}
 
 
 def close_current():

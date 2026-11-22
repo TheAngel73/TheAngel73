@@ -88,7 +88,7 @@ def _parse_tiff(buf, shooting=False):
                     out[key] = d[tag]
         if date and len(date) >= 19 and date[:4].isdigit() and date[:4] != "0000":
             out["capture"] = date[:10].replace(":", "-") + "T" + date[11:19]
-    except (struct.error, IndexError):
+    except (struct.error, IndexError, ValueError, TypeError, OverflowError, ZeroDivisionError):
         pass
     return out
 
@@ -119,17 +119,20 @@ def read_exif(path, shooting=False, head=HEAD_BYTES):
         return {}
     if buf[:2] == b"\xff\xd8":  # JPEG: cerca il segmento APP1 Exif
         i = 2
-        while i + 4 < len(buf) and buf[i] == 0xFF:
-            marker = buf[i + 1]
-            ln = struct.unpack_from(">H", buf, i + 2)[0]
-            if marker == 0xE1 and buf[i + 4:i + 10] == b"Exif\0\0":
-                out = _parse_tiff(buf[i + 10:i + 2 + ln], shooting)
-                if i + 2 + ln > len(buf):
-                    out["gps_beyond"] = "lat" not in out
-                return out
-            if marker == 0xDA:
-                break
-            i += 2 + ln
+        try:
+            while i + 4 < len(buf) and buf[i] == 0xFF:
+                marker = buf[i + 1]
+                ln = struct.unpack_from(">H", buf, i + 2)[0]
+                if marker == 0xE1 and buf[i + 4:i + 10] == b"Exif\0\0":
+                    out = _parse_tiff(buf[i + 10:i + 2 + ln], shooting)
+                    if i + 2 + ln > len(buf):
+                        out["gps_beyond"] = "lat" not in out
+                    return out
+                if marker == 0xDA or ln < 2:
+                    break
+                i += 2 + ln
+        except (struct.error, IndexError, ValueError):
+            pass                                   # JPEG troncato o danneggiato
         return {}
     if buf[:2] in (b"II", b"MM"):
         return _parse_tiff(buf, shooting)

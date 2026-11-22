@@ -25,6 +25,43 @@ def project(lon, lat):
     return round(x), round(y)
 
 
+def unwrap(pts):
+    """Longitudini continue: chi attraversa la linea del cambio di data (Russia orientale,
+    Figi…) non deve saltare da un bordo all'altro della mappa, disegnando una striscia."""
+    out, off, prev = [], 0.0, None
+    for lon, lat in pts:
+        if prev is not None:
+            d = lon + off - prev
+            if d > 180:
+                off -= 360
+            elif d < -180:
+                off += 360
+        out.append((lon + off, lat))
+        prev = lon + off
+    return out
+
+
+def copies(pts):
+    """La figura e, se esce dal bordo della mappa, la sua copia dall'altra parte."""
+    res = [pts]
+    lons = [p[0] for p in pts]
+    if max(lons) > 180:
+        res.append([(lo - 360, la) for lo, la in pts])
+    if min(lons) < -180:
+        res.append([(lo + 360, la) for lo, la in pts])
+    return res
+
+
+def projected(pts):
+    out, last = [], None
+    for lon, lat in pts:
+        p = project(lon, lat)
+        if p != last:
+            out.append(p)
+            last = p
+    return out
+
+
 def path_of(pts, close):
     """Percorso SVG compatto: primo punto assoluto, poi spostamenti relativi ("l")."""
     (x0, y0), rest = pts[0], pts[1:]
@@ -57,15 +94,12 @@ def main(src, dst):
         for i in ring:
             seg = arc_points(i)
             pts.extend(seg if not pts else seg[1:])
-        out, last = [], None
-        for lon, lat in pts:
-            p = project(lon, lat)
-            if p != last:
-                out.append(p)
-                last = p
-        if len(out) < 3:
-            return ""
-        return path_of(out, True)
+        res = []
+        for c in copies(unwrap(pts)):
+            out = projected(c)
+            if len(out) >= 3:
+                res.append(path_of(out, True))
+        return "".join(res)
 
     geoms = topo["objects"]["countries"]["geometries"]
     land, uses = [], {}
@@ -82,14 +116,10 @@ def main(src, dst):
     borders = []
     for k, who in uses.items():
         if len(who) > 1:
-            pts, last = [], None
-            for lon, lat in arcs[k]:
-                p = project(lon, lat)
-                if p != last:
-                    pts.append(p)
-                    last = p
-            if len(pts) > 1:
-                borders.append(path_of(pts, False))
+            for c in copies(unwrap(arcs[k])):
+                pts = projected(c)
+                if len(pts) > 1:
+                    borders.append(path_of(pts, False))
     out = {"w": W, "fonte": "Natural Earth (pubblico dominio) tramite world-atlas 2.0.2 (ISC)",
            "land": "".join(land), "borders": "".join(borders)}
     with open(dst, "w") as f:

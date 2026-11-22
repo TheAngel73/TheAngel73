@@ -163,8 +163,12 @@ async function requestThumbs() {
   let changed = false;
   for (const [id, st] of Object.entries(r.state)) if (st) { patchItems([+id], {th: st}); changed = true; }
   if (changed) render();
-  // l'ultima richiesta riparte finché sullo schermo manca ancora qualcosa
-  if (seq === TW.seq) { if (changed) wantThumbs(); else TW.timer = setTimeout(requestThumbs, 400); }
+  // l'ultima richiesta riparte finché sullo schermo manca ancora qualcosa; se non arriva
+  // niente di nuovo si richiede sempre più di rado (fino a 5 s)
+  if (seq === TW.seq) {
+    TW.idle = changed ? 0 : (TW.idle || 0) + 1;
+    if (changed) wantThumbs(); else TW.timer = setTimeout(requestThumbs, Math.min(5000, 400 * 2 ** Math.min(TW.idle, 4)));
+  }
 }
 
 // tipo di file -> triangolino nell'angolo

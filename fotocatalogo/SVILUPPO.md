@@ -158,6 +158,14 @@ sincronizzazione rapida). Le colonne nuove si aggiungono con `ALTER TABLE` in
   più fine, caricato quando si ingrandisce), generati con `strumenti/crea_mappa.py` da
   world-atlas (Natural Earth, pubblico dominio; licenze in `static/mondo-LICENSE.txt`). Il
   filtro «Stelle» è stato tolto dalla barra (l'utente non usa le valutazioni; i dati restano).
+  Attenzione: il lavoro in background cede il passo alle miniature (`wait_viewer_idle`) ma
+  **al massimo 3 s**: prima aspettava all'infinito e una miniatura impossibile da creare
+  (file non raggiungibile, richiesto di continuo dalla pagina) fermava la lettura GPS per
+  sempre. Ora quelle miniature restano «non disponibili» per 5 minuti (`_unavailable`,
+  stato -1) e la pagina rallenta le richieste. Ogni file è letto dentro un `try`; la
+  lettura riparte anche aprendo la mappa e scrive inizio/avanzamento/fine nel registro.
+  `crea_mappa.py` rende continue le longitudini (`unwrap`) e duplica le figure oltre il
+  bordo: senza, Russia orientale e Figi disegnavano strisce orizzontali.
 - **Dati di scatto** nel pannello (fotocamera, obiettivo, focale, tempo, apertura, ISO):
   letti alla selezione da `shooting_info` in `server.py` (`fcimg info` sul Mac, tutti i
   formati; altrimenti `exif.read_exif(shooting=True)`, solo JPEG e RAW TIFF), tenuti in
