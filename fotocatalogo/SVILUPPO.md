@@ -52,10 +52,15 @@ messaggi, commenti e commit sono **in italiano**.
 | `gestione_file.py` | duplicati, elimina dal disco, sposta, **rinomina**, cartelle, recupero delle rinomine interrotte |
 | `esporta.py` | esportazione in JPEG (bordo lungo, larghezza, altezza, originale; senza GPS) |
 | `salva.py` | «Salva raccolta…»: copia gli originali di una raccolta o di un set ricreando la struttura in cartelle |
-| `exif.py` | lettore EXIF minimale (JPEG/TIFF/RAW) e data di ripresa dei video MP4/MOV |
-| `static/app.js` | tutta l'interfaccia (circa 1900 righe, divise in sezioni `// ====`) |
-| `mac/Provinia.swift` | finestra, menu di macOS, avvio e arresto del motore, finestre di scelta native, titolo con il nome del catalogo |
-| `mac/fcimg.swift` | `fcimg info …` (dati di scatto in JSON, solo metadati), `fcimg tojpeg …` e `fcimg export …` (ImageIO: orientamento, rotazione, ridimensionamento, EXIF) |
+| `exif.py` | lettore EXIF minimale (JPEG/TIFF/RAW: data, dimensioni, dati di scatto, **GPS**) e data e posizione dei video MP4/MOV |
+| `luoghi.py` | nome del luogo dalle coordinate (località più vicina, dati in `dati/`) |
+| `static/app.js` | tutta l'interfaccia (circa 2300 righe, divise in sezioni `// ====`) |
+| `static/mappa.js` | mappa dei luoghi (canvas, Mercatore, raggruppamento dei punti, filtro per area) |
+| `static/mondo*.json` | contorni del mondo per la mappa (Natural Earth), `inter.woff2` font, `icona.png` |
+| `dati/` | `luoghi.tsv.gz` (località GeoNames), `paesi.json` (nomi italiani), `LICENZE.txt` |
+| `strumenti/` | script da usare una volta per rigenerare i dati: `crea_mappa.py`, `crea_luoghi.js` |
+| `mac/Provinia.swift` | finestra, menu di macOS, avvio e arresto del motore, finestre di scelta native, titolo con il nome del catalogo, trascinamento verso il Finder, ⌘C, schermata di avvio |
+| `mac/fcimg.swift` | `fcimg info …` (dati di scatto e GPS in JSON, solo metadati), `fcimg tojpeg …` e `fcimg export …` (ImageIO: orientamento, rotazione, ridimensionamento, EXIF) |
 
 ## Dati
 
@@ -260,8 +265,18 @@ strumenti di macOS e il codice Swift.
 Il ramo di sviluppo è `claude/charming-gauss-qk1g5w`; la cronologia dei commit
 descrive ogni passo.
 
+Fatto dopo la prima nota (novembre 2026, in ordine): nome Provinia e icona, rinomina con
+clic sul nome, copia trascinando nel Finder, Salva raccolta, niente suono sui tasti, elimina
+tutte le scartate, ⌘C, priorità delle miniature, estetica (Inter, icone SVG, avvio e
+Informazioni su), dati di scatto nel pannello, mappa dei luoghi con GPS e nomi dei luoghi.
+Lezioni: verificare che un menu sia davvero **visibile** (non solo aperto) negli screenshot;
+le prove in Chromium non mostrano i comportamenti di WebKit (immagini non annullate, cache).
+
 Idee discusse ma non fatte:
-- **estetica** dell'interfaccia: l'utente ne vuole parlare più avanti;
+- altri ritocchi estetici: l'utente è soddisfatto, ma ne potrebbe chiedere;
+- nomi dei luoghi: sigla della provincia in Italia (servono i codici ISTAT delle province);
+- la mappa non «gira» oltre la linea del cambio di data (un'area tra Alaska e Siberia si
+  sceglie solo con ⇧ + trascina dai due lati);
 - scrivere la rotazione **dentro i file JPEG** (solo l'etichetta di orientamento,
   senza perdita di qualità), su richiesta;
 - trascinare intere cartelle per spostarle nell'albero;
