@@ -184,6 +184,10 @@ sincronizzazione rapida). Le colonne nuove si aggiungono con `ALTER TABLE` in
   letti alla selezione da `shooting_info` in `server.py` (`fcimg info` sul Mac, tutti i
   formati; altrimenti `exif.read_exif(shooting=True)`, solo JPEG e RAW TIFF), tenuti in
   memoria per (percorso, mtime). Non sono nel database. «Ultima modifica» è l'mtime del file.
+- **Esposizione nella vista ingrandita** (`setExpo` in `app.js`): solo CSS
+  `brightness(2^(EV/2,2))` sull'`<img>`, che nei valori sRGB equivale a moltiplicare
+  la luce lineare per 2^EV. Nessun file toccato. Dopo l'uso il cursore perde il
+  focus, così le frecce tornano a scorrere le foto.
 - **Lavori in background**: `start_job`, con avanzamento in `/api/jobs`.
   `job.cancellable` mostra «Interrompi»; `job.quick` (sincronizzazione rapida) si
   ferma da solo al cambio di catalogo. L'interfaccia reagisce ai risultati in

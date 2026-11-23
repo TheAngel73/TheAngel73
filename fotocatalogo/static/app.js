@@ -792,7 +792,22 @@ function stopVideo() {
   v.pause(); v.removeAttribute("src"); v.removeAttribute("poster"); v.load(); v.hidden = true;
   $("#loupe-novideo").hidden = true;
 }
-function closeLoupe() { stopVideo(); $("#loupe").hidden = true; L.id = null; }
+function closeLoupe() { stopVideo(); $("#loupe").hidden = true; L.id = null; setExpo(0); }
+
+// Esposizione solo a video (il file non cambia). Uno stop in più raddoppia la luce lineare,
+// che nei valori sRGB (gamma ~2,2) equivale a moltiplicare per 2^(EV/2,2): è brightness().
+// Resta uguale scorrendo le foto (utile per una serie scura) e si azzera chiudendo la vista.
+const expoIn = $("#loupe-expo");
+function setExpo(ev) {
+  ev = Math.round(Math.max(-3, Math.min(3, ev)) * 10) / 10;
+  expoIn.value = ev;
+  limg.style.filter = ev ? `brightness(${Math.pow(2, ev / 2.2).toFixed(4)})` : "";
+  $("#loupe-expo-val").textContent = ev ? (ev > 0 ? "+" : "−") + Math.abs(ev).toFixed(1).replace(".", ",") + " EV" : "0 EV";
+  expoIn.closest(".expo").classList.toggle("on", !!ev);
+}
+expoIn.addEventListener("input", () => setExpo(+expoIn.value));
+expoIn.addEventListener("change", () => expoIn.blur());      // le frecce tornano a scorrere le foto
+expoIn.closest(".expo").addEventListener("dblclick", e => { e.preventDefault(); setExpo(0); expoIn.blur(); });
 $("#loupe-novideo").addEventListener("click", e => {
   if (e.target.closest("button")) safe(() => api("/api/open", {ids: [L.id], how: "default"}));
 });

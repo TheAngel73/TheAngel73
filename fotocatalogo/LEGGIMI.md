@@ -86,6 +86,7 @@ presenti non vengono duplicate.
 | Vedere i file ancora da convertire | **Catalogo › Da convertire** (tutto ciò che non è DNG, JPEG, HEIC o PSD) |
 | Togliere dal catalogo foto cancellate | **Catalogo › File mancanti › Rimuovi tutte dal catalogo…**, oppure tasto destro › Rimuovi dal catalogo (o ⌫ in quella vista) |
 | Ruotare | **⌘←** / **⌘→** (anche ⌘[ e ⌘]), tasto destro, pannello a destra o ⟲ ⟳ nella vista ingrandita |
+| Schiarire o scurire per vedere meglio | cursore ☀ nella vista ingrandita (da −3 a +3 EV); solo a video, il file non cambia. Resta uguale scorrendo le foto, doppio clic per azzerare, si azzera chiudendo la vista |
 | Esportare in JPEG | **⇧⌘E** sulla selezione, oppure tasto destro su cartella o raccolta › Esporta in JPEG… |
 | Importare dal desktop | trascina file o cartelle dal Finder su una cartella della barra laterale (o sulla griglia della cartella aperta) |
 | Spostare foto | trascinale su una cartella, oppure tasto destro › Sposta in… |

@@ -105,7 +105,9 @@
     <div id="loupe-novideo" hidden><p>Questo formato video non si può riprodurre qui.</p>
       <button type="button" class="primary">Apri con l'app predefinita</button></div></div>
   <div id="loupe-bar"><span id="loupe-name"></span>
-    <span class="loupe-tools"><button id="loupe-rotl" title="Ruota a sinistra (⌘←)">⟲</button><button id="loupe-rotr" title="Ruota a destra (⌘→)">⟳</button></span>
+    <span class="loupe-tools"><button id="loupe-rotl" title="Ruota a sinistra (⌘←)">⟲</button><button id="loupe-rotr" title="Ruota a destra (⌘→)">⟳</button>
+      <label class="expo" title="Esposizione solo per la visione: il file non viene modificato. Doppio clic per azzerare">☀
+        <input type="range" id="loupe-expo" min="-3" max="3" step="0.1" value="0"><span id="loupe-expo-val">0 EV</span></label></span>
     <span id="loupe-zoom"></span>
     <span class="hint" id="loupe-hint">clic: adatta/100% · doppio clic: griglia · rotellina: zoom · ← →</span></div>
   <button id="loupe-prev" class="nav">‹</button>
