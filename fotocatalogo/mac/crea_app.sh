@@ -32,7 +32,9 @@ echo "› Icona…"
 cp Provinia.icns "$APP/Contents/Resources/AppIcon.icns"
 cp "$SRC/Provinia about.png" "$APP/Contents/Resources/about.png"   # avvio e «Informazioni su»
 
-VERSION="$(date +%Y.%m.%d)"
+# numero di versione dal file VERSIONE (es. 1.0); la build è la data di costruzione
+VERSION="$(tr -d ' \n' < "$SRC/VERSIONE" 2>/dev/null)"; [ -n "$VERSION" ] || VERSION="$(date +%Y.%m.%d)"
+BUILD="$(date +%Y.%m.%d)"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -44,7 +46,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
-  <key>CFBundleVersion</key><string>$VERSION</string>
+  <key>CFBundleVersion</key><string>$BUILD</string>
   <key>CFBundleDevelopmentRegion</key><string>it</string>
   <key>LSMinimumSystemVersion</key><string>12.3</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.photography</string>

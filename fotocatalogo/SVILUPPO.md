@@ -250,6 +250,14 @@ Finder), Adobe DNG Converter
 (`/Applications/Adobe DNG Converter.app/Contents/MacOS/Adobe DNG Converter -c -p1 -d <dir> -o <nome> <file>`),
 `swiftc` e `codesign` (costruzione dell'app).
 
+## Versioni
+
+- Il numero mostrato in «Informazioni su Provinia» viene dal file `VERSIONE`
+  (letto da `mac/crea_app.sh`); la build (`CFBundleVersion`) è la data di costruzione.
+- **1.0**: la versione considerata definitiva dall'utente (commit «Versione 1.0»).
+  Le modifiche successive si fanno su un ramo di sviluppo; quando l'utente ne approva
+  una serie si aumenta `VERSIONE` (1.1, 1.2…).
+
 ## Come provare le modifiche
 
 Lo sviluppo è avvenuto su **Linux**, senza Mac: lì si può provare tutto tranne gli
