@@ -204,6 +204,10 @@ sincronizzazione rapida). Le colonne nuove si aggiungono con `ALTER TABLE` in
     suggerimento e copiato con un clic; `actionRows` mette Photoshop come pulsante principale;
   - i simboli di testo (▾ ⟲ ⟳ ⚑ ✕ ⊘) sono diventati icone di `ICON`;
   - i comandi che cancellano sono rossi anche nel menu Libreria (`danger-item`).
+- **Cartelle raggiungibili**: `checkRoots()` chiede `/api/roots/status` ogni 8 s (e al
+  ritorno sulla finestra). `_reachable` fa `isdir` con un limite di 2 s, così un NAS che
+  non risponde non blocca il motore. Quando una cartella torna raggiungibile: spunta
+  verde per 10 s, avviso, `thumbs._unavailable` svuotato e griglia ricaricata.
 - **Esposizione nella vista ingrandita** (`setExpo` in `app.js`): solo CSS
   `brightness(2^(EV/2,2))` sull'`<img>`, che nei valori sRGB equivale a moltiplicare
   la luce lineare per 2^EV. Nessun file toccato. Dopo l'uso il cursore perde il

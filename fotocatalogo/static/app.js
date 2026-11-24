@@ -483,7 +483,7 @@ function renderSidebar() {
     const acts = `<button data-rescan="${r.id}" title="Sincronizza (cerca foto nuove o spostate)">${ICON.sync}</button><button data-del-root="${r.id}" title="Rimuovi dal catalogo">${ICON.x}</button>`;
     return `<li data-scope="folder:${top.id}" data-folder="${top.id}" title="${esc(r.path)}">` +
       nodeHTML({icon: ICON.drive, name: r.name, count: deepCount(top), active: S.scope === "folder:" + top.id,
-        tw: twisty(ch.length, open), acts, dot: `<span class="dot ${r.online ? "on" : "off"}" title="${r.online ? "Raggiungibile" : "Non raggiungibile: NAS scollegato?"}"></span>`}) +
+        tw: twisty(ch.length, open), acts, dot: rootDot(r.id, r.online)}) +
       (open && ch.length ? `<ul>${folderHTML(ch)}</ul>` : "") + "</li>";
   }).join("") || `<li class="small">Nessuna cartella.</li>`;
 
@@ -2210,6 +2210,45 @@ $("#search").addEventListener("input", () => { markFilters(); clearTimeout(searc
 for (const id of ["#f-label", "#f-flag", "#f-year", "#f-ext", "#sort", "#deep"])
   $(id).addEventListener("change", () => { if (id === "#sort") store.set("sort", $("#sort").value); markFilters(); reload(); });
 $("#sort").value = store.get("sort", "date:asc");
+
+// ================================================================ cartelle raggiungibili
+// Il pallino verde/rosso si aggiorna da solo: ogni 8 secondi (e quando si torna sulla finestra)
+// si chiede lo stato al motore. Una cartella che torna raggiungibile mostra per qualche
+// secondo un segno di spunta, e le anteprime mancanti vengono richieste di nuovo.
+const rootBack = new Map();          // id -> fino a quando mostrare la spunta
+function rootDot(id, online) {
+  if (online && rootBack.get(id) > Date.now())
+    return `<span class="dot back" data-root-dot="${id}" title="Di nuovo raggiungibile">${svg('<path d="M3.5 8.4l3 3 6-6.4"/>')}</span>`;
+  return `<span class="dot ${online ? "on" : "off"}" data-root-dot="${id}" title="${online ? "Raggiungibile" : "Non raggiungibile: NAS scollegato?"}"></span>`;
+}
+let rootsTimer = null;
+async function checkRoots() {
+  clearTimeout(rootsTimer);
+  rootsTimer = setTimeout(checkRoots, 8000);
+  if (document.hidden || !S.tree || !S.tree.roots.length) return;
+  const st = await api("/api/roots/status").catch(() => null);
+  if (!st || !S.tree) return;
+  let back = [];
+  for (const r of st) {
+    const old = S.tree.roots.find(x => x.id === r.id);
+    if (!old || old.online === r.online) continue;
+    old.online = r.online;
+    if (r.online) { back.push(r.name); rootBack.set(r.id, Date.now() + 10000); setTimeout(() => repaintDot(r.id), 10100); }
+    else toast(`«${r.name}» non è più raggiungibile (NAS scollegato?)`, true);
+    repaintDot(r.id);
+  }
+  if (back.length) {
+    toast(back.length === 1 ? `«${back[0]}» di nuovo raggiungibile` : `Di nuovo raggiungibili: ${back.join(", ")}`);
+    reload(true);                    // le anteprime che mancavano vengono richieste di nuovo
+  }
+}
+function repaintDot(id) {
+  const r = S.tree?.roots.find(x => x.id === id), el = document.querySelector(`[data-root-dot="${id}"]`);
+  if (r && el) el.outerHTML = rootDot(id, r.online);
+}
+addEventListener("focus", () => checkRoots());
+document.addEventListener("visibilitychange", () => { if (!document.hidden) checkRoots(); });
+rootsTimer = setTimeout(checkRoots, 8000);
 
 // ================================================================ lavori in background
 let pollTimer = null;

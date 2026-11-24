@@ -483,3 +483,8 @@ button.ico { display: inline-flex; align-items: center; justify-content: center;
 #info .acts-sec button { white-space: nowrap; padding: 5px 6px; gap: 5px; font-size: 12px; min-width: 0; }
 #viewbar { display: flex; align-items: center; flex-wrap: wrap; row-gap: 4px; }
 #view-count { margin-left: 4px; }
+/* cartella di nuovo raggiungibile: spunta verde per qualche secondo */
+.dot.back { width: 13px; height: 13px; margin: 0 -3px; background: var(--green); color: #fff; display: inline-flex;
+  align-items: center; justify-content: center; animation: fc-back .35s ease-out; }
+.dot.back svg.i { width: 10px; height: 10px; stroke-width: 2.2; }
+@keyframes fc-back { from { transform: scale(.3); } 70% { transform: scale(1.25); } to { transform: scale(1); } }
