@@ -184,6 +184,11 @@ sincronizzazione rapida). Le colonne nuove si aggiungono con `ALTER TABLE` in
   letti alla selezione da `shooting_info` in `server.py` (`fcimg info` sul Mac, tutti i
   formati; altrimenti `exif.read_exif(shooting=True)`, solo JPEG e RAW TIFF), tenuti in
   memoria per (percorso, mtime). Non sono nel database. «Ultima modifica» è l'mtime del file.
+- **Larghezza del pannello di sinistra** (`sideResize` in `app.js`): variabile CSS
+  `--side-w` su `#layout`, maniglia `#side-grip` sovrapposta al bordo, salvata in
+  `localStorage["fc-side-w"]` per tutti i cataloghi. Il massimo lascia sempre almeno
+  420 px alla griglia; se la finestra si stringe il pannello si adatta senza perdere
+  la larghezza scelta.
 - **Esposizione nella vista ingrandita** (`setExpo` in `app.js`): solo CSS
   `brightness(2^(EV/2,2))` sull'`<img>`, che nei valori sRGB equivale a moltiplicare
   la luce lineare per 2^EV. Nessun file toccato. Dopo l'uso il cursore perde il

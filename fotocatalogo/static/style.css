@@ -41,7 +41,12 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
 .menu button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 6px 10px; }
 .menu button:hover { background: var(--sel); }
 
-#layout { display: grid; grid-template-columns: 280px minmax(0, 1fr) 300px; min-height: 0; }
+#layout { display: grid; grid-template-columns: var(--side-w, 280px) minmax(0, 1fr) 300px; min-height: 0; position: relative; }
+/* maniglia per allargare il pannello di sinistra */
+#side-grip { position: absolute; top: 0; bottom: 0; left: calc(var(--side-w, 280px) - 3px); width: 7px; z-index: 5;
+  cursor: col-resize; touch-action: none; }
+#side-grip:hover, #side-grip.on { background: linear-gradient(to right, transparent 2px, var(--accent) 2px, var(--accent) 4px, transparent 4px); }
+body.resizing, body.resizing * { cursor: col-resize !important; user-select: none !important; }
 #sidebar, #info { background: var(--panel); overflow: auto; }
 #sidebar { border-right: 1px solid var(--line); padding: 6px 0 30px; }
 #info { border-left: 1px solid var(--line); padding: 12px; }

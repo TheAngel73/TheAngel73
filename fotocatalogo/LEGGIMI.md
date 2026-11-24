@@ -87,6 +87,7 @@ presenti non vengono duplicate.
 | Togliere dal catalogo foto cancellate | **Catalogo › File mancanti › Rimuovi tutte dal catalogo…**, oppure tasto destro › Rimuovi dal catalogo (o ⌫ in quella vista) |
 | Ruotare | **⌘←** / **⌘→** (anche ⌘[ e ⌘]), tasto destro, pannello a destra o ⟲ ⟳ nella vista ingrandita |
 | Schiarire o scurire per vedere meglio | cursore ☀ nella vista ingrandita (da −3 a +3 EV); solo a video, il file non cambia. Resta uguale scorrendo le foto, doppio clic per azzerare, si azzera chiudendo la vista |
+| Allargare il pannello di sinistra | trascina il suo bordo destro (da 200 px in su); doppio clic sul bordo per la larghezza normale. La larghezza viene ricordata |
 | Esportare in JPEG | **⇧⌘E** sulla selezione, oppure tasto destro su cartella o raccolta › Esporta in JPEG… |
 | Importare dal desktop | trascina file o cartelle dal Finder su una cartella della barra laterale (o sulla griglia della cartella aperta) |
 | Spostare foto | trascinale su una cartella, oppure tasto destro › Sposta in… |

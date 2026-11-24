@@ -37,6 +37,37 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem(skey(k)); return v == null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem(skey(k), JSON.stringify(v)); } catch {} },
 };
+// Larghezza del pannello di sinistra: si trascina il bordo, doppio clic torna a 280.
+// Vale per tutti i cataloghi (localStorage diretto, non store).
+(function sideResize() {
+  const grip = $("#side-grip"), lay = $("#layout"), MIN = 200, DEF = 280;
+  const max = () => Math.max(MIN, Math.min(600, innerWidth - 300 - 420));
+  const set = (w, save) => {
+    w = Math.round(Math.max(MIN, Math.min(max(), w)));
+    lay.style.setProperty("--side-w", w + "px");
+    if (save) try { localStorage.setItem("fc-side-w", String(w)); } catch {}
+  };
+  let saved = DEF;
+  try { saved = +localStorage.getItem("fc-side-w") || DEF; } catch {}
+  set(saved, false);
+  let start = null;
+  grip.addEventListener("pointerdown", e => {
+    if (e.button !== 0) return;
+    e.preventDefault(); grip.setPointerCapture(e.pointerId);
+    start = {x: e.clientX, w: $("#sidebar").getBoundingClientRect().width};
+    grip.classList.add("on"); document.body.classList.add("resizing");
+  });
+  grip.addEventListener("pointermove", e => { if (start) set(start.w + e.clientX - start.x, false); });
+  const end = () => {
+    if (!start) return; start = null;
+    grip.classList.remove("on"); document.body.classList.remove("resizing");
+    set($("#sidebar").getBoundingClientRect().width, true);
+  };
+  grip.addEventListener("pointerup", end); grip.addEventListener("pointercancel", end);
+  grip.addEventListener("dblclick", () => set(DEF, true));
+  // finestra stretta: si restringe senza dimenticare la larghezza scelta
+  addEventListener("resize", () => { let w = DEF; try { w = +localStorage.getItem("fc-side-w") || DEF; } catch {} set(w, false); });
+})();
 function fmtDate(t) {
   if (!t) return "—";
   const [d, h] = t.split("T");
