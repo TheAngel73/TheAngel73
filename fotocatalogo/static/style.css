@@ -417,3 +417,69 @@ input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px rg
 
 /* barra delle attività in basso */
 #jobs { background: #1f1f21; border-top-color: #111112; }
+
+/* ================================================================ revisione interfaccia (1.1) */
+svg.i.chevd { width: 12px; height: 12px; stroke-width: 1.6; display: inline-block; vertical-align: -2px; margin-left: 4px; opacity: .8; }
+#btn-catalog, #btn-library { display: inline-flex; align-items: center; }
+
+/* filtri: in linea nella barra; con la finestra stretta, raccolti sotto «Filtri» */
+#filters { display: flex; gap: 8px; align-items: center; flex: 0 1 auto; min-width: 0; }
+#btn-filters { display: none; align-items: center; gap: 6px; }
+#btn-filters.on { color: #6fb1ff; border-color: var(--accent); background: #1d2a3a; }
+#filters-count:not(:empty) { background: var(--accent); color: #fff; border-radius: 8px; font-size: 10.5px; font-weight: 600;
+  min-width: 16px; height: 16px; line-height: 16px; text-align: center; padding: 0 4px; }
+@media (max-width: 1420px) {
+  #btn-filters { display: inline-flex; flex: none; }
+  #filters { display: none; position: absolute; top: 42px; left: var(--filters-x, 300px); z-index: 60; flex-direction: column;
+    align-items: stretch; gap: 8px; padding: 10px; background: var(--panel2); border: 1px solid var(--line); border-radius: 9px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.55); width: 230px; }
+  #topbar.filters-open #filters { display: flex; }
+  #filters select, #filters #f-geo { width: 100%; flex: none; max-width: none; }
+  #search { min-width: 90px; }
+}
+
+/* filtri attivi sotto il titolo */
+#active-filters { display: inline-flex; flex-wrap: wrap; gap: 5px; margin-left: 10px; vertical-align: middle; }
+.fchip { display: inline-flex; align-items: center; gap: 3px; font-size: 11.5px; color: #cfe3ff; background: #1d2a3a;
+  border: 1px solid #2f4d72; border-radius: 11px; padding: 1px 3px 1px 9px; }
+.fchip button { border: 0; background: none; padding: 1px; border-radius: 50%; color: #8fb3de; display: inline-flex; }
+.fchip button:hover { background: #2f4d72; color: #fff; }
+.fchip svg.i { width: 12px; height: 12px; stroke-width: 1.6; }
+.empty button { margin-top: 14px; }
+
+/* pannello informazioni */
+#info .path { display: flex; align-items: center; gap: 5px; width: 100%; margin: 2px 0 8px; padding: 3px 6px; border: 0;
+  background: none; color: var(--dim); font-size: 11.5px; text-align: left; border-radius: 5px; }
+#info .path span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#info .path svg.i { width: 13px; height: 13px; flex: none; }
+#info .path svg.i:last-child { opacity: 0; transition: opacity .12s; }
+#info .path:hover { background: var(--panel2); color: var(--text); }
+#info .path:hover svg.i:last-child { opacity: .8; }
+#info .row.acts-main { flex-wrap: nowrap; align-items: center; margin-top: 12px; }
+#info .acts-main .primary { flex: 1; font-weight: 600; padding: 6px 10px; }
+#info .acts-main .primary:hover { background: #5a9ce8; }
+#info .rot { display: flex; gap: 4px; }
+button.ico { display: inline-flex; align-items: center; justify-content: center; padding: 0; width: 30px; height: 30px; }
+#info .acts-sec button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+#info .acts-sec svg.i { width: 14px; height: 14px; }
+.ratebar button.ico { width: 24px; height: 24px; background: none; border: 0; color: #666; }
+.ratebar button.ico:hover { color: #bbb; background: none; }
+.ratebar button.ico.on { color: #e8e8e8; }
+.ratebar button.ico.on svg.flag path:last-child { fill: currentColor; }
+.ratebar button.ico.rej { color: var(--red); }
+.ratebar svg.i { width: 16px; height: 16px; }
+.cell .flag svg.i { width: 13px; height: 13px; color: #fff; filter: drop-shadow(0 1px 1px rgba(0,0,0,.7)); }
+
+/* vista ingrandita e albero: icone al posto dei simboli di testo */
+.loupe-tools button { display: inline-flex; align-items: center; height: 26px; }
+.loupe-tools button svg.i { width: 15px; height: 15px; }
+.node .acts button svg.i { width: 12px; height: 12px; }
+.node .acts button { display: inline-flex; align-items: center; }
+
+/* comandi che cancellano: rossi anche nei menu della barra */
+.menu button.danger-item { color: #f0716a; }
+.menu button.danger-item:hover { background: #8e2f2a; color: #fff; }
+#info .acts-sec { flex-wrap: nowrap; }
+#info .acts-sec button { white-space: nowrap; padding: 5px 6px; gap: 5px; font-size: 12px; min-width: 0; }
+#viewbar { display: flex; align-items: center; flex-wrap: wrap; row-gap: 4px; }
+#view-count { margin-left: 4px; }

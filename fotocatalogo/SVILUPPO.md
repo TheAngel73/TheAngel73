@@ -195,6 +195,15 @@ sincronizzazione rapida). Le colonne nuove si aggiungono con `ALTER TABLE` in
   la parte colorata si calcola in JS (`rangeFill`, variabili `--pct`, `--lo`/`--hi`
   per quelli con lo zero al centro) perché WebKit non la disegna. La versione
   precedente all'aspetto nuovo è il commit `6f2ce8c`.
+- **Revisione dell'interfaccia (dopo la 1.0)**, blocco in fondo a `style.css`:
+  - sotto i 1420 px di larghezza i filtri (`#filters`) si raccolgono nel pannellino
+    del pulsante «Filtri», con il numero dei filtri attivi; Esc o un clic fuori lo chiude;
+  - `activeFilters()` elenca i filtri attivi: etichette cliccabili sotto il titolo
+    (`#active-filters`) e messaggio «Nessuna foto corrisponde…» con «Togli i filtri»;
+  - nel pannello informazioni il percorso è abbreviato (`shortPath`), completo nel
+    suggerimento e copiato con un clic; `actionRows` mette Photoshop come pulsante principale;
+  - i simboli di testo (▾ ⟲ ⟳ ⚑ ✕ ⊘) sono diventati icone di `ICON`;
+  - i comandi che cancellano sono rossi anche nel menu Libreria (`danger-item`).
 - **Esposizione nella vista ingrandita** (`setExpo` in `app.js`): solo CSS
   `brightness(2^(EV/2,2))` sull'`<img>`, che nei valori sRGB equivale a moltiplicare
   la luce lineare per 2^EV. Nessun file toccato. Dopo l'uso il cursore perde il

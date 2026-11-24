@@ -133,8 +133,12 @@ async function reload(keepScroll = false) {
 function emptyMessage() {
   if (S.tree && S.tree.stats.total === 0)
     return "Il catalogo è vuoto.<br>Dal menu <b>Libreria</b> puoi <b>importare il catalogo di Lightroom</b><br>oppure <b>aggiungere una cartella</b> di foto dal NAS.";
+  const f = activeFilters();
+  if (f.length) return `Nessuna foto corrisponde ${f.length > 1 ? "ai filtri" : "al filtro"}: <b>${f.map(x => esc(x.text)).join(" · ")}</b>.
+    <br><button class="primary" data-clear-filters>Togli i filtri</button>`;
   return "Nessuna foto in questa vista.";
 }
+space.addEventListener("click", e => { if (e.target.closest("[data-clear-filters]")) clearFilters(); });
 
 function layout() {
   const w = scroller.clientWidth - 8;
@@ -240,7 +244,7 @@ function makeCell(it, i) {
   el.innerHTML = `<div class="im">${pending ? `<span class="ph wait">${esc(it.x || "")}</span>` : `<img loading="lazy" decoding="async" alt="" src="${thumbURL(it.id)}">`}</div>
     ${ft && ft[0] !== "video" ? `<span class="ftype ft-${ft[0]}" title="${ft[1]}"></span>` : ""}
     <div class="tl${ft && ft[0] !== "video" ? " after-tri" : ""}">${ft && ft[0] === "video" ? `<span class="vbadge" title="${ft[1]}">▶ ${esc(it.x.toUpperCase())}</span>` : ""}${it.m ? '<span class="miss" title="File non trovato">⚠ mancante</span>' : ""}</div>
-    ${it.f === 1 ? '<span class="flag" title="Scelta">⚑</span>' : ""}
+    ${it.f === 1 ? `<span class="flag" title="Scelta">${ICON.flagOn}</span>` : ""}
     <div class="cap"${it.l ? ` title="Etichetta ${LABELS[it.l] || ""}"` : ""}><span class="fn" title="${esc(it.n)}">${esc(it.n)}</span><span class="stars">${stars}</span></div>`;
   const img = el.querySelector("img");
   if (!img) return el;
@@ -368,6 +372,17 @@ const ICON = {
   folder: svg('<path d="M2.3 4.6a1 1 0 0 1 1-1h3.1l1.5 1.6h4.8a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3.3a1 1 0 0 1-1-1z"/>'),
   drive: svg('<rect x="1.8" y="4" width="12.4" height="8" rx="1.6"/><path d="M1.8 9h12.4"/><circle cx="11.6" cy="10.6" r=".6" fill="currentColor" stroke="none"/>'),
   tag: svg('<path d="M2.6 3.4v4.1l5.5 5.5a1 1 0 0 0 1.4 0l3.5-3.5a1 1 0 0 0 0-1.4L7.5 2.6H3.4a.8.8 0 0 0-.8.8z"/><circle cx="5.4" cy="5.4" r=".9"/>'),
+  rotl: svg('<path d="M3.2 7.4A5 5 0 1 1 4.6 11.6"/><path d="M3 3.8v3.8h3.8"/>'),
+  rotr: svg('<path d="M12.8 7.4A5 5 0 1 0 11.4 11.6"/><path d="M13 3.8v3.8H9.2"/>'),
+  sync: svg('<path d="M12.9 6.4A5 5 0 0 0 3.6 5.3M3.1 9.6a5 5 0 0 0 9.3 1.1"/><path d="M3.4 2.8v2.7h2.7M12.6 13.2v-2.7H9.9"/>'),
+  flag: svg('<path d="M4 13.5V2.8M4 3.2h7.5l-1.6 2.6 1.6 2.6H4"/>', "flag"),
+  flagOn: svg('<path d="M4 13.5V2.8"/><path d="M4 3.2h7.5l-1.6 2.6 1.6 2.6H4z" fill="currentColor"/>', "flag"),
+  x: svg('<path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/>'),
+  none: svg('<circle cx="8" cy="8" r="5"/><path d="M4.5 11.5l7-7"/>'),
+  chevd: svg('<path d="M4.5 6.5l3.5 3.5 3.5-3.5"/>', "chevd"),
+  copy: svg('<rect x="5.5" y="5.5" width="8" height="8" rx="1.3"/><path d="M10.5 3.5v-.2a1 1 0 0 0-1-1H3.3a1 1 0 0 0-1 1v6.2a1 1 0 0 0 1 1h.2"/>'),
+  finder: svg('<rect x="2.3" y="2.8" width="11.4" height="10.4" rx="1.6"/><path d="M8 2.8c-1.2 2.4-1.4 5.3-.6 8.4"/><path d="M5.2 6.2v1M10.8 6.2v1M5 10c1.8 1.2 4.2 1.2 6 0"/>'),
+  export: svg('<path d="M8 2.5v7.5M5 5.3l3-2.8 3 2.8"/><path d="M3.5 8.5v3.8a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V8.5"/>'),
 };
 const twisty = (has, open) => has ? svg('<path d="M6 4l4 4-4 4"/>', "chev" + (open ? " open" : "")) : "";
 
@@ -465,7 +480,7 @@ function renderSidebar() {
     const top = t.folders.find(f => f.root === r.id && f.parent == null);
     if (!top) return "";
     const ch = fk.get(top.id) || []; const open = S.expanded.has("f" + top.id);
-    const acts = `<button data-rescan="${r.id}" title="Sincronizza (cerca foto nuove o spostate)">⟳</button><button data-del-root="${r.id}" title="Rimuovi dal catalogo">✕</button>`;
+    const acts = `<button data-rescan="${r.id}" title="Sincronizza (cerca foto nuove o spostate)">${ICON.sync}</button><button data-del-root="${r.id}" title="Rimuovi dal catalogo">${ICON.x}</button>`;
     return `<li data-scope="folder:${top.id}" data-folder="${top.id}" title="${esc(r.path)}">` +
       nodeHTML({icon: ICON.drive, name: r.name, count: deepCount(top), active: S.scope === "folder:" + top.id,
         tw: twisty(ch.length, open), acts, dot: `<span class="dot ${r.online ? "on" : "off"}" title="${r.online ? "Raggiungibile" : "Non raggiungibile: NAS scollegato?"}"></span>`}) +
@@ -684,14 +699,10 @@ async function showInfo(refresh = false) {
   box.innerHTML = `
     <div class="prev"><img src="${thumbURL(id)}" alt="" onerror="this.remove()"></div>
     <div class="fname" title="Clic per rinominare">${esc(d.filename)}</div>
-    <div class="path">${esc(d.path)}</div>
+    <button class="path" data-act="copy-path" title="${esc(d.path)}
+Clic per copiare il percorso completo">${ICON.folder}<span>${esc(shortPath(d.path))}</span>${ICON.copy}</button>
     ${rateBars(d.rating, d.label, d.flag)}
-    <div class="row">
-      <button data-open="photoshop" title="⌘E">Apri in Photoshop</button>
-      <button data-open="finder" title="⌘R">Mostra nel Finder</button>
-    </div>
-    <div class="row"><button data-rot="-90" title="⌘← oppure ⌘[">⟲ Ruota a sinistra</button><button data-rot="90" title="⌘→ oppure ⌘]">⟳ Ruota a destra</button>
-      <button data-act="export" title="⇧⌘E">Esporta JPEG…</button></div>
+    ${actionRows(true)}
     <h4>Raccolte (${d.collections.length})</h4>
     <div class="chips">${d.collections.map(c => `<span class="chip" data-goto="collection:${c.id}" title="${esc(collPath(S.tree.collections.find(x => x.id === c.id) || c))}">${esc(c.name)}<button class="x" data-uncoll="${c.id}" title="Togli da questa raccolta">×</button></span>`).join("") || '<span class="small">In nessuna raccolta</span>'}</div>
     <div class="row"><button data-act="add-coll">＋ Aggiungi a raccolta…</button></div>
@@ -712,6 +723,20 @@ async function showInfo(refresh = false) {
       <tr><td>In catalogo dal</td><td>${fmtDate(d.added_at)}</td></tr>
       ${d.missing ? `<tr><td>Stato</td><td style="color:var(--red)">File non trovato</td></tr>` : ""}
     </table>`;
+}
+
+// pulsanti del pannello: Photoshop è l'azione principale, rotazioni come icone
+function actionRows(one) {
+  const ps = `Apri in Photoshop${!one && S.sel.size > 50 ? " (prime 50)" : ""}`;
+  return `<div class="row acts-main"><button class="primary" data-open="photoshop" title="⌘E">${ps}</button>
+      <span class="rot"><button class="ico" data-rot="-90" title="Ruota a sinistra (⌘←)">${ICON.rotl}</button><button class="ico" data-rot="90" title="Ruota a destra (⌘→)">${ICON.rotr}</button></span></div>
+    <div class="row acts-sec">${one ? `<button data-open="finder" title="⌘R">${ICON.finder}Mostra nel Finder</button>` : ""}<button data-act="export" title="⇧⌘E">${ICON.export}Esporta JPEG…</button></div>`;
+}
+// percorso breve: le ultime due cartelle (quello completo è nel suggerimento)
+function shortPath(p) {
+  const parts = String(p || "").split("/").filter(Boolean);
+  parts.pop();
+  return (parts.length > 2 ? "…/" : "/") + parts.slice(-2).join("/");
 }
 
 // dati di scatto (solo quelli presenti nel file)
@@ -742,8 +767,8 @@ function fmtStamp(sec) {
 function rateBars(r, l, f) {
   return `<div class="row" style="justify-content:space-between;align-items:center">
     <div class="ratebar">${[1, 2, 3, 4, 5].map(n => `<button data-rate="${n}" class="${n <= (r || 0) ? "on" : ""}" title="${n} stelle (tasto ${n})">★</button>`).join("")}
-      <button data-rate="0" title="Nessuna stella (tasto 0)" style="font-size:12px">⊘</button></div>
-    <div class="ratebar"><button data-flag="1" class="${f === 1 ? "on" : ""}" title="Scelta (P)">⚑</button><button data-flag="-1" class="${f === -1 ? "on" : ""}" title="Scartata (X)">✕</button></div>
+      <button data-rate="0" class="ico" title="Nessuna stella (tasto 0)">${ICON.none}</button></div>
+    <div class="ratebar"><button data-flag="1" class="ico${f === 1 ? " on" : ""}" title="Scelta (P)">${ICON.flag}</button><button data-flag="-1" class="ico${f === -1 ? " on rej" : ""}" title="Scartata (X)">${ICON.x}</button></div>
   </div>
   <div class="labelbar">${Object.entries(LABELS).map(([k, n]) => `<button data-label="${k}" class="lbl-${k}${l === k ? " on" : ""}" title="${n}"></button>`).join("")}
     <button data-label="" class="none${!l && l !== undefined ? "" : ""}" title="Nessuna etichetta"></button></div>`;
@@ -759,9 +784,7 @@ function showMulti(box) {
     <h4>Parole chiave</h4>
     <div class="row"><input id="kw-add" list="kw-list" placeholder="Aggiungi a tutte…"><button data-act="kw-add">＋</button></div>
     <h4>Apri</h4>
-    <div class="row"><button data-open="photoshop">Apri in Photoshop${S.sel.size > 50 ? " (prime 50)" : ""}</button></div>
-    <div class="row"><button data-rot="-90">⟲ Ruota a sinistra</button><button data-rot="90">⟳ Ruota a destra</button></div>
-    <div class="row"><button data-act="export">Esporta in JPEG…</button></div>`;
+    ${actionRows(false)}`;
 }
 
 $("#info").addEventListener("click", async e => {
@@ -777,6 +800,7 @@ $("#info").addEventListener("click", async e => {
   if (t.dataset.label !== undefined) return setMeta({label: t.dataset.label || null});
   if (t.dataset.open) return safe(() => api("/api/open", {ids, how: t.dataset.open}));
   if (t.dataset.rot) return rotate(+t.dataset.rot);
+  if (t.dataset.act === "copy-path" && S.detail) return copyText(S.detail.path);
   if (t.dataset.act === "export") return exportDialog(ids, ids.length === 1 ? "la foto selezionata" : `${ids.length.toLocaleString("it-IT")} foto selezionate`);
   const act = t.dataset.act;
   if (act === "add-coll") return pickCollection(ids);
@@ -972,6 +996,7 @@ document.addEventListener("keydown", async e => {
   }
   const loupe = !$("#loupe").hidden;
   const mod = e.metaKey || e.ctrlKey;
+  if (e.key === "Escape" && $("#topbar").classList.contains("filters-open")) { e.preventDefault(); $("#topbar").classList.remove("filters-open"); return; }
   if (e.key === "Escape") {
     if (loupe) { e.preventDefault(); closeLoupe(); }
     else if (S.sel.size) { e.preventDefault(); S.sel.clear(); selChanged(); }
@@ -1403,7 +1428,7 @@ function kwMenu(kid, fromChip = false) {
 // ================================================================ cataloghi
 function updateCatalogButton() {
   const b = $("#btn-catalog");
-  b.innerHTML = `${CAT.protected ? "🔒 " : ""}${esc(CAT.name)} ▾`;
+  b.innerHTML = `${CAT.protected ? "🔒 " : ""}${esc(CAT.name)}${ICON.chevd}`;
   b.title = CAT.path;
 }
 
@@ -1605,7 +1630,7 @@ async function removeMissing(ids) {
     Le foto selezionate che esistono ancora non vengono toccate.</p>
     <p>Nessun file viene cancellato.</p>
     <p class="warn">Se le hai solo spostate o rinominate, o se il NAS non è collegato, non rimuoverle:
-    ricollega il NAS e usa ⟳ Sincronizza.</p>`, "Rimuovi");
+    ricollega il NAS e usa Sincronizza (l'icona con le due frecce accanto alla cartella).</p>`, "Rimuovi");
   if (!f) return;
   await safe(async () => {
     const r = await api("/api/photos/remove-missing", ids ? {ids} : {});
@@ -2137,16 +2162,49 @@ async function importDrop(dt, fid) {
 let searchT;
 // filtri attivi evidenziati in colore, con ✕ per toglierli tutti
 const FILTERS = ["#search", "#f-label", "#f-flag", "#f-year", "#f-ext"];
+// filtri attivi, con il testo per le etichette sotto il titolo
+function activeFilters() {
+  const out = [], q = $("#search").value.trim();
+  if (q) out.push({id: "#search", text: `«${q}»`});
+  if (S.geo) out.push({id: "geo", text: "Area sulla mappa"});
+  for (const [id, name] of [["#f-label", "Etichetta"], ["#f-flag", "Bandierina"], ["#f-year", "Anno"], ["#f-ext", "Formato"]]) {
+    const el = $(id);
+    if (el.value !== "") out.push({id, text: `${name}: ${el.options[el.selectedIndex].text.toLowerCase()}`});
+  }
+  return out;
+}
 function markFilters() {
-  let any = false;
-  for (const id of FILTERS) { const on = $(id).value.trim() !== ""; $(id).classList.toggle("on", on); any ||= on; }
+  for (const id of FILTERS) $(id).classList.toggle("on", $(id).value.trim() !== "");
   // filtro luogo: area scelta sulla mappa
   $("#f-geo").classList.toggle("on", !!S.geo);
   $("#f-geo-label").textContent = S.geo ? "Area sulla mappa" : "Luogo";
-  any ||= !!S.geo;
-  $("#clear-filters").hidden = !any;
+  const act = activeFilters();
+  $("#clear-filters").hidden = !act.length;
+  $("#active-filters").innerHTML = act.map(f =>
+    `<span class="fchip">${esc(f.text)}<button data-unfilter="${f.id}" title="Togli questo filtro">${ICON.x}</button></span>`).join("");
+  // pulsante «Filtri» (finestra stretta): quanti filtri, esclusa la ricerca
+  const n = act.filter(f => f.id !== "#search").length;
+  $("#filters-count").textContent = n ? n : "";
+  $("#btn-filters").classList.toggle("on", n > 0);
 }
-$("#clear-filters").onclick = () => { for (const id of FILTERS) $(id).value = ""; S.geo = null; markFilters(); reload(); };
+function clearFilters() { for (const id of FILTERS) $(id).value = ""; S.geo = null; markFilters(); reload(); }
+$("#clear-filters").onclick = clearFilters;
+$("#active-filters").addEventListener("click", e => {
+  const b = e.target.closest("[data-unfilter]"); if (!b) return;
+  if (b.dataset.unfilter === "geo") S.geo = null; else $(b.dataset.unfilter).value = "";
+  markFilters(); reload();
+});
+// finestra stretta: i filtri stanno in un pannellino sotto il pulsante «Filtri»
+$("#btn-filters").onclick = e => {
+  e.stopPropagation();
+  $("#filters").style.setProperty("--filters-x", "");
+  $("#topbar").style.setProperty("--filters-x", $("#btn-filters").offsetLeft + "px");
+  $("#topbar").classList.toggle("filters-open");
+};
+document.addEventListener("click", e => {
+  if ($("#topbar").classList.contains("filters-open") && !e.target.closest("#filters, #btn-filters"))
+    $("#topbar").classList.remove("filters-open");
+});
 $("#f-geo").onclick = () => openMap();
 $("#search").addEventListener("input", () => { markFilters(); clearTimeout(searchT); searchT = setTimeout(() => reload(), 300); });
 for (const id of ["#f-label", "#f-flag", "#f-year", "#f-ext", "#sort", "#deep"])
@@ -2204,7 +2262,7 @@ async function onJobDone(j) {
       <tr><td>Foto</td><td>${r.foto.toLocaleString("it-IT")}</td></tr><tr><td>Cartelle</td><td>${r.cartelle.toLocaleString("it-IT")}</td></tr>
       <tr><td>Raccolte</td><td>${r.raccolte}</td></tr><tr><td>Set di raccolte</td><td>${r.set}</td></tr>
       <tr><td>Parole chiave</td><td>${r.parole_chiave}</td></tr><tr><td>Raccolte smart (non importate)</td><td>${r.raccolte_smart_saltate}</td></tr></table>
-      <p>Consiglio: con il NAS collegato, usa ⟳ accanto a ogni cartella per leggere dimensioni e date dei file,
+      <p>Consiglio: con il NAS collegato, usa Sincronizza (le due frecce) accanto a ogni cartella per leggere dimensioni e date dei file,
       poi <b>Libreria › Genera anteprime</b> per creare in anticipo le miniature (anche di notte).</p>`, "OK");
   } else if ("new" in r) {
     toast(`Sincronizzazione: ${r.total} foto, ${r.new} nuove, ${r.missing} mancanti`);
