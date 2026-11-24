@@ -1,0 +1,4 @@
+luoghi.tsv.gz — località del mondo con almeno 1000 abitanti.
+  Dati: GeoNames (https://www.geonames.org), licenza Creative Commons Attribution 4.0.
+  Ricavati dal pacchetto npm all-the-cities 3.1.0 (licenza MIT) con strumenti/crea_luoghi.js.
+paesi.json — nomi dei paesi in italiano, dal pacchetto npm i18n-iso-countries 7.14.0 (licenza MIT).
