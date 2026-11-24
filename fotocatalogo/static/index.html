@@ -25,6 +25,7 @@
       <button data-act="help">Scorciatoie da tastiera</button>
     </div>
   </div>
+  <span class="tsep"></span>
   <input id="search" type="search" placeholder="Cerca nome file, parola chiave, cartella…">
   <button id="f-geo" type="button" title="Filtra per luogo: mappa delle foto con posizione GPS"><svg class="i" viewBox="0 0 16 16"><path d="M8 14.2s4.6-4.3 4.6-7.9A4.6 4.6 0 0 0 3.4 6.3c0 3.6 4.6 7.9 4.6 7.9z"/><circle cx="8" cy="6.3" r="1.6"/></svg><span id="f-geo-label">Luogo</span></button>
   <select id="f-label" title="Etichetta colore">
@@ -48,6 +49,7 @@
     <option value="mov,mp4,m4v,avi,mkv,mts,m2ts,3gp,mpg,mpeg,wmv,webm">Video</option>
     <option value="nef,nrw,cr2,cr3,crw,arw,srf,sr2,raf,orf,rw2,pef,srw,x3f,3fr,iiq,erf,mos,mrw,raw,rwl,kdc,dcr,mef">RAW proprietari</option>
   </select>
+  <span class="tsep"></span>
   <select id="sort" title="Ordina">
     <option value="date:asc">Data scatto ↑</option>
     <option value="date:desc">Data scatto ↓</option>
@@ -56,7 +58,8 @@
     <option value="rating:desc">Valutazione</option>
   </select>
   <button id="clear-filters" title="Togli tutti i filtri" hidden>✕</button>
-  <input id="zoom" type="range" min="100" max="360" value="180" title="Dimensione miniature">
+  <span class="tsep"></span>
+  <label class="zoomwrap" title="Dimensione miniature"><svg class="i" viewBox="0 0 16 16"><rect x="5" y="5" width="6" height="6" rx="1"/></svg><input id="zoom" type="range" min="100" max="360" value="180"><svg class="i big" viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/></svg></label>
 </header>
 
 <main id="layout">

@@ -162,7 +162,7 @@ function render() {
       el = makeCell(it, i); el._key = key;
       cells.set(i, el); space.appendChild(el);
     }
-    el.style.cssText = `left:${4 + (i % S.cols) * S.cw + 3}px;top:${4 + Math.floor(i / S.cols) * S.ch + 3}px;width:${S.cw - 6}px;height:${S.ch - 6}px`;
+    el.style.cssText = `left:${4 + (i % S.cols) * S.cw + 5}px;top:${4 + Math.floor(i / S.cols) * S.ch + 5}px;width:${S.cw - 10}px;height:${S.ch - 10}px`;
     el.classList.toggle("sel", !!it && S.sel.has(it.id));
     el.classList.toggle("cursor", i === S.cursor);
   }
@@ -252,7 +252,17 @@ function makeCell(it, i) {
 scroller.addEventListener("scroll", () => requestAnimationFrame(render));
 new ResizeObserver(() => layout()).observe(scroller);
 $("#zoom").value = store.get("zoom", 180);
-$("#zoom").addEventListener("input", () => { store.set("zoom", +$("#zoom").value); layout(); });
+// la parte già percorsa del cursore è colorata (WebKit non lo fa da solo)
+function rangeFill(el) {
+  const pct = (el.value - el.min) / (el.max - el.min) * 100;
+  el.style.setProperty("--pct", pct + "%");
+  if (+el.min < 0) {            // cursori con lo zero al centro: si colora dallo zero al pomello
+    const z = -el.min / (el.max - el.min) * 100;
+    el.style.setProperty("--lo", Math.min(z, pct) + "%"); el.style.setProperty("--hi", Math.max(z, pct) + "%");
+  }
+}
+rangeFill($("#zoom"));
+$("#zoom").addEventListener("input", () => { rangeFill($("#zoom")); store.set("zoom", +$("#zoom").value); layout(); });
 
 // ---------------------------------------------------------------- selezione
 async function idsRange(a, b) {
@@ -828,10 +838,10 @@ function closeLoupe() { stopVideo(); $("#loupe").hidden = true; L.id = null; set
 // Esposizione solo a video (il file non cambia). Uno stop in più raddoppia la luce lineare,
 // che nei valori sRGB (gamma ~2,2) equivale a moltiplicare per 2^(EV/2,2): è brightness().
 // Resta uguale scorrendo le foto (utile per una serie scura) e si azzera chiudendo la vista.
-const expoIn = $("#loupe-expo");
+const expoIn = $("#loupe-expo"); rangeFill(expoIn);
 function setExpo(ev) {
   ev = Math.round(Math.max(-3, Math.min(3, ev)) * 10) / 10;
-  expoIn.value = ev;
+  expoIn.value = ev; rangeFill(expoIn);
   limg.style.filter = ev ? `brightness(${Math.pow(2, ev / 2.2).toFixed(4)})` : "";
   $("#loupe-expo-val").textContent = ev ? (ev > 0 ? "+" : "−") + Math.abs(ev).toFixed(1).replace(".", ",") + " EV" : "0 EV";
   expoIn.closest(".expo").classList.toggle("on", !!ev);

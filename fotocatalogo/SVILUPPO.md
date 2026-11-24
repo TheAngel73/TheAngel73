@@ -189,6 +189,12 @@ sincronizzazione rapida). Le colonne nuove si aggiungono con `ALTER TABLE` in
   `localStorage["fc-side-w"]` per tutti i cataloghi. Il massimo lascia sempre almeno
   420 px alla griglia; se la finestra si stringe il pannello si adatta senza perdere
   la larghezza scelta.
+- **Aspetto** (in fondo a `style.css`, blocco «aspetto»): stessi colori, ma piani
+  distinti: pannelli `#28282a`, tavolo delle foto `--desk` più scuro, telaietti con
+  sfumatura e filo di luce, selezione come anello blu. I cursori sono disegnati a mano;
+  la parte colorata si calcola in JS (`rangeFill`, variabili `--pct`, `--lo`/`--hi`
+  per quelli con lo zero al centro) perché WebKit non la disegna. La versione
+  precedente all'aspetto nuovo è il commit `6f2ce8c`.
 - **Esposizione nella vista ingrandita** (`setExpo` in `app.js`): solo CSS
   `brightness(2^(EV/2,2))` sull'`<img>`, che nei valori sRGB equivale a moltiplicare
   la luce lineare per 2^EV. Nessun file toccato. Dopo l'uso il cursore perde il

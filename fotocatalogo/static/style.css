@@ -346,3 +346,74 @@ dialog .pickrow > div label { margin-top: 10px; }
 .map-hint { position: absolute; left: 12px; bottom: 10px; font-size: 11px; color: #9a9aa0; pointer-events: none;
   background: rgba(21,24,28,.75); padding: 4px 8px; border-radius: 5px; }
 .map-hint b { color: #ccc; font-weight: 600; }
+
+/* ================================================================ aspetto
+   Stessi colori (grigi + accento blu), ma piani distinti: barre e pannelli un filo
+   più chiari, il tavolo delle foto più scuro, i telaietti come cornici di diapositiva. */
+:root { --desk: #141415; --frame: #222224; --frame-hi: #29292c; }
+#topbar { background: linear-gradient(#2a2a2d, #252527); box-shadow: 0 1px 0 rgba(0,0,0,.35); position: relative; z-index: 10; }
+.tsep { flex: none; width: 1px; height: 22px; background: var(--line); margin: 0 4px; }
+#btn-catalog { font-weight: 600; }
+
+/* menu a tendina dei filtri: freccina disegnata, angoli morbidi */
+#topbar select { -webkit-appearance: none; appearance: none; padding: 4px 22px 4px 9px; border-radius: 6px;
+  background: #1b1b1d url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238a8a90' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 8px center;
+  cursor: pointer; height: 27px; }
+#topbar select:hover, #search:hover { border-color: #4a4a4f; }
+#topbar select:focus, #search:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(74,144,226,.25); }
+#search { border-radius: 14px; padding: 4px 12px; height: 27px; background: #1b1b1d; }
+#topbar > button, .menu-wrap > button { height: 27px; border-radius: 6px; }
+#f-geo { display: inline-flex; align-items: center; gap: 5px; }
+
+/* cursori (dimensione miniature, esposizione): binario sottile, parte percorsa in blu */
+input[type=range] { -webkit-appearance: none; appearance: none; background: transparent; border: 0; padding: 0;
+  height: 18px; cursor: pointer; }
+input[type=range]::-webkit-slider-runnable-track { height: 4px; border-radius: 2px;
+  background: linear-gradient(to right, var(--accent) var(--pct, 50%), #3c3c41 var(--pct, 50%)); }
+input[type=range]::-moz-range-track { height: 4px; border-radius: 2px; background: #3c3c41; }
+input[type=range]::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--accent); }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; margin-top: -5px;
+  border-radius: 50%; background: #ececee; border: 0; box-shadow: 0 1px 3px rgba(0,0,0,.6); transition: transform .1s; }
+input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: #ececee; border: 0;
+  box-shadow: 0 1px 3px rgba(0,0,0,.6); }
+input[type=range]:hover::-webkit-slider-thumb { transform: scale(1.15); }
+input[type=range]:focus { outline: none; }
+input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px rgba(74,144,226,.45); }
+#loupe-expo::-webkit-slider-runnable-track { background: linear-gradient(to right, #3c3c41 var(--lo, 50%),
+  var(--accent) var(--lo, 50%), var(--accent) var(--hi, 50%), #3c3c41 var(--hi, 50%)); }
+#loupe-expo::-moz-range-progress { background: transparent; }
+.zoomwrap { display: flex; align-items: center; gap: 6px; color: var(--dim); flex: 0 1 150px; min-width: 70px; }
+.zoomwrap svg.i { width: 11px; height: 11px; flex: none; }
+.zoomwrap svg.i.big { width: 15px; height: 15px; }
+.zoomwrap #zoom { flex: 1; width: auto; min-width: 30px; }
+
+/* pannelli laterali un filo più chiari del tavolo delle foto */
+#sidebar, #info { background: #28282a; }
+#sidebar { border-right-color: #19191a; box-shadow: inset -1px 0 0 rgba(255,255,255,.03); }
+#info { border-left-color: #19191a; box-shadow: inset 1px 0 0 rgba(255,255,255,.03); }
+#sidebar section { border-bottom-color: #333336; }
+
+/* tavolo delle foto */
+#center { background: var(--desk); }
+#viewbar { background: #1a1a1b; border-bottom-color: #0d0d0e; padding: 8px 14px; }
+#grid-scroll { background: var(--desk); }
+
+/* telaietti: cornice con luce dall'alto, filo chiaro sul bordo, foto con ombra */
+.cell { border-radius: 7px; border: 0; padding: 8px 8px 22px;
+  background: linear-gradient(180deg, var(--frame-hi), var(--frame));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06), inset 0 0 0 1px rgba(255,255,255,.035), 0 2px 6px rgba(0,0,0,.45);
+  transition: background-color .12s, box-shadow .12s; }
+.cell:hover { background: linear-gradient(180deg, #303034, #262629); }
+.cell img { box-shadow: 0 0 0 1px rgba(0,0,0,.6), 0 3px 10px rgba(0,0,0,.55); border-radius: 1px; }
+.cell .cap { left: 9px; right: 9px; bottom: 4px; }
+.cell.sel { background: linear-gradient(180deg, #2f3b4b, #273241);
+  box-shadow: inset 0 0 0 2px var(--accent), 0 0 0 1px rgba(74,144,226,.25), 0 4px 14px rgba(0,0,0,.55); }
+.cell.cursor { box-shadow: inset 0 0 0 1px rgba(255,255,255,.75), 0 2px 6px rgba(0,0,0,.45); }
+.cell.sel.cursor { box-shadow: inset 0 0 0 2px var(--accent), inset 0 0 0 3px rgba(255,255,255,.55), 0 4px 14px rgba(0,0,0,.55); }
+.cell .ftype { border-top-left-radius: 6px; }
+.cell .flag { top: 4px; right: 8px; }
+.cell .tl { top: 5px; left: 8px; }
+.cell.lab .cap { left: 0; right: 0; bottom: 0; height: 22px; padding: 0 9px 4px; border-radius: 0 0 7px 7px; }
+
+/* barra delle attività in basso */
+#jobs { background: #1f1f21; border-top-color: #111112; }
