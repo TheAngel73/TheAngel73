@@ -835,6 +835,7 @@ function openLoupe(i) {
   stopVideo();
   limg.hidden = L.video;
   $("#loupe").classList.toggle("is-video", L.video);
+  hintFade();
   $("#loupe-hint").textContent = L.video ? "spazio: avvia/ferma · ← → scorri · Esc chiudi"
     : "clic: adatta/100% · doppio clic: griglia · rotellina: zoom · ← →";
   if (L.video) {
@@ -856,6 +857,12 @@ function openLoupe(i) {
   $("#loupe-name").textContent = `${it.n} · ${fmtDate(it.t)} ${it.r ? "· " + "★".repeat(it.r) : ""}`;
   $("#loupe").hidden = false;
   loupeLayout();
+}
+// il testo di aiuto in basso a destra si attenua dopo qualche secondo (torna passandoci sopra)
+let hintT = null;
+function hintFade() {
+  const h = $("#loupe-hint"); h.classList.remove("faded");
+  clearTimeout(hintT); hintT = setTimeout(() => h.classList.add("faded"), 4000);
 }
 function stopVideo() {
   const v = $("#loupe-video");
@@ -1468,7 +1475,7 @@ $("#btn-catalog").onclick = async e => {
   const cs = await api("/api/catalogs");
   const others = cs.catalogs.filter(c => !c.open);
   showMenu(r.left, r.bottom + 4, [
-    {label: CAT.name, checked: true, disabled: true},
+    {label: CAT.name, checked: true, key: "aperto", run: () => {}},
     ...others.map(c => ({label: (c.protected ? "🔒 " : "") + c.name, run: () => openCatalogFlow(c)})),
     "-",
     {label: "Gestisci cataloghi…", key: NATIVE ? "⌥⌘O" : "", run: () => showCatalogScreen(cs, false)},
@@ -1550,9 +1557,9 @@ async function showCatalogScreen(cs, startup) {
   const draw = (err = "") => {
     el.innerHTML = `<div class="cs-box">
       <h1>${startup ? "Provinia" : "Cataloghi"}</h1>
-      <p class="small">Cartella: <code>${esc(cs.base)}</code></p>
+      <p class="small cs-base" title="${esc(cs.base)}">Cartella: ${esc(cs.base)}</p>
       <div class="cs-list">${cs.catalogs.map(c => `<div class="cs-item${c === sel ? " on" : ""}" data-path="${esc(c.path)}">
-        <span class="cs-ic">${c.protected ? "🔒" : "▦"}</span><span class="cs-name">${esc(c.name)}</span>
+        <span class="cs-ic">${c.protected ? "🔒" : ICON.all}</span><span class="cs-name">${esc(c.name)}</span>
         ${c.default ? '<span class="cs-badge">all\'avvio</span>' : ""}${c.open ? '<span class="cs-badge open">aperto</span>' : ""}</div>`).join("")
         || '<p class="small">Nessun catalogo.</p>'}</div>
       ${sel && sel.protected && !sel.open ? `<label>Password di «${esc(sel.name)}»</label><input type="password" id="cs-pw" autofocus>` : ""}
