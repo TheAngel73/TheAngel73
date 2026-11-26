@@ -11,11 +11,11 @@ catalogazione.
   pannello a destra mostra sempre tutte le raccolte della foto selezionata
 - **Dati di scatto** nel pannello a destra: fotocamera, obiettivo, focale, tempo, apertura,
   ISO (quando presenti nel file) e data dell'ultima modifica del file
-- **Parole chiave**, **stelle**, **etichette colore**, **bandierine** (scelta/scartata)
+- **Parole chiave**, **etichette colore**, **bandierine** (scelta/scartata)
 - Ricerca per nome file, parola chiave, cartella o luogo, con filtri per etichetta, bandierina, anno, formato
   e per **luogo** sulla mappa delle foto con posizione GPS
 - **Importazione dal catalogo Lightroom** (`.lrcat`): cartelle, raccolte, set,
-  parole chiave, stelle, etichette e bandierine, e **esportazione verso Lightroom**
+  parole chiave, etichette e bandierine, e **esportazione verso Lightroom**
 - **Apri in Photoshop** (⌘E) e **Mostra nel Finder** (⌘R)
 - Miniature di JPEG, PSD, TIFF, HEIC e RAW (NEF, CR2/CR3, ARW, RAF, DNG…) generate da macOS
 - Pensato per grandi archivi (oltre 170 000 foto): la griglia carica solo ciò che vedi
@@ -83,7 +83,7 @@ il tuo lavoro.
    le stesse di Provinia, con lo stesso percorso, altrimenti quelle foto vengono saltate.
 2. In Provinia: **Libreria › Esporta nel catalogo Lightroom…** e scegli quel `.lrcat`.
 3. Provinia fa una **copia di sicurezza** accanto («… (prima di Provinia data ora).lrcat»)
-   e poi riporta nel catalogo stelle, etichette colore, bandierine, rotazioni, parole
+   e poi riporta nel catalogo etichette colore, bandierine, rotazioni, parole
    chiave, raccolte e set. Alla fine dice quante foto ha aggiornato e quali cartelle
    mancano in Lightroom.
 
@@ -99,7 +99,7 @@ in Lightroom. Le regolazioni dello Sviluppo non ci sono (Provinia non le conserv
 | Nuova raccolta / nuovo set | **＋** / **▤** accanto a «Raccolte» |
 | Spostare una raccolta in un set | trascinala sul set (sul titolo «Raccolte» per riportarla al primo livello) |
 | Togliere foto dalla raccolta aperta | **⌫ Backspace** |
-| Stelle / etichette / bandierine | **0–5** / **6 7 8 9** / **P X U** |
+| Etichette / bandierine | **6 7 8 9** / **P X U** |
 | Vista ingrandita | doppio clic, **Spazio** o **Invio**, poi **← →** |
 | Saltare a una foto vicina | nella vista ingrandita porta il mouse sulla barra in basso: compare la **striscia delle foto vicine** (rotellina per scorrerla, clic per aprire). Tornando sulla foto sparisce dopo un paio di secondi |
 | Zoom nella vista ingrandita | **clic** (o **Z**): adatta ↔ 100% · **doppio clic** o **Esc**: torna alla griglia · **rotellina** o pizzico sul trackpad · **+ −** · trascina per spostarti |
@@ -132,7 +132,7 @@ Converti tutti (RAW e PNG)…**, oppure menu **Foto** dell'app.
 - **PNG → JPEG**: con gli strumenti di macOS, qualità 92%. Le parti trasparenti diventano
   bianche (un JPEG non può essere trasparente), data del file e dati EXIF/GPS restano.
 - Il nuovo file viene salvato nella stessa cartella, verificato, e nel catalogo **prende il
-  posto dell'originale** con raccolte, parole chiave, stelle, etichette e bandierine.
+  posto dell'originale** con raccolte, parole chiave, etichette e bandierine.
 - Poi l'originale (e il suo eventuale `.xmp`) viene **cancellato**: sul NAS finisce nel
   cestino di rete, se attivo. Se la conversione non riesce, l'originale non viene toccato.
 - Se esiste già un file con lo stesso nome di destinazione, l'originale viene saltato.
@@ -150,7 +150,7 @@ Converti tutti (RAW e PNG)…**, oppure menu **Foto** dell'app.
   poi quella nella **cartella preferita** (se l'hai indicata), poi quella con più
   informazioni di catalogo, poi quella nella cartella creata più di recente.
   Clic su una copia per tenerla, «Salta» per lasciare il gruppo com'è;
-- prima di eliminare, raccolte, parole chiave, stelle, etichetta e bandierina delle copie
+- prima di eliminare, raccolte, parole chiave, etichetta e bandierina delle copie
   eliminate vengono **riunite sulla copia che resta**.
 
 **Elimina dal disco**: tasto destro › Elimina dal disco… (⌘⌫). Cancella i file (e i loro
@@ -207,8 +207,8 @@ trascinata viene ricreata con le sue sottocartelle. I file che non sono foto o v
 quelli con un nome già presente nella destinazione, vengono saltati.
 
 **Spostare**: trascina le foto su una cartella della barra laterale, oppure tasto destro ›
-**Sposta in…**. Il file si sposta sul disco con il suo `.xmp`; raccolte, parole chiave e
-stelle restano. Se nella destinazione esiste già un file con lo stesso nome viene saltato.
+**Sposta in…**. Il file si sposta sul disco con il suo `.xmp`; raccolte, parole chiave ed
+etichette restano. Se nella destinazione esiste già un file con lo stesso nome viene saltato.
 
 **Cartelle** (tasto destro): Nuova cartella…, Rinomina cartella…, Elimina cartella vuota….
 
@@ -277,7 +277,7 @@ Come in Lightroom, puoi avere più cataloghi. Stanno tutti in `Documenti/Provini
 ```
 Documenti/Provinia/
 ├── Catalogo principale/          ← catalogo normale: una cartella
-│   ├── catalogo.db               ← raccolte, parole chiave, stelle… (il file importante)
+│   ├── catalogo.db               ← raccolte, parole chiave, etichette… (il file importante)
 │   └── miniature/                ← si possono cancellare, vengono ricreate
 └── Personale.sparsebundle        ← catalogo protetto: immagine disco cifrata
 ```

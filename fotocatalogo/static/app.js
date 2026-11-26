@@ -246,13 +246,12 @@ function makeCell(it, i) {
   if (it.f === -1) { el.classList.add("rejected"); el.title = "Scartata"; }
   if (it.l) el.classList.add("lab", "lab-" + it.l);
   const ft = fileType(it.x);
-  const stars = it.r ? "★".repeat(it.r) : "";
   const pending = it.th === 0 && !it.m;          // miniatura in preparazione (vedi wantThumbs)
   el.innerHTML = `<div class="im">${pending ? `<span class="ph wait">${esc(it.x || "")}</span>` : `<img loading="lazy" decoding="async" alt="" src="${thumbURL(it.id)}">`}</div>
     ${ft && ft[0] !== "video" ? `<span class="ftype ft-${ft[0]}" title="${ft[1]}"></span>` : ""}
     <div class="tl${ft && ft[0] !== "video" ? " after-tri" : ""}">${ft && ft[0] === "video" ? `<span class="vbadge" title="${ft[1]}">▶ ${esc(it.x.toUpperCase())}</span>` : ""}${it.m ? '<span class="miss" title="File non trovato">⚠ mancante</span>' : ""}</div>
     ${it.f === 1 ? `<span class="flag" title="Scelta">${ICON.flagOn}</span>` : ""}
-    <div class="cap"${it.l ? ` title="Etichetta ${LABELS[it.l] || ""}"` : ""}>${capName(it.n)}<span class="stars">${stars}</span>${capExt(it.n)}</div>`;
+    <div class="cap"${it.l ? ` title="Etichetta ${LABELS[it.l] || ""}"` : ""}>${capName(it.n)}${capExt(it.n)}</div>`;
   const img = el.querySelector("img");
   if (!img) return el;
   img.draggable = false;
@@ -775,7 +774,7 @@ function fmtStamp(sec) {
 }
 
 function rateBars(r, l, f) {
-  // le stelle non ci sono più nel pannello (non usate); restano nei dati e con i tasti 0–5.
+  // niente stelle: l'utente non le usa (i valori importati da Lightroom restano nei dati).
   // Etichette a sinistra e bandierine a destra, sulla stessa riga.
   return `<div class="row markbar">
     <div class="labelbar">${Object.entries(LABELS).map(([k, n]) => `<button data-label="${k}" class="lbl-${k}${l === k ? " on" : ""}" title="${n}"></button>`).join("")}
@@ -844,7 +843,7 @@ function openLoupe(i) {
   $("#loupe-hint").textContent = L.video ? "spazio: avvia/ferma · ← → scorri · Esc chiudi"
     : "clic: adatta/100% · doppio clic: griglia · rotellina: zoom · ← →";
   if (L.video) {
-    $("#loupe-name").textContent = `${it.n} · ${fmtDate(it.t)} ${it.r ? "· " + "★".repeat(it.r) : ""}`;
+    $("#loupe-name").textContent = `${it.n} · ${fmtDate(it.t)}`;
     $("#loupe-zoom").textContent = "Video";
     $("#loupe").hidden = false;
     if (VIDEO_PLAYABLE.has(it.x.toLowerCase())) {
@@ -860,7 +859,7 @@ function openLoupe(i) {
   const big = new Image();
   big.onload = () => { if (L.id === it.id && L.full === "no") limg.src = big.src; };
   big.src = previewURL(it.id);
-  $("#loupe-name").textContent = `${it.n} · ${fmtDate(it.t)} ${it.r ? "· " + "★".repeat(it.r) : ""}`;
+  $("#loupe-name").textContent = `${it.n} · ${fmtDate(it.t)}`;
   $("#loupe").hidden = false;
   loupeLayout();
   if (STRIP.open) stripRender();
@@ -1117,7 +1116,6 @@ document.addEventListener("keydown", async e => {
   if (shortcut && !NATIVE) { e.preventDefault(); return COMMANDS[shortcut](); }
   if (mod) return;
   // ogni tasto gestito va "consumato" (preventDefault), altrimenti il Mac emette il suono d'avviso
-  if (/^[0-5]$/.test(e.key)) { e.preventDefault(); return setMeta({rating: +e.key}); }
   const lab = {"6": "red", "7": "yellow", "8": "green", "9": "blue"}[e.key];
   if (lab) { e.preventDefault(); const cur = S.sel.size === 1 && S.detail ? S.detail.label : null; return setMeta({label: cur === lab ? null : lab}); }
   const k = e.key.toLowerCase();
@@ -1176,7 +1174,7 @@ async function addFolderDialog() {
 
 async function importLrDialog() {
   const f = await dialog("Importa catalogo Lightroom", `
-    <p>Importa da un catalogo Lightroom Classic (<code>.lrcat</code>): cartelle, foto, <b>raccolte e set di raccolte</b>, parole chiave, stelle, etichette colore e bandierine.</p>
+    <p>Importa da un catalogo Lightroom Classic (<code>.lrcat</code>): cartelle, foto, <b>raccolte e set di raccolte</b>, parole chiave, etichette colore e bandierine.</p>
     <p><b>Chiudi Lightroom</b> prima di importare. Il catalogo di Lightroom viene solo letto, mai modificato.
     Le raccolte smart non vengono importate.</p>
     <label>File catalogo</label><div class="pickrow"><input type="text" name="path" required placeholder="/Users/…/Lightroom Catalog.lrcat"><button type="button" data-pick>Scegli…</button></div>`,
@@ -1190,7 +1188,7 @@ async function importLrDialog() {
 // rotazioni, parole chiave, raccolte e set (vedi export_lrcat in lightroom.py).
 async function exportLrDialog() {
   const f = await dialog("Esporta nel catalogo Lightroom", `
-    <p>Riporta in un catalogo di Lightroom Classic quello che hai organizzato in Provinia: <b>stelle, etichette colore, bandierine,
+    <p>Riporta in un catalogo di Lightroom Classic quello che hai organizzato in Provinia: <b>etichette colore, bandierine,
     rotazioni, parole chiave, raccolte e set di raccolte</b>.</p>
     <ol class="steps">
       <li>In Lightroom crea un catalogo nuovo (<i>File › Nuovo catalogo</i>) e importa le cartelle del NAS con <b>Aggiungi</b> (le foto restano dove sono).</li>
@@ -1244,8 +1242,8 @@ function helpDialog() {
     ["Selezionare e spostarsi", [
       ["Clic", "Seleziona una foto"], ["⌘ clic", "Aggiunge o toglie dalla selezione"], ["⇧ clic", "Seleziona un intervallo"],
       ["⌘A", "Seleziona tutte le foto della vista"], ["⌘D · Esc", "Deseleziona"], ["Frecce", "Spostati tra le foto"]]],
-    ["Valutare", [
-      ["0 – 5", "Stelle"], ["6 · 7 · 8 · 9", "Etichetta rossa, gialla, verde, blu"],
+    ["Etichette e bandierine", [
+      ["6 · 7 · 8 · 9", "Etichetta rossa, gialla, verde, blu"],
       ["P · X · U", "Scelta · Scartata · Togli bandierina"]]],
     ["Raccolte e parole chiave", [
       ["C · B", "Aggiungi a raccolta…"], ["⌫", "Togli dalla raccolta corrente"], ["⌘K", "Aggiungi parole chiave"]]],
@@ -1497,7 +1495,6 @@ async function photoMenu() {
     cur && {label: `Togli da «${cur.name}»`, key: "⌫", run: COMMANDS.removeFromColl},
     d && d.collections.length && {label: `Raccolte di questa foto (${d.collections.length})`, sub: d.collections.map(c => ({label: c.name, run: () => setScope("collection:" + c.id)}))},
     "-",
-    {label: "Valutazione", sub: [0, 1, 2, 3, 4, 5].map(r => ({label: r ? "★".repeat(r) : "Nessuna stella", key: String(r), checked: d && d.rating === r, run: () => setMeta({rating: r})}))},
     {label: "Etichetta colore", sub: [...Object.entries(LABELS).map(([lk, name], i) => ({label: name, swatch: lk, key: i < 4 ? String(6 + i) : "", checked: d && d.label === lk, run: () => setMeta({label: lk})})),
       "-", {label: "Nessuna etichetta", checked: d && !d.label, run: () => setMeta({label: null})}]},
     {label: "Bandierina", sub: [{label: "Scelta", key: "P", checked: d && d.flag === 1, run: () => setMeta({flag: 1})},
@@ -1750,7 +1747,7 @@ async function convertDng(ids) {
   const f = await dialog("Converti", `
     <p>Verranno convertiti:</p><ul>${lines}</ul>
     <p>Ogni nuovo file viene salvato nella stessa cartella e <b>prende il posto dell'originale nel catalogo</b>,
-    mantenendo raccolte, parole chiave, stelle ed etichette.</p>
+    mantenendo raccolte, parole chiave ed etichette.</p>
     <p class="warn">Dopo una conversione riuscita e verificata, l'originale (e il suo eventuale .xmp)
     viene <b>cancellato</b>: sul NAS finisce nel cestino di rete, se attivo.</p>
     <p>Puoi interrompere in qualsiasi momento dalla barra in basso.</p>`, "Converti");
@@ -1871,7 +1868,7 @@ function dupPlan() {
   return {plan, files, bytes};
 }
 function memberHTML(m, keep) {
-  const info = [m.nc && `${m.nc} raccolte`, m.nk && `${m.nk} parole chiave`, m.rating && "★".repeat(m.rating)].filter(Boolean).join(" · ");
+  const info = [m.nc && `${m.nc} raccolte`, m.nk && `${m.nk} parole chiave`].filter(Boolean).join(" · ");
   return `<div class="dup-m ${keep ? "keep" : "del"}" data-pick="${m.id}" title="${esc(m.path)}">
     <div class="dup-th"><img loading="lazy" src="${thumbURL(m.id)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'ph',textContent:'${m.size ? "" : "vuoto"}'}))"></div>
     <div class="dup-tag">${keep ? "✓ TIENI" : "ELIMINA"}</div>
@@ -1910,7 +1907,7 @@ function renderDup() {
     <div class="dup-pref"><span>Cartella preferita:</span>
       <input id="dup-pref" value="${esc(DUP.pref)}" placeholder="nessuna: si tiene la copia con più informazioni di catalogo; a parità, quella nella cartella più recente">
       <button data-pickpref>Scegli…</button>${DUP.pref ? "<button data-nopref>✕</button>" : ""}</div>
-    <p class="small">Clic su una copia per tenerla. Prima di eliminare, raccolte, parole chiave, stelle ed etichette
+    <p class="small">Clic su una copia per tenerla. Prima di eliminare, raccolte, parole chiave ed etichette
       delle copie eliminate vengono riunite su quella che resta.</p>
     ${tabs}<div class="dup-list">${body}</div>
     <div class="dup-foot"><span>Verranno eliminati <b>${files.toLocaleString("it-IT")}</b> file${bytes ? ` (${fmtBytes(bytes)})` : ""}.
@@ -2067,7 +2064,7 @@ async function renameOneDialog(id) {
     for (const [k, el] of cells) if (itemAt(k)?.id === id) el._key = null;
     render();
     const it = itemAt(L.i);
-    if (!$("#loupe").hidden && it && it.id === id) $("#loupe-name").textContent = `${it.n} · ${fmtDate(it.t)} ${it.r ? "· " + "★".repeat(it.r) : ""}`;
+    if (!$("#loupe").hidden && it && it.id === id) $("#loupe-name").textContent = `${it.n} · ${fmtDate(it.t)}`;
   }
 }
 $("#info").addEventListener("click", e => { if (e.target.closest(".fname") && S.sel.size === 1) startInlineRename(selIds()[0]); });
@@ -2137,7 +2134,7 @@ async function renameDialog(ids) {
     <label class="check"><input type="checkbox" name="lower_ext" ${o.lower_ext ? "checked" : ""}> Estensione in minuscolo (.ARW → .arw)</label>
     <label class="check"><input type="checkbox" name="keep_pairs" ${o.keep_pairs ? "checked" : ""}> File con lo stesso nome (es. RAW + JPEG) ricevono lo stesso numero</label>
     <h4>Anteprima</h4><div class="list" id="ren-prev"><div class="small">…</div></div>
-    <p class="small">Anche gli eventuali file .xmp vengono rinominati. Raccolte, parole chiave e stelle restano.</p>`,
+    <p class="small">Anche gli eventuali file .xmp vengono rinominati. Raccolte, parole chiave ed etichette restano.</p>`,
     "Rinomina", form => {
       form.sep.value = o.sep === "" ? "none" : o.sep; form.order.value = o.order;
       const ok_btn = form.querySelector("button.primary");
@@ -2168,7 +2165,7 @@ async function moveDialog(ids) {
   const f = await dialog(`Sposta ${ids.length === 1 ? "la foto" : ids.length.toLocaleString("it-IT") + " foto"}`, `
     <input type="text" name="q" placeholder="Cerca cartella…" autocomplete="off" autofocus>
     <div class="list" id="mv-list"></div>
-    <p class="small">I file vengono spostati sul disco (con i loro .xmp); raccolte, parole chiave e stelle restano.
+    <p class="small">I file vengono spostati sul disco (con i loro .xmp); raccolte, parole chiave ed etichette restano.
     Puoi anche trascinare le foto su una cartella nella barra a sinistra.</p>`, "Sposta", form => {
       const draw = () => {
         const q = form.q.value.trim().toLowerCase();
@@ -2252,7 +2249,7 @@ folderTree.addEventListener("drop", async e => {
   if (!ids.length) return toast(`Trascinamento non riconosciuto (contenuto: ${[...e.dataTransfer.types].join(", ") || "vuoto"})`, true);
   const fo = S.tree.folders.find(x => x.id === fid);
   const d = await dialog("Sposta", `<p>Spostare ${ids.length === 1 ? "la foto" : ids.length.toLocaleString("it-IT") + " foto"}
-    in «${esc(folderLabel(fo))}»?</p><p class="small">I file vengono spostati sul disco; raccolte, parole chiave e stelle restano.</p>`, "Sposta");
+    in «${esc(folderLabel(fo))}»?</p><p class="small">I file vengono spostati sul disco; raccolte, parole chiave ed etichette restano.</p>`, "Sposta");
   if (d) startMove(ids, fid);
 });
 // file dal Finder sulla griglia: si importano nella cartella che stai guardando
@@ -2368,6 +2365,7 @@ $("#search").addEventListener("input", () => { markFilters(); clearTimeout(searc
 for (const id of ["#f-label", "#f-flag", "#f-year", "#f-ext", "#sort", "#deep"])
   $(id).addEventListener("change", () => { if (id === "#sort") store.set("sort", $("#sort").value); markFilters(); reload(); });
 $("#sort").value = store.get("sort", "date:asc");
+if (!$("#sort").value) $("#sort").value = "date:asc";      // ordinamento non più disponibile (es. Valutazione)
 
 // ================================================================ cartelle raggiungibili
 // Il pallino verde/rosso si aggiorna da solo: ogni 8 secondi (e quando si torna sulla finestra)

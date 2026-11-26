@@ -162,7 +162,9 @@ sincronizzazione rapida). Le colonne nuove si aggiungono con `ALTER TABLE` in
   Mercatore; contorni in `static/mondo.json` (1:50M) e `mondo-dettaglio.json` (1:10M, griglia
   più fine, caricato quando si ingrandisce), generati con `strumenti/crea_mappa.py` da
   world-atlas (Natural Earth, pubblico dominio; licenze in `static/mondo-LICENSE.txt`). Il
-  filtro «Stelle» è stato tolto dalla barra (l'utente non usa le valutazioni; i dati restano).
+  filtro «Stelle» è stato tolto dalla barra; poi (1.2) le stelle sono state tolte da **tutta
+  l'interfaccia** (pannello, miniature, vista ingrandita, tasto destro, tasti 0–5, ordinamento):
+  l'utente non le usa. La colonna `rating` resta, importata ed esportata con Lightroom.
   Attenzione: il lavoro in background cede il passo alle miniature (`wait_viewer_idle`) ma
   **al massimo 3 s**: prima aspettava all'infinito e una miniatura impossibile da creare
   (file non raggiungibile, richiesto di continuo dalla pagina) fermava la lettura GPS per
