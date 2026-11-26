@@ -274,10 +274,10 @@ Finder), Adobe DNG Converter
 - Il numero mostrato in «Informazioni su Provinia» viene dal file `VERSIONE`
   (letto da `mac/crea_app.sh`); la build (`CFBundleVersion`) è la data di costruzione.
 - **1.0**: la versione considerata definitiva dall'utente (tag `v1.0`).
-- **1.1**: cursore dell'esposizione, pannelli laterali allargabili, nuovo aspetto
-  (telaietti, barra divisa in gruppi, icone), filtri raccolti con finestra stretta e
-  filtri attivi visibili, pallino del NAS aggiornato da solo, dialoghi e scorciatoie
-  rivisti, rifiniture della vista ingrandita.
+- **1.1**: filtri raccolti con finestra stretta e filtri attivi visibili, percorso breve
+  e pulsanti rivisti nel pannello informazioni, icone uniformi, pallino del NAS aggiornato
+  da solo, dialoghi e scorciatoie rivisti, barra delle attività più chiara, pannello di
+  destra allargabile, anteprima intera, un solo menu aperto, rifiniture della vista ingrandita.
   Le modifiche successive si fanno su un ramo di sviluppo; quando l'utente ne approva
   una serie si aumenta `VERSIONE` (1.1, 1.2…).
 
