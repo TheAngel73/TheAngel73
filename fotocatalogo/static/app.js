@@ -847,6 +847,7 @@ function openLoupe(i) {
       v.hidden = false; v.poster = previewURL(it.id); v.src = fullURL(it.id);
       v.onerror = () => { v.hidden = true; $("#loupe-novideo").hidden = false; };
     } else $("#loupe-novideo").hidden = false;
+    if (STRIP.open) stripRender();
     return;
   }
   limg.onload = () => loupeLayout();
@@ -857,6 +858,7 @@ function openLoupe(i) {
   $("#loupe-name").textContent = `${it.n} · ${fmtDate(it.t)} ${it.r ? "· " + "★".repeat(it.r) : ""}`;
   $("#loupe").hidden = false;
   loupeLayout();
+  if (STRIP.open) stripRender();
 }
 // il testo di aiuto in basso a destra si attenua dopo qualche secondo (torna passandoci sopra)
 let hintT = null;
@@ -869,7 +871,86 @@ function stopVideo() {
   v.pause(); v.removeAttribute("src"); v.removeAttribute("poster"); v.load(); v.hidden = true;
   $("#loupe-novideo").hidden = true;
 }
-function closeLoupe() { stopVideo(); $("#loupe").hidden = true; L.id = null; setExpo(0); }
+function closeLoupe() { stopVideo(); $("#loupe").hidden = true; L.id = null; setExpo(0); stripHide(true); }
+
+// Striscia delle foto vicine: compare portando il mouse sulla barra in basso, permette di
+// saltare avanti o indietro di qualche foto in una serie e sparisce ~2,5 s dopo che il mouse
+// è tornato sulla foto. Mostra solo le foto attorno a quella aperta (STRIP_SPAN per lato):
+// le miniature fuori dalla striscia vengono tolte, così non restano in coda (vedi dropCell).
+const STRIP_SPAN = 60, STRIP_HIDE_MS = 2500;
+const STRIP = {open: false, timer: null, from: 0, to: -1, center: -1};
+const strip = $("#loupe-strip"), stripTrack = strip.querySelector(".strip-track");
+function stripShow() {
+  clearTimeout(STRIP.timer); STRIP.timer = null;
+  if (STRIP.open) return;
+  STRIP.open = true; strip.classList.add("open"); $("#loupe").classList.add("strip-open");
+  stripRender(true);
+}
+function stripHide(now = false) {
+  clearTimeout(STRIP.timer); STRIP.timer = null;
+  const go = () => { STRIP.open = false; strip.classList.remove("open"); $("#loupe").classList.remove("strip-open"); };
+  if (now) go(); else STRIP.timer = setTimeout(go, STRIP_HIDE_MS);
+}
+async function stripRender(instant = false) {
+  const c = loupeIdx; if (c < 0) return;
+  const from = Math.max(0, c - STRIP_SPAN), to = Math.min(S.total - 1, c + STRIP_SPAN);
+  // carica le pagine che servono (la striscia può scavalcare il confine di una pagina)
+  const need = new Set([Math.floor(from / PAGE), Math.floor(to / PAGE)].filter(p => !S.pages.has(p)));
+  if (need.size) { await Promise.all([...need].map(loadPage)); if (loupeIdx !== c) return; }
+  if (from !== STRIP.from || to !== STRIP.to) {
+    const keep = new Map();
+    for (const el of [...stripTrack.children]) {
+      const i = +el.dataset.i, it = itemAt(i);
+      if (i >= from && i <= to && it && +el.dataset.id === it.id) keep.set(i, el); else dropCell(el);
+    }
+    for (let i = from; i <= to; i++) {
+      let el = keep.get(i);
+      if (!el) {
+        const it = itemAt(i);
+        el = document.createElement("button");
+        el.className = "sthumb"; el.dataset.i = i; el.tabIndex = -1;
+        if (it) {
+          el.dataset.id = it.id; el.title = it.n;
+          if (it.f === -1) el.classList.add("rejected");
+          el.innerHTML = it.m ? `<span class="ph">${esc(it.x || "?")}</span>`
+            : `<img alt="" draggable="false" decoding="async" src="${thumbURL(it.id)}">${isVideo(it.x) ? `<span class="sv">▶</span>` : ""}`;
+          const img = el.querySelector("img");
+          if (img) img.onerror = () => img.replaceWith(Object.assign(document.createElement("span"), {className: "ph", textContent: it.x || "?"}));
+        }
+      }
+      stripTrack.appendChild(el);        // appendChild sposta quelli già presenti nell'ordine giusto
+    }
+    STRIP.from = from; STRIP.to = to;
+  }
+  for (const el of stripTrack.children) el.classList.toggle("cur", +el.dataset.i === c);
+  // la foto aperta al centro (scorrendo con le frecce la striscia la segue)
+  const cur = stripTrack.querySelector(".sthumb.cur");
+  if (cur) strip.scrollTo({left: cur.offsetLeft + cur.offsetWidth / 2 - strip.clientWidth / 2,
+                           behavior: instant || STRIP.center < 0 ? "auto" : "smooth"});
+  STRIP.center = c;
+}
+stripTrack.addEventListener("mousedown", e => e.preventDefault());   // niente focus: le frecce restano alla vista
+stripTrack.addEventListener("click", async e => {
+  const b = e.target.closest(".sthumb"); if (!b) return;
+  const i = +b.dataset.i;
+  if (i === loupeIdx) return;
+  if (!itemAt(i)) await loadPage(Math.floor(i / PAGE));
+  ensureVisible(i); openLoupe(i);
+});
+// rotellina verticale -> scorrimento orizzontale della striscia
+strip.addEventListener("wheel", e => {
+  if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { e.preventDefault(); strip.scrollLeft += e.deltaY; }
+}, {passive: false});
+// zona sensibile: la barra in basso apre la striscia; tornando sulla foto si chiude dopo un po'
+$("#loupe").addEventListener("mousemove", e => {
+  const bar = $("#loupe-bar").getBoundingClientRect();
+  if (e.clientY >= bar.top - 6) return stripShow();
+  if (!STRIP.open) return;
+  const sr = strip.getBoundingClientRect();
+  if (e.clientY >= sr.top - 8) { clearTimeout(STRIP.timer); STRIP.timer = null; }
+  else if (!STRIP.timer) stripHide();
+});
+$("#loupe").addEventListener("mouseleave", () => { if (STRIP.open && !STRIP.timer) stripHide(); });
 
 // Esposizione solo a video (il file non cambia). Uno stop in più raddoppia la luce lineare,
 // che nei valori sRGB (gamma ~2,2) equivale a moltiplicare per 2^(EV/2,2): è brightness().

@@ -218,6 +218,11 @@ sincronizzazione rapida). Le colonne nuove si aggiungono con `ALTER TABLE` in
   `brightness(2^(EV/2,2))` sull'`<img>`, che nei valori sRGB equivale a moltiplicare
   la luce lineare per 2^EV. Nessun file toccato. Dopo l'uso il cursore perde il
   focus, così le frecce tornano a scorrere le foto.
+- **Striscia delle foto vicine** (`STRIP`, `stripRender` in `app.js`): `#loupe-strip` sopra
+  `#loupe-bar`, si apre quando il mouse arriva sulla barra e si chiude `STRIP_HIDE_MS` (2,5 s)
+  dopo che è tornato sulla foto. Contiene solo ±`STRIP_SPAN` (60) foto attorno a quella aperta,
+  carica le pagine che servono e toglie le miniature uscite (`dropCell`, per non lasciarle in
+  coda in WebKit). `mousedown` senza focus, così le frecce continuano a scorrere le foto.
 - **Lavori in background**: `start_job`, con avanzamento in `/api/jobs`.
   `job.cancellable` mostra «Interrompi»; `job.quick` (sincronizzazione rapida) si
   ferma da solo al cambio di catalogo. L'interfaccia reagisce ai risultati in
