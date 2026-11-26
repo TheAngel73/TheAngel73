@@ -319,8 +319,25 @@ Informazioni su), dati di scatto nel pannello, mappa dei luoghi con GPS e nomi d
 Lezioni: verificare che un menu sia davvero **visibile** (non solo aperto) negli screenshot;
 le prove in Chromium non mostrano i comportamenti di WebKit (immagini non annullate, cache).
 
+Poi (fine novembre 2026): cursore dell'esposizione, pannello sinistro allargabile, nuovo
+aspetto → **1.0** (tag `v1.0`). Revisioni con i plugin di design dell'utente (ui-review /
+ui-polish) → **1.1** (tag `v1.1`): vedi `NOVITA.md` e la sezione «Versioni».
+
+**Come si rilascia una versione** (la sessione non può creare tag né spingere su `main`):
+1. su richiesta dell'utente: `VERSIONE`, paragrafo in `NOVITA.md`, nota in «Versioni»;
+2. richiesta di unione dal ramo di sviluppo verso `main` con `gh api … /pulls`;
+3. l'utente la unisce e **poi** crea la release `vX.Y` su `main` dalla pagina Releases
+   (se la crea prima, il tag punta al `main` vecchio: con la 1.0 è successo);
+4. controllare con `gh api …/git/refs/tags` che il tag coincida con `main`, poi
+   riallineare il ramo di sviluppo (`git merge --ff-only origin/main`).
+`NOVITA.md` (non ancora in `main`) entrerà con la prossima richiesta di unione.
+
+Lezioni: nella revisione grafica guardare sempre le schermate vere, anche dei dialoghi
+(il cursore della qualità era sbagliato solo lì); in WebKit le percentuali di altezza
+dentro un box con `aspect-ratio` sono inaffidabili (usare px).
+
 Idee discusse ma non fatte:
-- altri ritocchi estetici: l'utente è soddisfatto, ma ne potrebbe chiedere;
+- dalla revisione grafica, non scelti: nessuno di rilievo rimasto;
 - nomi dei luoghi: sigla della provincia in Italia (servono i codici ISTAT delle province);
 - la mappa non «gira» oltre la linea del cambio di data (un'area tra Alaska e Siberia si
   sceglie solo con ⇧ + trascina dai due lati);
