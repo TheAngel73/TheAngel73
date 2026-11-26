@@ -27,7 +27,7 @@ sys.path.insert(0, HERE)
 
 from catalog import EXIF_EXT, PHOTO_EXT, QT_EXT, nfc, now, resolve_path  # noqa: E402
 CHUNK = 1024 * 1024
-from lightroom import import_lrcat  # noqa: E402
+from lightroom import import_lrcat, export_lrcat  # noqa: E402
 import catalogs  # noqa: E402
 import conversione  # noqa: E402
 import gestione_file  # noqa: E402
@@ -1278,6 +1278,11 @@ class Handler(BaseHTTPRequestHandler):
             if not os.path.exists(path):
                 raise ValueError(f"File non trovato: {path}")
             return start_job("Importazione Lightroom", lambda job: import_lrcat(cat, path, job)).as_dict()
+        if route == "export/lightroom":
+            path = os.path.expanduser(body.get("path", "").strip())
+            if not os.path.isfile(path):
+                raise ValueError(f"File non trovato: {path}")
+            return start_job("Esportazione verso Lightroom", lambda job: {"lrexport": export_lrcat(cat, path, job)}).as_dict()
         if route == "thumbs/want":
             # miniature sullo schermo adesso: passano davanti a tutto
             res = thumbs.PREFETCH.want(cat, THUMB_DIR, ids_of(body)[:400], timeout=8)

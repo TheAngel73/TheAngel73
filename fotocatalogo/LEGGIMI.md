@@ -15,7 +15,7 @@ catalogazione.
 - Ricerca per nome file, parola chiave, cartella o luogo, con filtri per etichetta, bandierina, anno, formato
   e per **luogo** sulla mappa delle foto con posizione GPS
 - **Importazione dal catalogo Lightroom** (`.lrcat`): cartelle, raccolte, set,
-  parole chiave, stelle, etichette e bandierine
+  parole chiave, stelle, etichette e bandierine, e **esportazione verso Lightroom**
 - **Apri in Photoshop** (⌘E) e **Mostra nel Finder** (⌘R)
 - Miniature di JPEG, PSD, TIFF, HEIC e RAW (NEF, CR2/CR3, ARW, RAF, DNG…) generate da macOS
 - Pensato per grandi archivi (oltre 170 000 foto): la griglia carica solo ciò che vedi
@@ -70,6 +70,24 @@ l'interfaccia nel browser (con le stesse funzioni, menu col tasto destro compres
 Il catalogo di Lightroom viene solo letto, quindi puoi continuare a usare Lightroom
 finché non sei sicuro del passaggio. Puoi anche ripetere l'importazione: le foto già
 presenti non vengono duplicate.
+
+## Tornare a Lightroom (esportazione)
+
+Provinia non crea da sola un catalogo Lightroom (il formato interno non è pubblico e
+dipende dalla fotocamera): le foto le importa Lightroom, poi Provinia ci riporta sopra
+il tuo lavoro.
+
+1. In Lightroom: **File › Nuovo catalogo**, poi importa le cartelle del NAS con
+   **Aggiungi** (le foto restano dove sono). Aspetta la fine e **chiudi Lightroom**.
+2. In Provinia: **Libreria › Esporta nel catalogo Lightroom…** e scegli quel `.lrcat`.
+3. Provinia fa una **copia di sicurezza** accanto («… (prima di Provinia data ora).lrcat»)
+   e poi riporta nel catalogo stelle, etichette colore, bandierine, rotazioni, parole
+   chiave, raccolte e set. Alla fine dice quante foto ha aggiornato e quali cartelle
+   mancano in Lightroom.
+
+Si può ripetere: le raccolte e le parole chiave già presenti non vengono duplicate.
+L'esportazione aggiunge e aggiorna, non toglie: una parola chiave tolta in Provinia resta
+in Lightroom. Le regolazioni dello Sviluppo non ci sono (Provinia non le conserva).
 
 ## Uso quotidiano
 

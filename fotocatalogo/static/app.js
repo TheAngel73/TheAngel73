@@ -1180,6 +1180,37 @@ async function importLrDialog() {
   await safe(async () => { await api("/api/import/lightroom", {path: f.path.value}); toast("Importazione avviata"); pollJobs(); });
 }
 
+// Esportazione verso Lightroom: le foto le importa Lightroom stesso (catalogo nuovo,
+// «Aggiungi»); Provinia riporta poi nel suo catalogo stelle, etichette, bandierine,
+// rotazioni, parole chiave, raccolte e set (vedi export_lrcat in lightroom.py).
+async function exportLrDialog() {
+  const f = await dialog("Esporta nel catalogo Lightroom", `
+    <p>Riporta in un catalogo di Lightroom Classic quello che hai organizzato in Provinia: <b>stelle, etichette colore, bandierine,
+    rotazioni, parole chiave, raccolte e set di raccolte</b>.</p>
+    <ol class="steps">
+      <li>In Lightroom crea un catalogo nuovo (<i>File › Nuovo catalogo</i>) e importa le cartelle del NAS con <b>Aggiungi</b> (le foto restano dove sono).</li>
+      <li>Aspetta la fine dell'importazione e <b>chiudi Lightroom</b>.</li>
+      <li>Scegli qui quel catalogo: Provinia ne fa prima una copia di sicurezza accanto, poi lo aggiorna.</li>
+    </ol>
+    <p class="note">Si può ripetere quando vuoi: le foto aggiunte nel frattempo vanno prima importate in Lightroom.
+    I file delle foto non vengono toccati.</p>
+    <label>File catalogo</label><div class="pickrow"><input type="text" name="path" required placeholder="/Users/…/Lightroom Catalog.lrcat"><button type="button" data-pick>Scegli…</button></div>`,
+    "Esporta", form => { form.querySelector("[data-pick]").onclick = () => pickInto(form.path, "file"); });
+  if (!f) return;
+  await safe(async () => { await api("/api/export/lightroom", {path: f.path.value}); toast("Esportazione verso Lightroom avviata"); pollJobs(); });
+}
+function lrExportSummary(r) {
+  const n = v => v.toLocaleString("it-IT");
+  const dirs = r.cartelle_non_trovate.map(([d, c]) => `<li><code>…/${esc(d.split("/").filter(Boolean).slice(-3).join("/"))}</code> · ${n(c)}</li>`).join("");
+  dialog("Esportazione verso Lightroom completata", `<table>
+    <tr><td>Foto aggiornate</td><td>${n(r.aggiornate)}</td></tr>
+    <tr><td>Parole chiave nuove</td><td>${n(r.parole_chiave)}</td></tr>
+    <tr><td>Raccolte nuove</td><td>${n(r.raccolte)}</td></tr><tr><td>Set nuovi</td><td>${n(r.set)}</td></tr></table>
+    ${r.non_trovate ? `<p><b>${n(r.non_trovate)} foto</b> di Provinia non sono nel catalogo di Lightroom: importa le loro cartelle in Lightroom e ripeti l'esportazione.</p>
+      <ul class="dirs">${dirs}</ul>` : ""}
+    <p class="note">Copia di sicurezza del catalogo com'era prima: <code>${esc(r.copia.split("/").pop())}</code></p>`, null);
+}
+
 async function relocateDialog() {
   const roots = S.tree.roots;
   const f = await dialog("Cambia percorso del NAS", `
@@ -1232,6 +1263,7 @@ $("#menu-library").addEventListener("click", e => {
   const a = e.target.closest("[data-act]")?.dataset.act;
   if (a === "add-folder") addFolderDialog();
   if (a === "import-lr") importLrDialog();
+  if (a === "export-lr") exportLrDialog();
   if (a === "relocate") relocateDialog();
   if (a === "help") helpDialog();
   if (a === "pregen") COMMANDS.pregen();
@@ -1247,7 +1279,7 @@ const needSel = fn => () => S.sel.size ? fn() : toast("Seleziona prima una o pi�
 const openWith = how => needSel(() => safe(() => api("/api/open", {ids: selIds(), how})));
 
 const COMMANDS = {
-  addFolder: addFolderDialog, importLr: importLrDialog, relocate: relocateDialog, help: helpDialog,
+  addFolder: addFolderDialog, importLr: importLrDialog, exportLr: exportLrDialog, relocate: relocateDialog, help: helpDialog,
   pregen: () => safe(async () => {
     await api("/api/thumbs/pregenerate", Object.fromEntries(new URLSearchParams(params())));
     toast("Generazione anteprime avviata in background"); pollJobs();
@@ -2403,6 +2435,7 @@ async function onJobDone(j) {
   if (r.dng) { await loadTree(); reload(true); return dngSummary(r); }
   if (r.export) return exportSummary(r);
   if (r.saved) return saveSummary(r);
+  if (r.lrexport) return lrExportSummary(r.lrexport);
   if (r.gps) return;
   if (r.moved || r.renamed) { await loadTree(); reload(true); showInfo(true); return fileOpSummary(r); }
   if (r.duplicates) {

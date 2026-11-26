@@ -588,6 +588,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         lib.addItem(.separator())
         cmd(lib, "Aggiungi cartella di foto…", "addFolder", "o", [.command, .shift])
         cmd(lib, "Importa catalogo Lightroom…", "importLr", "i", [.command, .shift])
+        cmd(lib, "Esporta nel catalogo Lightroom…", "exportLr")
         lib.addItem(.separator())
         cmd(lib, "Trova duplicati…", "findDups")
         cmd(lib, "Elimina dal disco tutte le scartate…", "deleteRejected")

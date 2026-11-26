@@ -46,7 +46,7 @@ messaggi, commenti e commit sono **in italiano**.
 | `server.py` | server HTTP (`ThreadingHTTPServer`), API, lavori in background (`Job`, `start_job`), cataloghi aperti |
 | `catalog.py` | classe `Catalog`: schema SQLite, connessioni per thread, scansione completa, **sincronizzazione rapida**, riconoscimento dei nomi da fotocamera |
 | `catalogs.py` | più cataloghi in `~/Documents/Provinia`, cataloghi **cifrati** (immagini disco `hdiutil`), impostazioni, migrazione dalla prima versione e dal vecchio nome (`migrate_name`) |
-| `lightroom.py` | importazione da `.lrcat`, letta da una **copia temporanea** |
+| `lightroom.py` | importazione da `.lrcat`, letta da una **copia temporanea**; esportazione verso un catalogo (`export_lrcat`) |
 | `thumbs.py` | miniature (QuickLook/sips), preparazione in background (`Prefetcher`), piena risoluzione, rotazione, `find_imghelper()` |
 | `conversione.py` | RAW → DNG (Adobe DNG Converter), PNG → JPEG (`fcimg`) |
 | `gestione_file.py` | duplicati, elimina dal disco, sposta, **rinomina**, cartelle, recupero delle rinomine interrotte |
@@ -223,6 +223,21 @@ sincronizzazione rapida). Le colonne nuove si aggiungono con `ALTER TABLE` in
   dopo che è tornato sulla foto. Contiene solo ±`STRIP_SPAN` (60) foto attorno a quella aperta,
   carica le pagine che servono e toglie le miniature uscite (`dropCell`, per non lasciarle in
   coda in WebKit). `mousedown` senza focus, così le frecce continuano a scorrere le foto.
+- **Esportazione verso Lightroom** (`export_lrcat` in `lightroom.py`): non si crea un catalogo
+  da zero (oltre 130 tabelle; le impostazioni di sviluppo dipendono dalla fotocamera). L'utente
+  importa le foto in un catalogo nuovo con Lightroom 16; Provinia abbina le foto per percorso
+  (senza maiuscole/minuscole, NFC) e aggiorna `Adobe_images` (`rating`, `colorLabels` con i nomi
+  **italiani** «Rossa», «Gialla», «Verde», «Blu», «Viola», `pick`, `orientation` AB/BC/CD/DA =
+  passi di 90° in senso orario, solo se in Provinia c'è una rotazione), aggiunge parole chiave
+  (`AgLibraryKeyword`, sotto la radice `AgLibraryKeyword_rootTagID`) e raccolte/set
+  (`AgLibraryCollection`, `creationId` …collection/…group, più `AgLibraryCollectionContent` e
+  `AgLibraryCollectionChangeCounter` come fa Lightroom). Gli `id_local` nuovi vengono da
+  `Adobe_entityIDCounter`, aggiornato alla fine; `genealogy` = per ogni livello `/` + numero di
+  cifre + id. Rifiuta se c'è il file `.lrcat.lock` (Lightroom aperto) o se nessuna foto
+  corrisponde; copia di sicurezza prima di scrivere, tutto in una transazione.
+  Lo schema è stato ricavato da due cataloghi di prova dell'utente (LrC 16.0.1, catalogo
+  vuoto e catalogo con 6 foto). Anche l'importazione ora riconosce le etichette italiane e salta
+  la «quick collection» (`systemOnly`).
 - **Lavori in background**: `start_job`, con avanzamento in `/api/jobs`.
   `job.cancellable` mostra «Interrompi»; `job.quick` (sincronizzazione rapida) si
   ferma da solo al cambio di catalogo. L'interfaccia reagisce ai risultati in
