@@ -775,13 +775,13 @@ function fmtStamp(sec) {
 }
 
 function rateBars(r, l, f) {
-  return `<div class="row" style="justify-content:space-between;align-items:center">
-    <div class="ratebar">${[1, 2, 3, 4, 5].map(n => `<button data-rate="${n}" class="${n <= (r || 0) ? "on" : ""}" title="${n} stelle (tasto ${n})">★</button>`).join("")}
-      <button data-rate="0" class="ico" title="Nessuna stella (tasto 0)">${ICON.none}</button></div>
+  // le stelle non ci sono più nel pannello (non usate); restano nei dati e con i tasti 0–5.
+  // Etichette a sinistra e bandierine a destra, sulla stessa riga.
+  return `<div class="row markbar">
+    <div class="labelbar">${Object.entries(LABELS).map(([k, n]) => `<button data-label="${k}" class="lbl-${k}${l === k ? " on" : ""}" title="${n}"></button>`).join("")}
+      <button data-label="" class="none" title="Nessuna etichetta"></button></div>
     <div class="ratebar"><button data-flag="1" class="ico${f === 1 ? " on" : ""}" title="Scelta (P)">${ICON.flag}</button><button data-flag="-1" class="ico${f === -1 ? " on rej" : ""}" title="Scartata (X)">${ICON.x}</button></div>
-  </div>
-  <div class="labelbar">${Object.entries(LABELS).map(([k, n]) => `<button data-label="${k}" class="lbl-${k}${l === k ? " on" : ""}" title="${n}"></button>`).join("")}
-    <button data-label="" class="none${!l && l !== undefined ? "" : ""}" title="Nessuna etichetta"></button></div>`;
+  </div>`;
 }
 
 function showMulti(box) {
