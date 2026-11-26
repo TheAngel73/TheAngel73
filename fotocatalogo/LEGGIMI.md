@@ -79,6 +79,8 @@ il tuo lavoro.
 
 1. In Lightroom: **File › Nuovo catalogo**, poi importa le cartelle del NAS con
    **Aggiungi** (le foto restano dove sono). Aspetta la fine e **chiudi Lightroom**.
+   Le cartelle da aggiungere sono elencate nella finestra dell'esportazione: devono essere
+   le stesse di Provinia, con lo stesso percorso, altrimenti quelle foto vengono saltate.
 2. In Provinia: **Libreria › Esporta nel catalogo Lightroom…** e scegli quel `.lrcat`.
 3. Provinia fa una **copia di sicurezza** accanto («… (prima di Provinia data ora).lrcat»)
    e poi riporta nel catalogo stelle, etichette colore, bandierine, rotazioni, parole

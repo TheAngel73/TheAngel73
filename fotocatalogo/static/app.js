@@ -233,6 +233,11 @@ function dropCell(el) {
   el.remove();
 }
 
+// didascalia: il nome a sinistra (troncato se lungo), il formato sempre visibile a destra
+const splitName = n => { const k = n.lastIndexOf("."); return k > 0 ? [n.slice(0, k), n.slice(k + 1)] : [n, ""]; };
+const capName = n => `<span class="fn" title="${esc(n)}">${esc(splitName(n)[0])}</span>`;
+const capExt = n => { const x = splitName(n)[1]; return x ? `<span class="ext">${esc(x.toUpperCase())}</span>` : ""; };
+
 function makeCell(it, i) {
   const el = document.createElement("div");
   el.className = "cell"; el.dataset.i = i;
@@ -247,7 +252,7 @@ function makeCell(it, i) {
     ${ft && ft[0] !== "video" ? `<span class="ftype ft-${ft[0]}" title="${ft[1]}"></span>` : ""}
     <div class="tl${ft && ft[0] !== "video" ? " after-tri" : ""}">${ft && ft[0] === "video" ? `<span class="vbadge" title="${ft[1]}">▶ ${esc(it.x.toUpperCase())}</span>` : ""}${it.m ? '<span class="miss" title="File non trovato">⚠ mancante</span>' : ""}</div>
     ${it.f === 1 ? `<span class="flag" title="Scelta">${ICON.flagOn}</span>` : ""}
-    <div class="cap"${it.l ? ` title="Etichetta ${LABELS[it.l] || ""}"` : ""}><span class="fn" title="${esc(it.n)}">${esc(it.n)}</span><span class="stars">${stars}</span></div>`;
+    <div class="cap"${it.l ? ` title="Etichetta ${LABELS[it.l] || ""}"` : ""}>${capName(it.n)}<span class="stars">${stars}</span>${capExt(it.n)}</div>`;
   const img = el.querySelector("img");
   if (!img) return el;
   img.draggable = false;
@@ -1192,6 +1197,8 @@ async function exportLrDialog() {
       <li>Aspetta la fine dell'importazione e <b>chiudi Lightroom</b>.</li>
       <li>Scegli qui quel catalogo: Provinia ne fa prima una copia di sicurezza accanto, poi lo aggiorna.</li>
     </ol>
+    <p>Cartelle di Provinia da aggiungere in Lightroom (con le sottocartelle):</p>
+    <ul class="lr-roots">${(S.tree.roots || []).map(r => `<li><span class="dot ${r.online ? "on" : "off"}"></span><code>${esc(r.path)}</code></li>`).join("") || "<li>nessuna</li>"}</ul>
     <p class="note">Si può ripetere quando vuoi: le foto aggiunte nel frattempo vanno prima importate in Lightroom.
     I file delle foto non vengono toccati.</p>
     <label>File catalogo</label><div class="pickrow"><input type="text" name="path" required placeholder="/Users/…/Lightroom Catalog.lrcat"><button type="button" data-pick>Scegli…</button></div>`,

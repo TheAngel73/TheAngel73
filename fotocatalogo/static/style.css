@@ -572,3 +572,13 @@ dialog:has(.help) { max-width: 760px; }
 #dlg ol.steps li { margin: 3px 0; }
 #dlg ul.dirs { margin: 4px 0 8px; padding-left: 18px; font-size: 12px; color: var(--dim); max-height: 140px; overflow: auto; }
 #dlg .note { color: var(--dim); font-size: 12px; }
+#dlg ul.lr-roots { list-style: none; margin: 2px 0 10px; padding: 8px 10px; background: rgba(0,0,0,.25); border-radius: 6px;
+  max-height: 150px; overflow: auto; font-size: 12px; line-height: 1.7; user-select: text; -webkit-user-select: text; }
+#dlg ul.lr-roots li { display: flex; align-items: center; gap: 8px; }
+#dlg ul.lr-roots code { word-break: break-all; }
+
+/* ---- didascalia delle miniature: nome a sinistra, formato a destra ---- */
+.cell .cap .fn { min-width: 0; }
+.cell .cap .ext { flex: none; margin-left: auto; font-size: 9.5px; font-weight: 600; letter-spacing: .4px;
+  padding: 0 4px; border-radius: 3px; line-height: 14px; color: #c8c8cc; background: rgba(255,255,255,.08); }
+.cell.lab .cap .ext { color: #fff; background: rgba(0,0,0,.22); }
