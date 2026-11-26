@@ -63,6 +63,7 @@ class Job:
         self.status = "running"
         self.result = None
         self.started = time.time()
+        self.ended = None
         self.cancelled = False
         self.quick = False
         self.cancellable = False
@@ -78,10 +79,12 @@ class Job:
 
     def as_dict(self):
         return {k: getattr(self, k) for k in
-                ("id", "label", "message", "done", "total", "status", "result", "quick", "cancellable", "cancelled")}
+                ("id", "label", "message", "done", "total", "status", "result", "quick", "cancellable", "cancelled",
+                 "ended")}
 
 
 JOBS = {}
+JOB_KEEP_S = 60
 
 
 # ---------------------------------------------------------------- cataloghi
@@ -390,6 +393,7 @@ def start_job(label, fn, quick=False):
             rollback(job_cat)
             job.status = "error"
             job.message = str(e)
+        job.ended = time.time()
     job.thread = threading.Thread(target=run, daemon=True)
     job.thread.start()
     return job
@@ -995,6 +999,10 @@ class Handler(BaseHTTPRequestHandler):
                 d = photo_detail(int(parts[2]))
                 return self.send_json(d) if d else self.not_found()
             if u.path == "/api/jobs":
+                # i lavori finiti bene spariscono da soli dopo un minuto; gli errori restano
+                now = time.time()
+                for k in [k for k, j in JOBS.items() if j.status == "done" and j.ended and now - j.ended > JOB_KEEP_S]:
+                    del JOBS[k]
                 return self.send_json([j.as_dict() for j in JOBS.values()])
             if u.path == "/api/duplicates":
                 return self.send_json(gestione_file.LAST)

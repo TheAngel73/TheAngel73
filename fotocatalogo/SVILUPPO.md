@@ -204,6 +204,12 @@ sincronizzazione rapida). Le colonne nuove si aggiungono con `ALTER TABLE` in
     suggerimento e copiato con un clic; `actionRows` mette Photoshop come pulsante principale;
   - i simboli di testo (▾ ⟲ ⟳ ⚑ ✕ ⊘) sono diventati icone di `ICON`;
   - i comandi che cancellano sono rossi anche nel menu Libreria (`danger-item`).
+- **Seconda revisione**: `rangeFill` vale per tutti i cursori (anche nei dialoghi);
+  i dialoghi usano gli stessi controlli della barra e «Chiudi» quando non c'è nulla da
+  confermare; scorciatoie raggruppate in `helpDialog`; i lavori hanno `ended` e quelli
+  riusciti spariscono dopo `JOB_KEEP_S` (60 s), gli errori restano fino a «Pulisci»;
+  anche il pannello di destra si allarga (`panelResize`, `--info-w`); l'anteprima nel
+  pannello segue le proporzioni della foto (altezza massima in px).
 - **Cartelle raggiungibili**: `checkRoots()` chiede `/api/roots/status` ogni 8 s (e al
   ritorno sulla finestra). `_reachable` fa `isdir` con un limite di 2 s, così un NAS che
   non risponde non blocca il motore. Quando una cartella torna raggiungibile: spunta

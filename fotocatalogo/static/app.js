@@ -37,37 +37,39 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem(skey(k)); return v == null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem(skey(k), JSON.stringify(v)); } catch {} },
 };
-// Larghezza del pannello di sinistra: si trascina il bordo, doppio clic torna a 280.
-// Vale per tutti i cataloghi (localStorage diretto, non store).
-(function sideResize() {
-  const grip = $("#side-grip"), lay = $("#layout"), MIN = 200, DEF = 280;
-  const max = () => Math.max(MIN, Math.min(600, innerWidth - 300 - 420));
+// Larghezza dei pannelli laterali: si trascina il bordo, doppio clic torna alla misura normale.
+// Vale per tutti i cataloghi (localStorage diretto, non store). Alla griglia restano almeno 420 px.
+function panelResize(gripSel, panelSel, prop, key, MIN, DEF, MAXW, dir) {
+  const grip = $(gripSel), lay = $("#layout");
+  const other = () => prop === "--side-w" ? $("#info").getBoundingClientRect().width : $("#sidebar").getBoundingClientRect().width;
+  const max = () => Math.max(MIN, Math.min(MAXW, innerWidth - other() - 420));
+  const stored = () => { try { return +localStorage.getItem(key) || DEF; } catch { return DEF; } };
   const set = (w, save) => {
     w = Math.round(Math.max(MIN, Math.min(max(), w)));
-    lay.style.setProperty("--side-w", w + "px");
-    if (save) try { localStorage.setItem("fc-side-w", String(w)); } catch {}
+    lay.style.setProperty(prop, w + "px");
+    if (save) try { localStorage.setItem(key, String(w)); } catch {}
   };
-  let saved = DEF;
-  try { saved = +localStorage.getItem("fc-side-w") || DEF; } catch {}
-  set(saved, false);
+  set(stored(), false);
   let start = null;
   grip.addEventListener("pointerdown", e => {
     if (e.button !== 0) return;
     e.preventDefault(); grip.setPointerCapture(e.pointerId);
-    start = {x: e.clientX, w: $("#sidebar").getBoundingClientRect().width};
+    start = {x: e.clientX, w: $(panelSel).getBoundingClientRect().width};
     grip.classList.add("on"); document.body.classList.add("resizing");
   });
-  grip.addEventListener("pointermove", e => { if (start) set(start.w + e.clientX - start.x, false); });
+  grip.addEventListener("pointermove", e => { if (start) set(start.w + dir * (e.clientX - start.x), false); });
   const end = () => {
     if (!start) return; start = null;
     grip.classList.remove("on"); document.body.classList.remove("resizing");
-    set($("#sidebar").getBoundingClientRect().width, true);
+    set($(panelSel).getBoundingClientRect().width, true);
   };
   grip.addEventListener("pointerup", end); grip.addEventListener("pointercancel", end);
   grip.addEventListener("dblclick", () => set(DEF, true));
   // finestra stretta: si restringe senza dimenticare la larghezza scelta
-  addEventListener("resize", () => { let w = DEF; try { w = +localStorage.getItem("fc-side-w") || DEF; } catch {} set(w, false); });
-})();
+  addEventListener("resize", () => set(stored(), false));
+}
+panelResize("#side-grip", "#sidebar", "--side-w", "fc-side-w", 200, 280, 600, 1);
+panelResize("#info-grip", "#info", "--info-w", "fc-info-w", 260, 300, 560, -1);
 function fmtDate(t) {
   if (!t) return "—";
   const [d, h] = t.split("T");
@@ -266,6 +268,8 @@ function rangeFill(el) {
   }
 }
 rangeFill($("#zoom"));
+// ogni cursore dell'app (anche nelle finestre di dialogo) colora la parte percorsa
+document.addEventListener("input", e => { if (e.target.matches?.("input[type=range]")) rangeFill(e.target); }, true);
 $("#zoom").addEventListener("input", () => { rangeFill($("#zoom")); store.set("zoom", +$("#zoom").value); layout(); });
 
 // ---------------------------------------------------------------- selezione
@@ -378,6 +382,7 @@ const ICON = {
   flag: svg('<path d="M4 13.5V2.8M4 3.2h7.5l-1.6 2.6 1.6 2.6H4"/>', "flag"),
   flagOn: svg('<path d="M4 13.5V2.8"/><path d="M4 3.2h7.5l-1.6 2.6 1.6 2.6H4z" fill="currentColor"/>', "flag"),
   x: svg('<path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/>'),
+  check: svg('<path d="M3.5 8.4l3 3 6-6.4"/>'),
   none: svg('<circle cx="8" cy="8" r="5"/><path d="M4.5 11.5l7-7"/>'),
   chevd: svg('<path d="M4.5 6.5l3.5 3.5 3.5-3.5"/>', "chevd"),
   copy: svg('<rect x="5.5" y="5.5" width="8" height="8" rx="1.3"/><path d="M10.5 3.5v-.2a1 1 0 0 0-1-1H3.3a1 1 0 0 0-1 1v6.2a1 1 0 0 0 1 1h.2"/>'),
@@ -1046,7 +1051,7 @@ document.addEventListener("keydown", async e => {
 // ================================================================ finestre di dialogo
 function dialog(title, html, okLabel = "OK", setup) {
   const dlg = $("#dlg"), form = $("#dlg-form");
-  form.innerHTML = `<h2>${esc(title)}</h2>${html}<div class="btns"><button type="button" value="cancel" data-cancel>Annulla</button>${okLabel ? `<button class="primary" value="ok">${esc(okLabel)}</button>` : ""}</div>`;
+  form.innerHTML = `<h2>${esc(title)}</h2>${html}<div class="btns"><button type="button" value="cancel" data-cancel>${okLabel ? "Annulla" : "Chiudi"}</button>${okLabel ? `<button class="primary" value="ok">${esc(okLabel)}</button>` : ""}</div>`;
   return new Promise(resolve => {
     let done = false;
     const finish = v => { if (done) return; done = true; resolve(v); };
@@ -1055,6 +1060,7 @@ function dialog(title, html, okLabel = "OK", setup) {
     dlg.onclose = () => finish(null);
     dlg.showModal();
     if (setup) setup(form);
+    form.querySelectorAll("input[type=range]").forEach(rangeFill);
     (form.querySelector("[autofocus]") || form.querySelector("input"))?.focus();
   });
 }
@@ -1107,15 +1113,28 @@ async function removeRoot(rid) {
 }
 
 function helpDialog() {
-  const rows = [["Clic / ⌘-clic / ⇧-clic", "Seleziona / aggiungi alla selezione / intervallo"], ["⌘A", "Seleziona tutte le foto della vista"],
-    ["Frecce", "Spostati tra le foto"], ["Invio, Spazio, doppio clic", "Vista ingrandita"],
-    ["Nella vista ingrandita", "clic o Z: adatta / 100% · doppio clic: torna alla griglia · rotellina o + −: zoom · trascina per spostarti"], ["0 – 5", "Stelle"],
-    ["6 7 8 9", "Etichetta rossa, gialla, verde, blu"], ["P / X / U", "Scelta / Scartata / Togli bandierina"],
-    ["C oppure B", "Aggiungi a raccolta…"], ["⌫ Backspace", "Togli dalla raccolta corrente"], ["⌘E", "Apri in Photoshop"],
-    ["⌘R", "Mostra nel Finder"], ["⌘K", "Aggiungi parole chiave"], ["⌘D / Esc", "Deseleziona"],
-    ["Tasto destro", "Menu con tutte le azioni"]];
-  dialog("Scorciatoie da tastiera", `<table>${rows.map(([k, v]) => `<tr><td><kbd>${k}</kbd></td><td>${v}</td></tr>`).join("")}</table>
-    <p>Trascina le foto su una raccolta per aggiungerle. Trascina una raccolta su un set per spostarla.</p>`, null);
+  // [tasti, descrizione]; i tasti sono separati da « · » quando sono alternative
+  const groups = [
+    ["Selezionare e spostarsi", [
+      ["Clic", "Seleziona una foto"], ["⌘ clic", "Aggiunge o toglie dalla selezione"], ["⇧ clic", "Seleziona un intervallo"],
+      ["⌘A", "Seleziona tutte le foto della vista"], ["⌘D · Esc", "Deseleziona"], ["Frecce", "Spostati tra le foto"]]],
+    ["Valutare", [
+      ["0 – 5", "Stelle"], ["6 · 7 · 8 · 9", "Etichetta rossa, gialla, verde, blu"],
+      ["P · X · U", "Scelta · Scartata · Togli bandierina"]]],
+    ["Raccolte e parole chiave", [
+      ["C · B", "Aggiungi a raccolta…"], ["⌫", "Togli dalla raccolta corrente"], ["⌘K", "Aggiungi parole chiave"]]],
+    ["Aprire e modificare", [
+      ["⌘E", "Apri in Photoshop"], ["⌘R", "Mostra nel Finder"], ["⌘C", "Copia le foto (da incollare nel Finder o in un'altra app)"],
+      ["⌘← · ⌘→", "Ruota a sinistra · a destra"], ["F2", "Rinomina"], ["⇧⌘E", "Esporta in JPEG…"],
+      ["⌘⌫", "Elimina il file dal disco…"], ["⌥⌘M", "Mappa dei luoghi"]]],
+    ["Vista ingrandita", [
+      ["Invio · Spazio", "Apre e chiude la vista ingrandita (anche doppio clic)"], ["Clic · Z", "Adatta allo schermo · 100%"],
+      ["Rotellina · + −", "Zoom (trascina per spostarti)"], ["← →", "Foto precedente · successiva"], ["Doppio clic · Esc", "Torna alla griglia"]]],
+  ];
+  const keys = k => k.split(" · ").map(x => `<kbd>${esc(x)}</kbd>`).join('<span class="or">o</span>');
+  dialog("Scorciatoie da tastiera", `<div class="help">${groups.map(([g, rows]) =>
+    `<section><h4>${g}</h4><table>${rows.map(([k, v]) => `<tr><td>${keys(k)}</td><td>${esc(v)}</td></tr>`).join("")}</table></section>`).join("")}</div>
+    <p>Il tasto destro apre il menu con tutte le azioni. Trascina le foto su una raccolta per aggiungerle; trascina una raccolta su un set per spostarla.</p>`, null);
 }
 
 // ================================================================ menu
@@ -1824,7 +1843,7 @@ async function exportDialog(ids, what) {
     <div class="pickrow"><select name="mode">
       <option value="long">Bordo lungo</option><option value="width">Larghezza</option>
       <option value="height">Altezza</option><option value="original">Dimensioni originali</option></select>
-      <input type="number" name="size" min="16" max="20000" step="1" value="${o.size}" style="width:110px"> <span class="small" style="margin:0">pixel</span></div>
+      <input type="number" name="size" min="16" max="20000" step="1" value="${o.size}" style="width:110px"> <span class="unit">pixel</span></div>
     <p class="small" id="exp-hint"></p>
     <label>Qualità JPEG: <b id="exp-q">${o.quality}</b></label>
     <input type="range" name="quality" min="40" max="100" value="${o.quality}" style="width:100%">
@@ -2268,10 +2287,14 @@ async function pollJobs() {
       seenDone.add(j.id);
       onJobDone(j);
     }
-    return j.status === "error" ? `<span class="job err" title="${esc(j.message)}">✕ ${esc(j.label)}: ${esc(j.message)}</span>`
-      : `<span class="job">✓ ${esc(j.label)}</span>`;
-  }).join("") + (jobs.some(j => j.status !== "running") ? ` <button class="mini" id="jobs-clear">pulisci</button>` : "");
+    // «· alle 13:45» e non «completato/a»: le etichette dei lavori hanno generi diversi
+    const at = j.ended ? new Date(j.ended * 1000).toLocaleTimeString("it-IT", {hour: "2-digit", minute: "2-digit"}) : "";
+    if (j.status === "error") return `<span class="job err" title="${esc(j.message)}">${ICON.x} ${esc(j.label)} · errore${at ? " alle " + at : ""}: ${esc(j.message)}</span>`;
+    return `<span class="job ok" title="Fatto. Sparisce da solo dopo un minuto.">${ICON.check} ${esc(j.label)}${j.cancelled ? " · interruzione" : ""}${at ? " · alle " + at : ""}</span>`;
+  }).join("") + (jobs.some(j => j.status === "error") ? ` <button class="mini" id="jobs-clear">Pulisci</button>` : "");
   $("#jobs-clear")?.addEventListener("click", async () => { await api("/api/jobs/clear", {}); pollJobs(); });
+  // i lavori completati spariscono da soli dopo un minuto: si ricontrolla allora
+  if (!running && jobs.some(j => j.status === "done")) pollTimer = setTimeout(pollJobs, 61000);
   if (running) pollTimer = setTimeout(pollJobs, 1000);
 }
 async function onJobDone(j) {

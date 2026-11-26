@@ -41,11 +41,13 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
 .menu button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 6px 10px; }
 .menu button:hover { background: var(--sel); }
 
-#layout { display: grid; grid-template-columns: var(--side-w, 280px) minmax(0, 1fr) 300px; min-height: 0; position: relative; }
+#layout { display: grid; grid-template-columns: var(--side-w, 280px) minmax(0, 1fr) var(--info-w, 300px); min-height: 0; position: relative; }
 /* maniglia per allargare il pannello di sinistra */
 #side-grip { position: absolute; top: 0; bottom: 0; left: calc(var(--side-w, 280px) - 3px); width: 7px; z-index: 5;
   cursor: col-resize; touch-action: none; }
-#side-grip:hover, #side-grip.on { background: linear-gradient(to right, transparent 2px, var(--accent) 2px, var(--accent) 4px, transparent 4px); }
+#info-grip { position: absolute; top: 0; bottom: 0; right: calc(var(--info-w, 300px) - 4px); width: 7px; z-index: 5;
+  cursor: col-resize; touch-action: none; }
+#side-grip:hover, #side-grip.on, #info-grip:hover, #info-grip.on { background: linear-gradient(to right, transparent 2px, var(--accent) 2px, var(--accent) 4px, transparent 4px); }
 body.resizing, body.resizing * { cursor: col-resize !important; user-select: none !important; }
 #sidebar, #info { background: var(--panel); overflow: auto; }
 #sidebar { border-right: 1px solid var(--line); padding: 6px 0 30px; }
@@ -488,3 +490,45 @@ button.ico { display: inline-flex; align-items: center; justify-content: center;
   align-items: center; justify-content: center; animation: fc-back .35s ease-out; }
 .dot.back svg.i { width: 10px; height: 10px; stroke-width: 2.2; }
 @keyframes fc-back { from { transform: scale(.3); } 70% { transform: scale(1.25); } to { transform: scale(1); } }
+
+/* finestre di dialogo: stessi controlli della barra in alto */
+dialog select { -webkit-appearance: none; appearance: none; padding: 5px 24px 5px 9px; border-radius: 6px; height: 29px;
+  background: #1b1b1d url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238a8a90' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 9px center;
+  cursor: pointer; }
+dialog input[type=text], dialog input[type=number], dialog input[type=password], dialog input:not([type]) {
+  background: #1b1b1d; border-radius: 6px; height: 29px; padding: 4px 9px; }
+dialog select:hover, dialog input:hover { border-color: #4a4a4f; }
+dialog input:focus, dialog select:focus, dialog textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(74,144,226,.25); }
+dialog .pickrow { align-items: center; }
+dialog .unit { color: var(--dim); font-size: 12px; flex: none; }
+dialog input[type=checkbox], #sidebar input[type=checkbox] { accent-color: var(--accent); }
+/* contorno della navigazione da tastiera: blu come il resto */
+button:focus-visible, a:focus-visible, input[type=checkbox]:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* scorciatoie da tastiera */
+dialog .help { columns: 2 300px; column-gap: 28px; }
+dialog .help section { break-inside: avoid; margin-bottom: 10px; }
+dialog .help h4 { margin: 4px 0 6px; color: var(--accent); font-size: 11px; text-transform: uppercase; letter-spacing: .8px; }
+dialog .help table { width: 100%; border-collapse: collapse; }
+dialog .help td { padding: 3px 0; vertical-align: top; font-size: 12.5px; }
+dialog .help td:first-child { white-space: nowrap; padding-right: 12px; width: 1%; }
+dialog .help kbd { font-family: inherit; font-size: 11.5px; background: #3a3a3e; border: 1px solid #4a4a4f; border-bottom-width: 2px;
+  border-radius: 4px; padding: 0 6px; color: #eee; display: inline-block; line-height: 18px; }
+dialog .help .or { color: var(--dim); font-size: 11px; margin: 0 4px; }
+
+/* barra delle attività */
+#jobs .job svg.i { width: 13px; height: 13px; }
+#jobs .job.ok { color: var(--dim); }
+#jobs .job.ok svg.i { color: var(--green); }
+#jobs .job.err svg.i { color: var(--red); }
+#jobs { gap: 14px; }
+
+dialog:has(.help) { max-width: 760px; }
+
+/* pannello informazioni: colonna delle voci più larga */
+#info td:first-child { width: 104px; padding-right: 8px; vertical-align: top; }
+
+/* anteprima nel pannello: proporzioni della foto, mai tagliata; le verticali restano entro
+   un'altezza massima (in px: WebKit non risolve bene le percentuali con aspect-ratio) */
+#info .prev { aspect-ratio: auto; min-height: 90px; padding: 0; background: #161617; }
+#info .prev img { display: block; max-width: 100%; max-height: 340px; width: auto; height: auto; object-fit: contain; }
