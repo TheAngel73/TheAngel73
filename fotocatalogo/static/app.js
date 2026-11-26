@@ -1138,7 +1138,7 @@ function helpDialog() {
 }
 
 // ================================================================ menu
-$("#btn-library").onclick = e => { e.stopPropagation(); $("#menu-library").hidden = !$("#menu-library").hidden; };
+$("#btn-library").onclick = e => { e.stopPropagation(); hideMenu(); closeTopMenus("library"); $("#menu-library").hidden = !$("#menu-library").hidden; };
 document.addEventListener("click", () => $("#menu-library").hidden = true);
 $("#menu-library").addEventListener("click", e => {
   const a = e.target.closest("[data-act]")?.dataset.act;
@@ -1279,6 +1279,7 @@ function buildMenu(items) {
   return m;
 }
 function showMenu(x, y, items) {
+  closeTopMenus();
   ctx.innerHTML = ""; ctx.appendChild(buildMenu(items)); ctx.hidden = false;
   const r = ctx.firstChild.getBoundingClientRect();
   const left = Math.min(x, innerWidth - r.width - 6), top = Math.min(y, innerHeight - r.height - 6);
@@ -1286,6 +1287,16 @@ function showMenu(x, y, items) {
   ctx.classList.toggle("flip", left + r.width + 220 > innerWidth);
 }
 function hideMenu() { ctx.hidden = true; }
+// un solo menu aperto alla volta: un clic altrove chiude il menu Libreria e il pannellino
+// dei filtri (anche quando l'altro pulsante ferma la propagazione del clic, come «Catalogo»)
+function closeTopMenus(except) {
+  if (except !== "library") $("#menu-library").hidden = true;
+  if (except !== "filters") $("#topbar").classList.remove("filters-open");
+}
+document.addEventListener("mousedown", e => {
+  if (!e.target.closest("#menu-library, #btn-library")) $("#menu-library").hidden = true;
+  if (!e.target.closest("#filters, #btn-filters")) $("#topbar").classList.remove("filters-open");
+}, true);
 document.addEventListener("mousedown", e => { if (!ctx.contains(e.target)) hideMenu(); }, true);
 document.addEventListener("keydown", e => { if (e.key === "Escape" && !ctx.hidden) { e.preventDefault(); e.stopImmediatePropagation(); hideMenu(); } }, true);
 window.addEventListener("blur", hideMenu);
@@ -2218,6 +2229,7 @@ $("#btn-filters").onclick = e => {
   e.stopPropagation();
   $("#filters").style.setProperty("--filters-x", "");
   $("#topbar").style.setProperty("--filters-x", $("#btn-filters").offsetLeft + "px");
+  hideMenu(); closeTopMenus("filters");
   $("#topbar").classList.toggle("filters-open");
 };
 document.addEventListener("click", e => {
