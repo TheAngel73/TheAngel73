@@ -279,7 +279,8 @@ Finder), Adobe DNG Converter
   da solo, dialoghi e scorciatoie rivisti, barra delle attività più chiara, pannello di
   destra allargabile, anteprima intera, un solo menu aperto, rifiniture della vista ingrandita.
   Le modifiche successive si fanno su un ramo di sviluppo; quando l'utente ne approva
-  una serie si aumenta `VERSIONE` (1.1, 1.2…).
+  una serie si aumenta `VERSIONE` (1.1, 1.2…) e si aggiunge un paragrafo a `NOVITA.md`
+  (scritto per chi usa l'app, non per chi sviluppa).
 
 ## Come provare le modifiche
 

@@ -1,6 +1,6 @@
 # Provinia
 
-*(fino a novembre 2026 si chiamava FotoCatalogo)*
+*(fino a novembre 2026 si chiamava FotoCatalogo)* · Versione corrente e novità: [`NOVITA.md`](NOVITA.md)
 
 Catalogo foto per Mac, pensato per sostituire la **Libreria** di Lightroom quando
 le foto si modificano in Photoshop. Non ha strumenti di sviluppo o ritocco: solo
@@ -12,15 +12,16 @@ catalogazione.
 - **Dati di scatto** nel pannello a destra: fotocamera, obiettivo, focale, tempo, apertura,
   ISO (quando presenti nel file) e data dell'ultima modifica del file
 - **Parole chiave**, **stelle**, **etichette colore**, **bandierine** (scelta/scartata)
-- Ricerca per nome file, parola chiave o cartella, con filtri per anno, formato, stelle ed etichetta
+- Ricerca per nome file, parola chiave, cartella o luogo, con filtri per etichetta, bandierina, anno, formato
+  e per **luogo** sulla mappa delle foto con posizione GPS
 - **Importazione dal catalogo Lightroom** (`.lrcat`): cartelle, raccolte, set,
   parole chiave, stelle, etichette e bandierine
 - **Apri in Photoshop** (⌘E) e **Mostra nel Finder** (⌘R)
 - Miniature di JPEG, PSD, TIFF, HEIC e RAW (NEF, CR2/CR3, ARW, RAF, DNG…) generate da macOS
 - Pensato per grandi archivi (oltre 170 000 foto): la griglia carica solo ciò che vedi
 
-**Le foto non vengono mai modificate, spostate o cancellate.** L'app legge soltanto
-i file sul NAS. I cataloghi sono salvati sul Mac in **`Documenti/Provinia/`**.
+**Le foto non vengono mai modificate.** L'app legge i file sul NAS e li rinomina,
+sposta o elimina solo quando lo chiedi tu, sempre con una conferma. I cataloghi sono salvati sul Mac in **`Documenti/Provinia/`**.
 
 ## Requisiti
 
