@@ -63,6 +63,7 @@ class Job:
         self.status = "running"
         self.result = None
         self.started = time.time()
+        self.ended = None
         self.cancelled = False
         self.quick = False
         self.cancellable = False
@@ -78,10 +79,12 @@ class Job:
 
     def as_dict(self):
         return {k: getattr(self, k) for k in
-                ("id", "label", "message", "done", "total", "status", "result", "quick", "cancellable", "cancelled")}
+                ("id", "label", "message", "done", "total", "status", "result", "quick", "cancellable", "cancelled",
+                 "ended")}
 
 
 JOBS = {}
+JOB_KEEP_S = 60
 
 
 # ---------------------------------------------------------------- cataloghi
@@ -390,6 +393,7 @@ def start_job(label, fn, quick=False):
             rollback(job_cat)
             job.status = "error"
             job.message = str(e)
+        job.ended = time.time()
     job.thread = threading.Thread(target=run, daemon=True)
     job.thread.start()
     return job
@@ -659,6 +663,31 @@ def photo_detail(pid):
     return d
 
 
+_root_state = {}     # id cartella principale -> raggiungibile all'ultimo controllo
+
+
+def _reachable(path, timeout=2.0):
+    """isdir con un limite di tempo: un NAS che non risponde non deve bloccare nulla."""
+    out = []
+    t = threading.Thread(target=lambda: out.append(os.path.isdir(path)), daemon=True)
+    t.start()
+    t.join(timeout)
+    return bool(out and out[0])
+
+
+def roots_status():
+    """Stato delle cartelle principali, controllato spesso dall'interfaccia. Quando una torna
+    raggiungibile (NAS ricollegato) si riprovano subito le anteprime che erano fallite."""
+    res = []
+    for r in cat.db.execute("SELECT id, name, path FROM roots ORDER BY name").fetchall():
+        on = _reachable(r["path"])
+        if on and _root_state.get(r["id"]) is False:
+            thumbs._unavailable.clear()
+        _root_state[r["id"]] = on
+        res.append({"id": r["id"], "name": r["name"], "online": on})
+    return res
+
+
 def tree():
     db = cat.db
     fcount = dict(db.execute("SELECT folder_id, count(*) FROM photos GROUP BY folder_id").fetchall())
@@ -667,7 +696,9 @@ def tree():
     kcount = dict(db.execute(
         "SELECT keyword_id, count(*) FROM photo_keywords GROUP BY keyword_id").fetchall())
     roots = [{"id": r["id"], "path": r["path"], "name": r["name"],
-              "online": os.path.isdir(r["path"])} for r in db.execute("SELECT * FROM roots ORDER BY name")]
+              "online": _reachable(r["path"])} for r in db.execute("SELECT * FROM roots ORDER BY name")]
+    for r in roots:
+        _root_state[r["id"]] = r["online"]
     folders = [{"id": r["id"], "root": r["root_id"], "parent": r["parent_id"], "rel": r["rel_path"],
                 "name": os.path.basename(r["rel_path"]) if r["rel_path"] else None,
                 "count": fcount.get(r["id"], 0)}
@@ -958,6 +989,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_file(path, "image/jpeg", private=private) if path else self.not_found()
             if u.path == "/api/tree":
                 return self.send_json(tree())
+            if u.path == "/api/roots/status":
+                return self.send_json(roots_status())
             if u.path == "/api/gps":
                 return self.send_json(gps_points(q))
             if u.path == "/api/photos":
@@ -966,6 +999,10 @@ class Handler(BaseHTTPRequestHandler):
                 d = photo_detail(int(parts[2]))
                 return self.send_json(d) if d else self.not_found()
             if u.path == "/api/jobs":
+                # i lavori finiti bene spariscono da soli dopo un minuto; gli errori restano
+                now = time.time()
+                for k in [k for k, j in JOBS.items() if j.status == "done" and j.ended and now - j.ended > JOB_KEEP_S]:
+                    del JOBS[k]
                 return self.send_json([j.as_dict() for j in JOBS.values()])
             if u.path == "/api/duplicates":
                 return self.send_json(gestione_file.LAST)

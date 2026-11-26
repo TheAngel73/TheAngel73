@@ -195,6 +195,25 @@ sincronizzazione rapida). Le colonne nuove si aggiungono con `ALTER TABLE` in
   la parte colorata si calcola in JS (`rangeFill`, variabili `--pct`, `--lo`/`--hi`
   per quelli con lo zero al centro) perché WebKit non la disegna. La versione
   precedente all'aspetto nuovo è il commit `6f2ce8c`.
+- **Revisione dell'interfaccia (dopo la 1.0)**, blocco in fondo a `style.css`:
+  - sotto i 1420 px di larghezza i filtri (`#filters`) si raccolgono nel pannellino
+    del pulsante «Filtri», con il numero dei filtri attivi; Esc o un clic fuori lo chiude;
+  - `activeFilters()` elenca i filtri attivi: etichette cliccabili sotto il titolo
+    (`#active-filters`) e messaggio «Nessuna foto corrisponde…» con «Togli i filtri»;
+  - nel pannello informazioni il percorso è abbreviato (`shortPath`), completo nel
+    suggerimento e copiato con un clic; `actionRows` mette Photoshop come pulsante principale;
+  - i simboli di testo (▾ ⟲ ⟳ ⚑ ✕ ⊘) sono diventati icone di `ICON`;
+  - i comandi che cancellano sono rossi anche nel menu Libreria (`danger-item`).
+- **Seconda revisione**: `rangeFill` vale per tutti i cursori (anche nei dialoghi);
+  i dialoghi usano gli stessi controlli della barra e «Chiudi» quando non c'è nulla da
+  confermare; scorciatoie raggruppate in `helpDialog`; i lavori hanno `ended` e quelli
+  riusciti spariscono dopo `JOB_KEEP_S` (60 s), gli errori restano fino a «Pulisci»;
+  anche il pannello di destra si allarga (`panelResize`, `--info-w`); l'anteprima nel
+  pannello segue le proporzioni della foto (altezza massima in px).
+- **Cartelle raggiungibili**: `checkRoots()` chiede `/api/roots/status` ogni 8 s (e al
+  ritorno sulla finestra). `_reachable` fa `isdir` con un limite di 2 s, così un NAS che
+  non risponde non blocca il motore. Quando una cartella torna raggiungibile: spunta
+  verde per 10 s, avviso, `thumbs._unavailable` svuotato e griglia ricaricata.
 - **Esposizione nella vista ingrandita** (`setExpo` in `app.js`): solo CSS
   `brightness(2^(EV/2,2))` sull'`<img>`, che nei valori sRGB equivale a moltiplicare
   la luce lineare per 2^EV. Nessun file toccato. Dopo l'uso il cursore perde il
@@ -254,7 +273,11 @@ Finder), Adobe DNG Converter
 
 - Il numero mostrato in «Informazioni su Provinia» viene dal file `VERSIONE`
   (letto da `mac/crea_app.sh`); la build (`CFBundleVersion`) è la data di costruzione.
-- **1.0**: la versione considerata definitiva dall'utente (commit «Versione 1.0»).
+- **1.0**: la versione considerata definitiva dall'utente (tag `v1.0`).
+- **1.1**: filtri raccolti con finestra stretta e filtri attivi visibili, percorso breve
+  e pulsanti rivisti nel pannello informazioni, icone uniformi, pallino del NAS aggiornato
+  da solo, dialoghi e scorciatoie rivisti, barra delle attività più chiara, pannello di
+  destra allargabile, anteprima intera, un solo menu aperto, rifiniture della vista ingrandita.
   Le modifiche successive si fanno su un ramo di sviluppo; quando l'utente ne approva
   una serie si aumenta `VERSIONE` (1.1, 1.2…).
 
