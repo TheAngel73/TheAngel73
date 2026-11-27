@@ -586,3 +586,21 @@ dialog:has(.help) { max-width: 760px; }
 /* pannello informazioni: etichette e bandierine su una riga (senza stelle) */
 #info .markbar { justify-content: space-between; align-items: center; }
 #info .markbar .labelbar { margin-top: 0; }
+
+/* ---- JPG e RAW con lo stesso nome ---- */
+.cell .cap .ext.alt { margin-left: 0; color: #9a9aa0; background: transparent; box-shadow: inset 0 0 0 1px rgba(255,255,255,.16); }
+.cell .cap .ext + .ext.alt { margin-left: -1px; }
+.cell.lab .cap .ext.alt { color: #eee; box-shadow: inset 0 0 0 1px rgba(255,255,255,.35); background: transparent; }
+#info .pairbar { display: flex; align-items: center; gap: 8px; margin: 2px 0 8px; font-size: 12px; color: var(--dim); }
+#info .pairbar > span:nth-child(2) { flex: 1; }
+#info .pairbar .ext.alt { font-size: 9.5px; font-weight: 600; letter-spacing: .4px; padding: 0 4px; border-radius: 3px; line-height: 14px;
+  color: #c8c8cc; box-shadow: inset 0 0 0 1px rgba(255,255,255,.2); }
+#info .pairbar button { font-size: 12px; padding: 2px 8px; }
+#info .pairbar button.ico { padding: 2px 5px; display: inline-flex; align-items: center; }
+#info .pairbar button.ico svg.i { width: 14px; height: 14px; }
+.loupe-tools .pairsw { display: inline-flex; padding: 0; overflow: hidden; margin-right: 8px; }
+.loupe-tools .pairsw[hidden] { display: none; }
+.loupe-tools .pairsw span { padding: 0 8px; font-size: 11px; font-weight: 600; letter-spacing: .4px; line-height: 24px; color: var(--dim); }
+.loupe-tools .pairsw span.on { background: var(--accent); color: #fff; }
+#menu-library button.check::before { content: ""; display: inline-block; width: 18px; }
+#menu-library button.check.checked::before { content: "✓"; color: var(--accent); }

@@ -244,6 +244,17 @@ sincronizzazione rapida). Le colonne nuove si aggiungono con `ALTER TABLE` in
   selezione, dopo `reload()` chiede gli id della vista nuova (`ids_only`, con i filtri attivi) e
   riseleziona quelli in comune, con il cursore sul primo. Non agisce se nel frattempo la vista è
   cambiata (`S.version`) o l'utente ha già selezionato altro. Ricerca e filtri non la usano.
+- **JPG e RAW con lo stesso nome** (flusso dell'utente: DNG + JPG ritoccato salvato accanto).
+  `pairs=1` in `/api/photos` → `pair_query` in `server.py` nasconde i RAW il cui JPG gemello
+  (stessa cartella, stesso nome senza estensione) **è nella stessa vista**: la condizione della vista
+  viene ripetuta per il gemello (`\bp.` → `j.`). Indice per espressione `ix_photos_stem`
+  (`catalog.py`): l'espressione deve restare identica a `_STEM`, altrimenti 170 000 foto passano
+  da 0,3 s a oltre 10 s. `pair_partners` allega il RAW al JPG (`it.p = {id, x}`).
+  Nell'interfaccia `PAIR` (id JPG → RAW), `selIds()` comprende i gemelli (etichette, raccolte,
+  parole chiave, rotazione, spostamento, eliminazione, trascinamento), `shownIds()` no (Photoshop,
+  Finder, esportazione). Rinomina con un clic: `rename/one` con `with` rinomina la coppia (il `.xmp`
+  segue). Vista ingrandita: `openLoupe(i, raw)`, tasto V. Le cifre nella barra laterale contano
+  ancora tutti i file.
 - **Lavori in background**: `start_job`, con avanzamento in `/api/jobs`.
   `job.cancellable` mostra «Interrompi»; `job.quick` (sincronizzazione rapida) si
   ferma da solo al cambio di catalogo. L'interfaccia reagisce ai risultati in

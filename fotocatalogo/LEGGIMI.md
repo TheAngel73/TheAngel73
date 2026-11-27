@@ -121,6 +121,7 @@ in Lightroom. Le regolazioni dello Sviluppo non ci sono (Provinia non le conserv
 | Etichette / bandierine | **6 7 8 9** / **P X U** |
 | Vista ingrandita | doppio clic, **Spazio** o **Invio**, poi **← →** |
 | Ritrovare le foto scelte in un'altra cartella o raccolta | seleziona le foto e clicca su un'altra cartella o raccolta: restano selezionate quelle presenti anche lì (es. raccolta «Pippo» → cartella «Vacanza con Pippo») |
+| JPG ritoccato e RAW con lo stesso nome | si vedono come **una foto sola** (il JPG) con le etichette **JPG DNG** in basso; nel pannello «Anche in DNG» apre il RAW, nella vista ingrandita **V** o il pulsante JPG/DNG passa dall'uno all'altro. Etichette, bandierine, raccolte, parole chiave, rotazione, rinomina, spostamento ed eliminazione valgono per tutti e due; Photoshop ed esportazione per quello mostrato. Si disattiva da **Libreria › JPG e RAW con lo stesso nome insieme** |
 | Saltare a una foto vicina | nella vista ingrandita porta il mouse sulla barra in basso: compare la **striscia delle foto vicine** (rotellina per scorrerla, clic per aprire). Tornando sulla foto sparisce dopo un paio di secondi |
 | Zoom nella vista ingrandita | **clic** (o **Z**): adatta ↔ 100% · **doppio clic** o **Esc**: torna alla griglia · **rotellina** o pizzico sul trackpad · **+ −** · trascina per spostarti |
 | Selezionare tutto | **⌘A** |

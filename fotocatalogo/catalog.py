@@ -108,6 +108,10 @@ class Catalog:
                 self.db.execute("ALTER TABLE photos ADD COLUMN place TEXT")
                 self.db.commit()
             self.db.execute("CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT)")
+            # nome senza estensione per cartella: trova subito il gemello JPG/RAW (server.pair_query).
+            # L'espressione deve restare identica a quella usata nelle query.
+            self.db.execute("CREATE INDEX IF NOT EXISTS ix_photos_stem ON photos(folder_id, "
+                            "lower(substr(filename, 1, length(filename) - length(ext) - 1)))")
             self.db.commit()
 
     @property

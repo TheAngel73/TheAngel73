@@ -20,6 +20,7 @@
       <hr>
       <button data-act="dups">Trova duplicati…</button>
       <button data-act="pregen">Genera anteprime della vista corrente</button>
+      <button data-act="pairs" class="check" title="Un JPG e un RAW (DNG, NEF…) con lo stesso nome nella stessa cartella si vedono come una foto sola">JPG e RAW con lo stesso nome insieme</button>
       <button data-act="relocate">Cambia percorso del NAS…</button>
       <hr>
       <button data-act="del-rejected" class="danger-item">Elimina dal disco tutte le scartate…</button>
@@ -116,7 +117,7 @@
       <button type="button" class="primary">Apri con l'app predefinita</button></div></div>
   <div id="loupe-strip" aria-label="Foto vicine"><div class="strip-track"></div></div>
   <div id="loupe-bar"><span id="loupe-name"></span>
-    <span class="loupe-tools"><button id="loupe-rotl" title="Ruota a sinistra (⌘←)"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.2 7.4A5 5 0 1 1 4.6 11.6"/><path d="M3 3.8v3.8h3.8"/></svg></button><button id="loupe-rotr" title="Ruota a destra (⌘→)"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M12.8 7.4A5 5 0 1 0 11.4 11.6"/><path d="M13 3.8v3.8H9.2"/></svg></button>
+    <span class="loupe-tools"><button id="loupe-pair" class="pairsw" hidden title="Mostra l'altra versione con lo stesso nome (V)"></button><button id="loupe-rotl" title="Ruota a sinistra (⌘←)"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.2 7.4A5 5 0 1 1 4.6 11.6"/><path d="M3 3.8v3.8h3.8"/></svg></button><button id="loupe-rotr" title="Ruota a destra (⌘→)"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M12.8 7.4A5 5 0 1 0 11.4 11.6"/><path d="M13 3.8v3.8H9.2"/></svg></button>
       <label class="expo" title="Esposizione solo per la visione: il file non viene modificato. Doppio clic per azzerare">☀
         <input type="range" id="loupe-expo" min="-3" max="3" step="0.1" value="0"><span id="loupe-expo-val">0 EV</span></label></span>
     <span id="loupe-zoom"></span>

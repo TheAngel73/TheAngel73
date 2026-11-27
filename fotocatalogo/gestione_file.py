@@ -371,8 +371,10 @@ def rename_plan(cat, ids, opts):
     single = opts.get("name") is not None          # rinomina libera di un solo file
     if single:
         name = nfc((opts.get("name") or "").strip())
-        if len(rows) != 1:
+        # un file solo, oppure una coppia JPG + RAW con lo stesso nome (rinominati insieme)
+        if not rows or len({(r["folder_id"], os.path.splitext(r["filename"])[0].lower()) for r in rows}) != 1:
             raise ValueError("La rinomina libera vale per un file alla volta")
+        batch_names = {r["filename"].lower() for r in rows}
         if not name or any(c in name for c in "/:\\") or name.startswith("."):
             raise ValueError("Il nome non può essere vuoto, contenere / : \\ né iniziare con un punto")
     for r in rows:
@@ -383,7 +385,7 @@ def rename_plan(cat, ids, opts):
         folder_dir = resolve_path(os.path.join(r["root"], r["rel_path"]))
         if single:
             plan.append({"id": r["id"], "old": r["filename"], "new": nfc(name + ext), "dir": folder_dir,
-                         "keep_side": _has_sibling(folder_dir, r["filename"])})
+                         "keep_side": _has_sibling(folder_dir, r["filename"], batch_names)})
             continue
         key = (r["folder_id"], base.lower())
         if keep_pairs and key in numbers:
@@ -418,7 +420,7 @@ def rename_plan(cat, ids, opts):
     return plan, skipped, conflicts
 
 
-def _has_sibling(folder_dir, filename):
+def _has_sibling(folder_dir, filename, also_renamed=()):
     """True se nella cartella c'è un altro file con lo stesso nome base (es. ARW + JPG):
     in quel caso il .xmp resta a lui e non segue il file rinominato da solo."""
     base = os.path.splitext(filename)[0].lower()
@@ -427,6 +429,7 @@ def _has_sibling(folder_dir, filename):
     except OSError:
         return False
     return any(os.path.splitext(x)[0].lower() == base and x.lower() != filename.lower()
+               and x.lower() not in also_renamed
                and os.path.splitext(x)[1].lower() != ".xmp" for x in names)
 
 

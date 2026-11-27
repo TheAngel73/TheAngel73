@@ -21,7 +21,7 @@ function toast(msg, isError = false) {
 async function safe(fn) { try { return await fn(); } catch (e) { toast(e.message, true); } }
 // catalogo aperto: {path, name, protected, uid}. Le preferenze di vista sono per catalogo.
 let CAT = null;
-const GLOBAL_KEYS = new Set(["zoom", "sort"]);
+const GLOBAL_KEYS = new Set(["zoom", "sort", "pairs"]);
 const skey = k => "fc:" + (GLOBAL_KEYS.has(k) || !CAT ? "" : CAT.uid + ":") + k;
 // "v" cambia quando cambia il file: così il browser non mostra miniature vecchie
 const VERS = new Map();
@@ -91,11 +91,17 @@ const S = {
   detail: null,
 };
 
+// JPG e RAW con lo stesso nome (es. DNG + JPG ritoccato) mostrati come una foto sola:
+// il server nasconde il RAW e lo allega al JPG (it.p = {id, x}). Le operazioni sulla
+// selezione valgono per entrambi (selIds), aprire ed esportare solo per quello mostrato.
+const PAIR = new Map();       // id del JPG -> {id, x} del RAW gemello
+const withPairs = ids => { const out = new Set(ids); for (const id of ids) { const p = PAIR.get(id); if (p) out.add(p.id); } return [...out]; };
+
 function params(extra = {}) {
   const [sort, dir] = $("#sort").value.split(":");
   const p = {scope: S.scope, deep: $("#deep").checked ? "1" : "0", q: $("#search").value,
     geo: S.geo ? `${S.geo.s},${S.geo.w},${S.geo.n},${S.geo.e}` : "", label: $("#f-label").value, flag: $("#f-flag").value,
-    year: $("#f-year").value, ext: $("#f-ext").value, sort, dir, ...extra};
+    year: $("#f-year").value, ext: $("#f-ext").value, sort, dir, pairs: S.pairs ? "1" : "", ...extra};
   return new URLSearchParams(Object.entries(p).filter(([, v]) => v !== "" && v != null)).toString();
 }
 
@@ -113,7 +119,7 @@ async function loadPage(p) {
     const data = await api(`/api/photos?${params({offset: p * PAGE, limit: PAGE})}`);
     if (v !== S.version) return;
     S.total = data.total;
-    for (const it of data.items) VERS.set(it.id, it.v);
+    for (const it of data.items) { VERS.set(it.id, it.v); if (it.p) PAIR.set(it.id, it.p); else PAIR.delete(it.id); }
     S.pages.set(p, data.items);
     $("#view-count").textContent = `· ${data.total.toLocaleString("it-IT")} ${S.scope === "video" ? "video" : "foto"}`;
     layout();
@@ -251,7 +257,7 @@ function makeCell(it, i) {
     ${ft && ft[0] !== "video" ? `<span class="ftype ft-${ft[0]}" title="${ft[1]}"></span>` : ""}
     <div class="tl${ft && ft[0] !== "video" ? " after-tri" : ""}">${ft && ft[0] === "video" ? `<span class="vbadge" title="${ft[1]}">▶ ${esc(it.x.toUpperCase())}</span>` : ""}${it.m ? '<span class="miss" title="File non trovato">⚠ mancante</span>' : ""}</div>
     ${it.f === 1 ? `<span class="flag" title="Scelta">${ICON.flagOn}</span>` : ""}
-    <div class="cap"${it.l ? ` title="Etichetta ${LABELS[it.l] || ""}"` : ""}>${capName(it.n)}${capExt(it.n)}</div>`;
+    <div class="cap"${it.l ? ` title="Etichetta ${LABELS[it.l] || ""}"` : ""}>${capName(it.n)}${capExt(it.n)}${it.p ? `<span class="ext alt" title="Anche in ${esc(it.p.x.toUpperCase())} con lo stesso nome">${esc(it.p.x.toUpperCase())}</span>` : ""}</div>`;
   const img = el.querySelector("img");
   if (!img) return el;
   img.draggable = false;
@@ -353,7 +359,7 @@ function patchItems(ids, patch) {
   const set = new Set(ids);
   for (const pg of S.pages.values()) for (const it of pg) if (set.has(it.id)) Object.assign(it, patch);
 }
-async function setMeta(patch, ids = [...S.sel]) {
+async function setMeta(patch, ids = selIds()) {
   if (!ids.length) return;
   await safe(async () => {
     await api("/api/meta", {ids, ...patch});
@@ -703,7 +709,7 @@ async function removeFromCurrentCollection() {
   if (!c || c.set || !S.sel.size) return;
   const f = await dialog("Togli dalla raccolta", `<p>Togliere ${S.sel.size} foto dalla raccolta «${esc(c.name)}»?</p><p>I file non vengono toccati.</p>`, "Togli");
   if (!f) return;
-  await safe(async () => { await api(`/api/collections/${c.id}/remove`, {ids: [...S.sel]}); await loadTree(); reload(true); S.sel.clear(); selChanged(); });
+  await safe(async () => { await api(`/api/collections/${c.id}/remove`, {ids: selIds()}); await loadTree(); reload(true); S.sel.clear(); selChanged(); });
 }
 
 // ================================================================ pannello info
@@ -727,6 +733,7 @@ async function showInfo(refresh = false) {
     <div class="fname" title="Clic per rinominare">${esc(d.filename)}</div>
     <button class="path" data-act="copy-path" title="${esc(d.path)}
 Clic per copiare il percorso completo">${ICON.folder}<span>${esc(shortPath(d.path))}</span>${ICON.copy}</button>
+    ${pairRow(id)}
     ${rateBars(d.rating, d.label, d.flag)}
     ${actionRows(true)}
     <h4>Raccolte (${d.collections.length})</h4>
@@ -751,6 +758,13 @@ Clic per copiare il percorso completo">${ICON.folder}<span>${esc(shortPath(d.pat
     </table>`;
 }
 
+// gemello RAW di un JPG: si apre a parte (le altre operazioni valgono per tutti e due)
+function pairRow(id) {
+  const p = PAIR.get(id); if (!p) return "";
+  const x = esc(p.x.toUpperCase());
+  return `<div class="pairbar"><span class="ext alt">${x}</span><span>Anche in ${x}</span>
+    <button data-open-pair="photoshop" title="Apri il ${x} in Photoshop">Apri ${x}</button><button class="ico" data-open-pair="finder" title="Mostra il ${x} nel Finder">${ICON.finder}</button></div>`;
+}
 // pulsanti del pannello: Photoshop è l'azione principale, rotazioni come icone
 function actionRows(one) {
   const ps = `Apri in Photoshop${!one && S.sel.size > 50 ? " (prime 50)" : ""}`;
@@ -814,20 +828,21 @@ function showMulti(box) {
 }
 
 $("#info").addEventListener("click", async e => {
-  const t = e.target.closest("[data-rate],[data-flag],[data-label],[data-open],[data-act],[data-uncoll],[data-unkw],[data-goto],[data-rot]");
+  const t = e.target.closest("[data-open-pair],[data-rate],[data-flag],[data-label],[data-open],[data-act],[data-uncoll],[data-unkw],[data-goto],[data-rot]");
   if (!t) return;
   e.preventDefault();
-  const ids = [...S.sel];
+  const ids = selIds();
+  if (t.dataset.openPair) { const p = PAIR.get([...S.sel][0]); return p && safe(() => api("/api/open", {ids: [p.id], how: t.dataset.openPair})); }
   if (t.dataset.uncoll) { e.stopPropagation(); return safe(async () => { await api(`/api/collections/${t.dataset.uncoll}/remove`, {ids}); await loadTree(); if (S.scope === "collection:" + t.dataset.uncoll) reload(true); showInfo(true); }); }
   if (t.dataset.unkw) { e.stopPropagation(); return safe(async () => { await api("/api/keywords", {ids, remove: [+t.dataset.unkw]}); await loadTree(); showInfo(true); }); }
   if (t.dataset.goto) return setScope(t.dataset.goto);
   if (t.dataset.rate) return setMeta({rating: +t.dataset.rate});
   if (t.dataset.flag) { const cur = S.detail && S.sel.size === 1 ? S.detail.flag : null; return setMeta({flag: cur === +t.dataset.flag ? 0 : +t.dataset.flag}); }
   if (t.dataset.label !== undefined) return setMeta({label: t.dataset.label || null});
-  if (t.dataset.open) return safe(() => api("/api/open", {ids, how: t.dataset.open}));
+  if (t.dataset.open) return safe(() => api("/api/open", {ids: shownIds(), how: t.dataset.open}));
   if (t.dataset.rot) return rotate(+t.dataset.rot);
   if (t.dataset.act === "copy-path" && S.detail) return copyText(S.detail.path);
-  if (t.dataset.act === "export") return exportDialog(ids, ids.length === 1 ? "la foto selezionata" : `${ids.length.toLocaleString("it-IT")} foto selezionate`);
+  if (t.dataset.act === "export") return exportDialog(shownIds(), S.sel.size === 1 ? "la foto selezionata" : `${ids.length.toLocaleString("it-IT")} foto selezionate`);
   const act = t.dataset.act;
   if (act === "add-coll") return pickCollection(ids);
   if (act === "new-coll-sel") return newCollection(false, ids);
@@ -838,7 +853,7 @@ $("#info").addEventListener("keydown", e => { if (e.target.id === "kw-add" && e.
 async function addKeywords() {
   const inp = $("#kw-add"); const names = inp.value.split(",").map(s => s.trim()).filter(Boolean);
   if (!names.length) return;
-  await safe(async () => { await api("/api/keywords", {ids: [...S.sel], add: names}); inp.value = ""; await loadTree(); showInfo(true); toast("Parole chiave aggiunte"); });
+  await safe(async () => { await api("/api/keywords", {ids: selIds(), add: names}); inp.value = ""; await loadTree(); showInfo(true); toast("Parole chiave aggiunte"); });
 }
 
 // ================================================================ vista ingrandita (con zoom)
@@ -849,10 +864,18 @@ const L = {i: -1, id: null, fitW: 0, fitH: 0, bx: 0, by: 0, z: 1, tx: 0, ty: 0, 
 const stage = $("#loupe-stage"), limg = $("#loupe-img");
 let loupeIdx = -1;
 
-function openLoupe(i) {
+// raw = true: mostra il RAW gemello invece del JPG (pulsante «DNG» o tasto V)
+function openLoupe(i, raw = false) {
   const it = itemAt(i); if (!it) return;
   loupeIdx = i; S.cursor = i; S.sel.clear(); S.sel.add(it.id); selChanged();
-  Object.assign(L, {i, id: it.id, z: 1, tx: 0, ty: 0, natW: 0, full: "no", video: isVideo(it.x)});
+  raw = raw && !!it.p;
+  const showId = raw ? it.p.id : it.id;
+  const showName = raw ? splitName(it.n)[0] + "." + it.p.x : it.n;
+  const pb = $("#loupe-pair");
+  pb.hidden = !it.p;
+  if (it.p) pb.innerHTML = `<span class="${raw ? "" : "on"}">${esc(it.x.toUpperCase())}</span><span class="${raw ? "on" : ""}">${esc(it.p.x.toUpperCase())}</span>`;
+  L.raw = raw;
+  Object.assign(L, {i, id: showId, z: 1, tx: 0, ty: 0, natW: 0, full: "no", video: isVideo(it.x)});
   stopVideo();
   limg.hidden = L.video;
   $("#loupe").classList.toggle("is-video", L.video);
@@ -872,11 +895,11 @@ function openLoupe(i) {
     return;
   }
   limg.onload = () => loupeLayout();
-  limg.src = thumbURL(it.id);
+  limg.src = thumbURL(showId);
   const big = new Image();
-  big.onload = () => { if (L.id === it.id && L.full === "no") limg.src = big.src; };
-  big.src = previewURL(it.id);
-  $("#loupe-name").textContent = `${it.n} · ${fmtDate(it.t)}`;
+  big.onload = () => { if (L.id === showId && L.full === "no") limg.src = big.src; };
+  big.src = previewURL(showId);
+  $("#loupe-name").textContent = `${showName} · ${fmtDate(it.t)}`;
   $("#loupe").hidden = false;
   loupeLayout();
   if (STRIP.open) stripRender();
@@ -1051,6 +1074,7 @@ async function loupeStep(d) {
   if (!itemAt(i)) await loadPage(Math.floor(i / PAGE));
   ensureVisible(i); openLoupe(i);
 }
+$("#loupe-pair").onclick = e => { e.currentTarget.blur(); openLoupe(loupeIdx, !L.raw); };
 $("#loupe-prev").onclick = () => loupeStep(-1);
 $("#loupe-next").onclick = () => loupeStep(1);
 
@@ -1122,6 +1146,7 @@ document.addEventListener("keydown", async e => {
   if (loupe && !mod && !L.video) {
     const kz = e.key.toLowerCase();
     if (kz === "z") { e.preventDefault(); return loupeToggle(stage.clientWidth / 2, stage.clientHeight / 2); }
+    if (kz === "v" && itemAt(loupeIdx)?.p) { e.preventDefault(); return openLoupe(loupeIdx, !L.raw); }
     if (e.key === "+" || e.key === "=") { e.preventDefault(); return loupeKeyZoom(1.5); }
     if (e.key === "-") { e.preventDefault(); return loupeKeyZoom(1 / 1.5); }
   }
@@ -1139,7 +1164,7 @@ document.addEventListener("keydown", async e => {
   if (k === "p") { e.preventDefault(); return setMeta({flag: 1}); }
   if (k === "x") { e.preventDefault(); return setMeta({flag: -1}); }
   if (k === "u") { e.preventDefault(); return setMeta({flag: 0}); }
-  if (k === "c" || k === "b") { e.preventDefault(); return pickCollection([...S.sel]); }
+  if (k === "c" || k === "b") { e.preventDefault(); return pickCollection(selIds()); }
   if (e.key === "F2" && !NATIVE) { e.preventDefault(); return COMMANDS.renameSel(); }   // nell'app: menu Foto
   if (e.key === "Enter" || e.key === " ") { if (S.cursor >= 0) { e.preventDefault(); loupe ? closeLoupe() : openLoupe(S.cursor); } return; }
   if (e.key === "Backspace" || e.key === "Delete") {
@@ -1270,7 +1295,7 @@ function helpDialog() {
       ["⌘⌫", "Elimina il file dal disco…"], ["⌥⌘M", "Mappa dei luoghi"]]],
     ["Vista ingrandita", [
       ["Invio · Spazio", "Apre e chiude la vista ingrandita (anche doppio clic)"], ["Clic · Z", "Adatta allo schermo · 100%"],
-      ["Rotellina · + −", "Zoom (trascina per spostarti)"], ["← →", "Foto precedente · successiva"], ["Doppio clic · Esc", "Torna alla griglia"]]],
+      ["Rotellina · + −", "Zoom (trascina per spostarti)"], ["← →", "Foto precedente · successiva"], ["V", "JPG ↔ RAW con lo stesso nome"], ["Doppio clic · Esc", "Torna alla griglia"]]],
   ];
   const keys = k => k.split(" · ").map(x => `<kbd>${esc(x)}</kbd>`).join('<span class="or">o</span>');
   dialog("Scorciatoie da tastiera", `<div class="help">${groups.map(([g, rows]) =>
@@ -1286,6 +1311,7 @@ $("#menu-library").addEventListener("click", e => {
   if (a === "add-folder") addFolderDialog();
   if (a === "import-lr") importLrDialog();
   if (a === "export-lr") exportLrDialog();
+  if (a === "pairs") { S.pairs = !S.pairs; store.set("pairs", S.pairs); e.target.closest("[data-act]").classList.toggle("checked", S.pairs); reload(true); }
   if (a === "relocate") relocateDialog();
   if (a === "help") helpDialog();
   if (a === "pregen") COMMANDS.pregen();
@@ -1296,9 +1322,10 @@ $("#menu-library").addEventListener("click", e => {
 // ================================================================ comandi (tastiera, menu dell'app, tasto destro)
 const NATIVE = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.fc);
 if (NATIVE) document.documentElement.classList.add("native");
-const selIds = () => [...S.sel];
+const selIds = () => withPairs([...S.sel]);     // con i RAW gemelli
+const shownIds = () => [...S.sel];              // solo le foto mostrate (aprire, esportare)
 const needSel = fn => () => S.sel.size ? fn() : toast("Seleziona prima una o più foto");
-const openWith = how => needSel(() => safe(() => api("/api/open", {ids: selIds(), how})));
+const openWith = how => needSel(() => safe(() => api("/api/open", {ids: shownIds(), how})));
 
 const COMMANDS = {
   addFolder: addFolderDialog, importLr: importLrDialog, exportLr: exportLrDialog, relocate: relocateDialog, help: helpDialog,
@@ -1328,7 +1355,7 @@ const COMMANDS = {
   renameNum: needSel(() => renameDialog(selIds())),
   moveSel: needSel(() => moveDialog(selIds())),
   rotateLeft: needSel(() => rotate(-90)), rotateRight: needSel(() => rotate(90)),
-  exportSel: needSel(() => exportDialog(selIds(), S.sel.size === 1 ? "la foto selezionata" : `${S.sel.size.toLocaleString("it-IT")} foto selezionate`)),
+  exportSel: needSel(() => exportDialog(shownIds(), S.sel.size === 1 ? "la foto selezionata" : `${S.sel.size.toLocaleString("it-IT")} foto selezionate`)),
   findDups: () => openDuplicates(),
   lockCatalog: () => lockCatalog(),
   zoomIn: () => { $("#zoom").value = +$("#zoom").value + 40; $("#zoom").dispatchEvent(new Event("input")); },
@@ -2062,7 +2089,8 @@ function startInlineRename(id) {
 }
 async function renameOne(id, name) {
   try {
-    const r = await api("/api/rename/one", {id, name});
+    const pair = PAIR.get(id);
+    const r = await api("/api/rename/one", {id, name, with: pair ? [pair.id] : []});
     patchItems([id], {n: r.filename, x: r.ext});
     if (S.detail && S.detail.id === id) showInfo(true);
     loadTree();                                     // conteggio «Da rinominare»
@@ -2243,7 +2271,7 @@ const folderTree = $("#folder-tree");
 // Nell'app per Mac le foto si trascinano come file veri (S.nativeDrag, vedi dragstart):
 // se il trascinamento l'abbiamo iniziato noi, i "Files" sono le nostre foto.
 const isInternal = dt => [...dt.types].includes("application/x-fc-photos") || !!(S.nativeDrag && [...dt.types].includes("Files"));
-const dragIds = dt => { const j = dt.getData("application/x-fc-photos"); return j ? JSON.parse(j) : (S.nativeDrag || []); };
+const dragIds = dt => { const j = dt.getData("application/x-fc-photos"); return withPairs(j ? JSON.parse(j) : (S.nativeDrag || [])); };
 const hasFiles = dt => !isInternal(dt) && [...dt.types].includes("Files");
 function folderDropTarget(e) {
   const li = e.target.closest("li[data-folder]"); if (!li) return null;
@@ -2381,6 +2409,8 @@ $("#f-geo").onclick = () => openMap();
 $("#search").addEventListener("input", () => { markFilters(); clearTimeout(searchT); searchT = setTimeout(() => reload(), 300); });
 for (const id of ["#f-label", "#f-flag", "#f-year", "#f-ext", "#sort", "#deep"])
   $(id).addEventListener("change", () => { if (id === "#sort") store.set("sort", $("#sort").value); markFilters(); reload(); });
+S.pairs = store.get("pairs", true);
+$("#menu-library [data-act=pairs]").classList.toggle("checked", S.pairs);
 $("#sort").value = store.get("sort", "date:asc");
 if (!$("#sort").value) $("#sort").value = "date:asc";      // ordinamento non più disponibile (es. Valutazione)
 

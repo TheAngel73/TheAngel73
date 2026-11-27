@@ -7,6 +7,7 @@ Solo libreria standard di Python: non serve installare nulla.
 import collections
 import json
 import os
+import re
 import zlib
 import select
 import signal
@@ -498,8 +499,54 @@ def build_query(q):
     return " AND ".join(where), args, f"{sort} {direction}, p.id {direction}"
 
 
+# JPG e RAW con lo stesso nome nella stessa cartella (es. ChiaraC 3777.dng + .jpg ritoccato):
+# con «pairs» la vista mostra solo il JPG, che porta con sé il RAW («p»). Il RAW resta
+# visibile da solo se il JPG non è nella vista (altra raccolta, filtri).
+PAIR_JPG = ("jpg", "jpeg")
+PAIR_RAW = ("dng", "nef", "nrw", "cr2", "cr3", "crw", "arw", "srf", "sr2", "raf", "orf", "rw2", "pef",
+            "srw", "x3f", "3fr", "iiq", "erf", "mos", "mrw", "raw", "rwl", "kdc", "dcr", "mef")
+_STEM = "lower(substr({a}.filename, 1, length({a}.filename) - length({a}.ext) - 1))"
+
+
+def pair_query(where, args):
+    """Condizione che nasconde i RAW il cui JPG gemello è nella stessa vista."""
+    jw = re.sub(r"\bp\.", "j.", where)
+    cond = (f"NOT (p.ext IN ({','.join('?' * len(PAIR_RAW))}) AND EXISTS (SELECT 1 FROM photos j "
+            f"WHERE j.folder_id = p.folder_id AND j.ext IN ('jpg','jpeg') AND {_STEM.format(a='j')} = "
+            f"{_STEM.format(a='p')} AND {jw}))")
+    return f"({where}) AND {cond}", args + list(PAIR_RAW) + args
+
+
+def pair_partners(where, args, rows):
+    """Per i JPG della pagina: il RAW gemello nascosto (id ed estensione)."""
+    out = {}
+    jpgs = [r for r in rows if (r["ext"] or "") in PAIR_JPG]
+    if not jpgs:
+        return out
+    db = cat.db
+    by_key = {}
+    for r in jpgs:
+        by_key[(r["folder_id"], r["filename"][:-(len(r["ext"]) + 1)].lower())] = r["id"]
+    folders = sorted({k[0] for k in by_key})
+    for i in range(0, len(folders), 500):
+        ch = folders[i:i + 500]
+        for c in db.execute(
+                f"""SELECT p.id, p.folder_id, p.filename, p.ext FROM photos p
+                    WHERE p.folder_id IN ({','.join('?' * len(ch))})
+                      AND p.ext IN ({','.join('?' * len(PAIR_RAW))}) AND ({where})""",
+                ch + list(PAIR_RAW) + args):
+            jid = by_key.get((c["folder_id"], c["filename"][:-(len(c["ext"]) + 1)].lower()))
+            if jid and jid not in out:
+                out[jid] = {"id": c["id"], "x": c["ext"]}
+    return out
+
+
 def list_photos(q):
     where, args, order = build_query(q)
+    pairs = q.get("pairs") == "1"
+    if pairs:
+        base_where, base_args = where, args
+        where, args = pair_query(where, args)
     db = cat.db
     offset = int(q.get("offset", 0))
     limit = min(int(q.get("limit", 300)), 1_000_000 if q.get("ids_only") else 5000)
@@ -509,10 +556,11 @@ def list_photos(q):
         return {"ids": [r[0] for r in rows]}
     total = db.execute(f"SELECT count(*) FROM photos p WHERE {where}", args).fetchone()[0]
     rows = db.execute(
-        f"""SELECT p.id, p.filename, p.ext, p.capture_time, p.rating, p.label, p.flag, p.missing,
-                   p.added_at, p.mtime, p.rotation
+        f"""SELECT p.id, p.folder_id, p.filename, p.ext, p.capture_time, p.rating, p.label, p.flag,
+                   p.missing, p.added_at, p.mtime, p.rotation
             FROM photos p WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?""",
         args + [limit, offset]).fetchall()
+    partners = pair_partners(base_where, base_args, rows) if pairs else {}
     # prepara in background le miniature di questa pagina (quelle visibili arrivano comunque prima)
     thumbs.PREFETCH.add(cat, THUMB_DIR, [r["id"] for r in rows if not r["missing"]])
     # th: miniatura già pronta (1), impossibile (-1) o da creare (0): la griglia mostra
@@ -520,7 +568,8 @@ def list_photos(q):
     return {"total": total, "offset": offset, "items": [
         {"id": r["id"], "n": r["filename"], "x": r["ext"], "t": r["capture_time"],
          "r": r["rating"], "l": r["label"], "f": r["flag"], "m": r["missing"], "v": version(r),
-         "o": r["rotation"] or 0, "th": thumbs.PREFETCH.state(THUMB_DIR, r["id"])} for r in rows]}
+         "o": r["rotation"] or 0, "th": thumbs.PREFETCH.state(THUMB_DIR, r["id"]),
+         **({"p": partners[r["id"]]} if r["id"] in partners else {})} for r in rows]}
 
 
 def version(r):
@@ -1186,11 +1235,12 @@ class Handler(BaseHTTPRequestHandler):
             return {"paths": out}
         if route == "rename/one":
             pid, name = int(body["id"]), body.get("name")
-            _, _, conflicts = gestione_file.rename_plan(cat, [pid], {"name": name})
+            pids = [pid] + [int(x) for x in body.get("with", []) if int(x) != pid]   # gemello JPG/RAW
+            _, _, conflicts = gestione_file.rename_plan(cat, pids, {"name": name})
             if conflicts:
                 raise ValueError(f"«{conflicts[0][0]}»: {conflicts[0][1]}")
             job = Job("Rinomina")
-            res = gestione_file.rename(cat, [pid], {"name": name}, job)
+            res = gestione_file.rename(cat, pids, {"name": name}, job)
             if res["errori"]:
                 raise ValueError(f"Rinomina non riuscita: {res['errori'][0][1]}")
             if res["saltate"]:
