@@ -420,6 +420,9 @@ def scope_filter(scope, deep=True):
                 f"({','.join(map(str, ids))}))", [])
     if kind == "keyword":
         return "p.id IN (SELECT photo_id FROM photo_keywords WHERE keyword_id=?)", [int(val)]
+    if kind == "stack":                     # «Mostra le foto della pila»: copertina e componenti
+        return ("(p.id = (SELECT cover_id FROM stacks WHERE id=?) OR p.id IN "
+                "(SELECT photo_id FROM stack_photos WHERE stack_id=?))", [int(val), int(val)])
     if kind == "toconvert":
         return f"COALESCE(p.ext,'') NOT IN ({','.join(repr(e) for e in NOT_TO_CONVERT)})", []
     if kind == "video":
@@ -541,8 +544,90 @@ def pair_partners(where, args, rows):
     return out
 
 
+# ---------------------------------------------------------------- pile (solo nelle raccolte)
+# Una pila appartiene a una raccolta: copertina (es. il JPG di un montaggio) e componenti (i RAW).
+# Nella raccolta si vede solo la copertina; altrove le foto restano normali. Una pila vale finché
+# la copertina è nella raccolta; i componenti contano solo se sono ancora nella raccolta.
+def _stack_coll(q):
+    kind, _, val = (q.get("scope") or "").partition(":")
+    if kind != "collection":
+        return None
+    c = cat.db.execute("SELECT is_set FROM collections WHERE id=?", (int(val),)).fetchone()
+    return int(val) if c and not c["is_set"] else None
+
+
+def stack_hide(cid):
+    return ("""p.id NOT IN (SELECT sp.photo_id FROM stack_photos sp JOIN stacks s ON s.id=sp.stack_id
+               WHERE s.collection_id=? AND sp.photo_id <> s.cover_id AND EXISTS (SELECT 1 FROM collection_photos c
+               WHERE c.collection_id=s.collection_id AND c.photo_id=s.cover_id))""", [cid])
+
+
+def stack_badges(cid, ids):
+    """Copertine della pagina -> {id della pila, numero di foto (copertina compresa)}."""
+    if not ids:
+        return {}
+    out = {}
+    q = ",".join(map(str, ids))
+    for r in cat.db.execute(f"""SELECT s.id, s.cover_id, (SELECT count(*) FROM stack_photos sp
+                                 JOIN collection_photos c ON c.photo_id=sp.photo_id AND c.collection_id=s.collection_id
+                                 WHERE sp.stack_id=s.id AND sp.photo_id <> s.cover_id) AS n
+                                FROM stacks s WHERE s.collection_id=? AND s.cover_id IN ({q})""", (cid,)):
+        if r["n"]:
+            out[r["cover_id"]] = {"id": r["id"], "n": r["n"] + 1}
+    return out
+
+
+def stack_info(sid):
+    s = cat.db.execute("SELECT * FROM stacks WHERE id=?", (sid,)).fetchone()
+    if not s:
+        raise ValueError("Pila non trovata")
+    rows = cat.db.execute("""SELECT p.id, p.filename, p.ext FROM photos p WHERE p.id=? OR p.id IN
+                             (SELECT sp.photo_id FROM stack_photos sp JOIN collection_photos c
+                              ON c.photo_id=sp.photo_id AND c.collection_id=? WHERE sp.stack_id=?)
+                             ORDER BY p.id=? DESC, p.capture_time, p.filename""",
+                          (s["cover_id"], s["collection_id"], sid, s["cover_id"])).fetchall()
+    coll = cat.db.execute("SELECT name FROM collections WHERE id=?", (s["collection_id"],)).fetchone()
+    return {"id": sid, "collection": s["collection_id"], "collection_name": coll["name"] if coll else "",
+            "cover": s["cover_id"], "photos": [{"id": r["id"], "n": r["filename"], "x": r["ext"]} for r in rows]}
+
+
+def stack_create(cid, ids, cover):
+    ids = [int(i) for i in ids]
+    cover = int(cover) if cover else None
+    with cat.write_lock:
+        db = cat.db
+        inside = {r[0] for r in db.execute(
+            f"SELECT photo_id FROM collection_photos WHERE collection_id=? AND photo_id IN ({','.join('?' * len(ids))})",
+            [cid] + ids)}
+        ids = [i for i in ids if i in inside]
+        if len(ids) < 2:
+            raise ValueError("Per una pila servono almeno due foto della raccolta")
+        if cover not in ids:
+            cover = ids[0]
+        # pile già esistenti con queste foto: si uniscono a quella nuova
+        old = [r[0] for r in db.execute(
+            f"""SELECT DISTINCT s.id FROM stacks s LEFT JOIN stack_photos sp ON sp.stack_id=s.id
+                WHERE s.collection_id=? AND (s.cover_id IN ({','.join('?' * len(ids))})
+                OR sp.photo_id IN ({','.join('?' * len(ids))}))""", [cid] + ids + ids)]
+        members = set(ids)
+        for sid in old:
+            members |= {r[0] for r in db.execute("SELECT photo_id FROM stack_photos WHERE stack_id=?", (sid,))}
+            members.add(db.execute("SELECT cover_id FROM stacks WHERE id=?", (sid,)).fetchone()[0])
+            db.execute("DELETE FROM stack_photos WHERE stack_id=?", (sid,))
+            db.execute("DELETE FROM stacks WHERE id=?", (sid,))
+        sid = db.execute("INSERT INTO stacks(collection_id, cover_id, created_at) VALUES(?,?,?)",
+                         (cid, cover, now())).lastrowid
+        db.executemany("INSERT OR IGNORE INTO stack_photos VALUES(?,?)", [(sid, i) for i in members if i != cover])
+        db.commit()
+    return {"id": sid}
+
+
 def list_photos(q):
     where, args, order = build_query(q)
+    stack_cid = _stack_coll(q)
+    if stack_cid:
+        sw, sa = stack_hide(stack_cid)
+        where, args = f"({where}) AND {sw}", args + sa
     pairs = q.get("pairs") == "1"
     if pairs:
         base_where, base_args = where, args
@@ -561,6 +646,7 @@ def list_photos(q):
             FROM photos p WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?""",
         args + [limit, offset]).fetchall()
     partners = pair_partners(base_where, base_args, rows) if pairs else {}
+    badges = stack_badges(stack_cid, [r["id"] for r in rows]) if stack_cid else {}
     # prepara in background le miniature di questa pagina (quelle visibili arrivano comunque prima)
     thumbs.PREFETCH.add(cat, THUMB_DIR, [r["id"] for r in rows if not r["missing"]])
     # th: miniatura già pronta (1), impossibile (-1) o da creare (0): la griglia mostra
@@ -569,7 +655,8 @@ def list_photos(q):
         {"id": r["id"], "n": r["filename"], "x": r["ext"], "t": r["capture_time"],
          "r": r["rating"], "l": r["label"], "f": r["flag"], "m": r["missing"], "v": version(r),
          "o": r["rotation"] or 0, "th": thumbs.PREFETCH.state(THUMB_DIR, r["id"]),
-         **({"p": partners[r["id"]]} if r["id"] in partners else {})} for r in rows]}
+         **({"p": partners[r["id"]]} if r["id"] in partners else {}),
+         **({"s": badges[r["id"]]} if r["id"] in badges else {})} for r in rows]}
 
 
 def version(r):
@@ -791,6 +878,13 @@ def remove_from_collection(cid, ids):
     with cat.write_lock:
         cat.db.executemany("DELETE FROM collection_photos WHERE collection_id=? AND photo_id=?",
                            [(cid, i) for i in ids])
+        # pile: una copertina tolta scioglie la pila, un componente tolto ne esce
+        for i in ids:
+            for (sid,) in cat.db.execute("SELECT id FROM stacks WHERE collection_id=? AND cover_id=?", (cid, i)).fetchall():
+                cat.db.execute("DELETE FROM stack_photos WHERE stack_id=?", (sid,))
+                cat.db.execute("DELETE FROM stacks WHERE id=?", (sid,))
+            cat.db.execute("DELETE FROM stack_photos WHERE photo_id=? AND stack_id IN "
+                           "(SELECT id FROM stacks WHERE collection_id=?)", (i, cid))
         cat.db.commit()
 
 
@@ -903,6 +997,8 @@ def delete_collection(cid):
         ids = collection_descendants(cid)
         q = ",".join(map(str, ids))
         cat.db.execute(f"DELETE FROM collection_photos WHERE collection_id IN ({q})")
+        cat.db.execute(f"DELETE FROM stack_photos WHERE stack_id IN (SELECT id FROM stacks WHERE collection_id IN ({q}))")
+        cat.db.execute(f"DELETE FROM stacks WHERE collection_id IN ({q})")
         cat.db.execute(f"DELETE FROM collections WHERE id IN ({q})")
         cat.db.commit()
 
@@ -1044,6 +1140,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(gps_points(q))
             if u.path == "/api/photos":
                 return self.send_json(list_photos(q))
+            if parts[:2] == ["api", "stacks"] and len(parts) == 3:
+                return self.send_json(stack_info(int(parts[2])))
             if parts[:2] == ["api", "photo"] and len(parts) == 3:
                 d = photo_detail(int(parts[2]))
                 return self.send_json(d) if d else self.not_found()
@@ -1175,6 +1273,26 @@ class Handler(BaseHTTPRequestHandler):
                         if parent and int(parent) in collection_descendants(cid):
                             raise ValueError("Non puoi spostare un set dentro sé stesso")
                         db.execute("UPDATE collections SET parent_id=? WHERE id=?", (parent, cid))
+                    db.commit()
+                return None
+        if route == "stacks/create":
+            return stack_create(int(body["collection"]), body.get("ids", []), body.get("cover"))
+        if parts[1] == "stacks" and len(parts) == 4:
+            sid, action = int(parts[2]), parts[3]
+            if action == "cover":
+                with cat.write_lock:
+                    s = db.execute("SELECT cover_id FROM stacks WHERE id=?", (sid,)).fetchone()
+                    new = int(body["cover"])
+                    if s and new != s["cover_id"]:
+                        db.execute("DELETE FROM stack_photos WHERE stack_id=? AND photo_id=?", (sid, new))
+                        db.execute("INSERT OR IGNORE INTO stack_photos VALUES(?,?)", (sid, s["cover_id"]))
+                        db.execute("UPDATE stacks SET cover_id=? WHERE id=?", (new, sid))
+                        db.commit()
+                return stack_info(sid)
+            if action == "dissolve":
+                with cat.write_lock:
+                    db.execute("DELETE FROM stack_photos WHERE stack_id=?", (sid,))
+                    db.execute("DELETE FROM stacks WHERE id=?", (sid,))
                     db.commit()
                 return None
         if route == "duplicates/find":

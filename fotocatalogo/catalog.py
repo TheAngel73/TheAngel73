@@ -58,6 +58,14 @@ CREATE TABLE IF NOT EXISTS photo_keywords(
   photo_id INTEGER NOT NULL, keyword_id INTEGER NOT NULL,
   PRIMARY KEY(photo_id, keyword_id)) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS ix_pk_kw ON photo_keywords(keyword_id);
+CREATE TABLE IF NOT EXISTS stacks(
+  id INTEGER PRIMARY KEY, collection_id INTEGER NOT NULL, cover_id INTEGER NOT NULL,
+  created_at TEXT);
+CREATE INDEX IF NOT EXISTS ix_stacks_coll ON stacks(collection_id, cover_id);
+CREATE TABLE IF NOT EXISTS stack_photos(
+  stack_id INTEGER NOT NULL, photo_id INTEGER NOT NULL,
+  PRIMARY KEY(stack_id, photo_id)) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS ix_sp_photo ON stack_photos(photo_id);
 CREATE TABLE IF NOT EXISTS dir_state(
   root_id INTEGER NOT NULL, rel_path TEXT NOT NULL, mtime REAL,
   PRIMARY KEY(root_id, rel_path)) WITHOUT ROWID;

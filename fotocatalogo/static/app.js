@@ -95,6 +95,20 @@ const S = {
 // il server nasconde il RAW e lo allega al JPG (it.p = {id, x}). Le operazioni sulla
 // selezione valgono per entrambi (selIds), aprire ed esportare solo per quello mostrato.
 const PAIR = new Map();       // id del JPG -> {id, x} del RAW gemello
+// Pile (solo nelle raccolte): la copertina porta {id della pila, n foto}. Le informazioni
+// complete (componenti) si chiedono a /api/stacks/ID e restano in STACKINFO.
+const STACK = new Map(), STACKINFO = new Map();
+async function stackInfo(sid, fresh = false) {
+  if (!fresh && STACKINFO.has(sid)) return STACKINFO.get(sid);
+  const d = await api(`/api/stacks/${sid}`); STACKINFO.set(sid, d); return d;
+}
+const curCollection = () => { const [k, v] = S.scope.split(":"); return k === "collection" && S.tree.collections.find(c => c.id == v && !c.set); };
+// componenti delle pile selezionate (per togliere dalla raccolta la pila intera)
+async function withStacks(ids) {
+  const out = new Set(ids);
+  for (const id of ids) { const st = STACK.get(id); if (st) (await stackInfo(st.id)).photos.forEach(p => out.add(p.id)); }
+  return [...out];
+}
 const withPairs = ids => { const out = new Set(ids); for (const id of ids) { const p = PAIR.get(id); if (p) out.add(p.id); } return [...out]; };
 
 function params(extra = {}) {
@@ -119,7 +133,8 @@ async function loadPage(p) {
     const data = await api(`/api/photos?${params({offset: p * PAGE, limit: PAGE})}`);
     if (v !== S.version) return;
     S.total = data.total;
-    for (const it of data.items) { VERS.set(it.id, it.v); if (it.p) PAIR.set(it.id, it.p); else PAIR.delete(it.id); }
+    for (const it of data.items) { VERS.set(it.id, it.v); if (it.p) PAIR.set(it.id, it.p); else PAIR.delete(it.id);
+      if (it.s) STACK.set(it.id, it.s); else STACK.delete(it.id); }
     S.pages.set(p, data.items);
     $("#view-count").textContent = `· ${data.total.toLocaleString("it-IT")} ${S.scope === "video" ? "video" : "foto"}`;
     layout();
@@ -129,7 +144,7 @@ async function loadPage(p) {
 
 async function reload(keepScroll = false) {
   S.version++;
-  S.pages.clear(); S.loading.clear();
+  S.pages.clear(); S.loading.clear(); STACKINFO.clear();
   for (const el of cells.values()) dropCell(el);
   cells.clear();
   if (!keepScroll) { S.sel.clear(); S.cursor = S.anchor = -1; scroller.scrollTop = 0; }
@@ -255,7 +270,7 @@ function makeCell(it, i) {
   const pending = it.th === 0 && !it.m;          // miniatura in preparazione (vedi wantThumbs)
   el.innerHTML = `<div class="im">${pending ? `<span class="ph wait">${esc(it.x || "")}</span>` : `<img loading="lazy" decoding="async" alt="" src="${thumbURL(it.id)}">`}</div>
     ${ft && ft[0] !== "video" ? `<span class="ftype ft-${ft[0]}" title="${ft[1]}"></span>` : ""}
-    <div class="tl${ft && ft[0] !== "video" ? " after-tri" : ""}">${ft && ft[0] === "video" ? `<span class="vbadge" title="${ft[1]}">▶ ${esc(it.x.toUpperCase())}</span>` : ""}${it.m ? '<span class="miss" title="File non trovato">⚠ mancante</span>' : ""}</div>
+    <div class="tl${ft && ft[0] !== "video" ? " after-tri" : ""}">${it.s ? `<span class="sbadge" title="Pila di ${it.s.n} foto">${ICON.stack}${it.s.n}</span>` : ""}${S.stackView && S.scope === "stack:" + S.stackView.id && it.id === S.stackView.cover ? `<span class="sbadge cover">Copertina</span>` : ""}${ft && ft[0] === "video" ? `<span class="vbadge" title="${ft[1]}">▶ ${esc(it.x.toUpperCase())}</span>` : ""}${it.m ? '<span class="miss" title="File non trovato">⚠ mancante</span>' : ""}</div>
     ${it.f === 1 ? `<span class="flag" title="Scelta">${ICON.flagOn}</span>` : ""}
     <div class="cap"${it.l ? ` title="Etichetta ${LABELS[it.l] || ""}"` : ""}>${capName(it.n)}${capExt(it.n)}${it.p ? `<span class="ext alt" title="Anche in ${esc(it.p.x.toUpperCase())} con lo stesso nome">${esc(it.p.x.toUpperCase())}</span>` : ""}</div>`;
   const img = el.querySelector("img");
@@ -390,6 +405,7 @@ const ICON = {
   rotr: svg('<path d="M12.8 7.4A5 5 0 1 0 11.4 11.6"/><path d="M13 3.8v3.8H9.2"/>'),
   sync: svg('<path d="M12.9 6.4A5 5 0 0 0 3.6 5.3M3.1 9.6a5 5 0 0 0 9.3 1.1"/><path d="M3.4 2.8v2.7h2.7M12.6 13.2v-2.7H9.9"/>'),
   flag: svg('<path d="M4 13.5V2.8M4 3.2h7.5l-1.6 2.6 1.6 2.6H4"/>', "flag"),
+  stack: svg('<rect x="3" y="5.5" width="8.5" height="8" rx="1.2"/><path d="M5.5 3.5h7a1 1 0 0 1 1 1v6.5"/>', "stack"),
   flagOn: svg('<path d="M4 13.5V2.8"/><path d="M4 3.2h7.5l-1.6 2.6 1.6 2.6H4z" fill="currentColor"/>', "flag"),
   x: svg('<path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/>'),
   check: svg('<path d="M3.5 8.4l3 3 6-6.4"/>'),
@@ -423,6 +439,9 @@ async function loadTree() {
 function setScope(scope) {
   S.scope = scope; store.set("scope", scope);
   $("#view-title").textContent = scopeTitle(scope);
+  const back = $("#stack-back"), sv = scope.startsWith("stack:") && S.stackView;
+  back.hidden = !sv;
+  if (sv) back.innerHTML = `‹ ${esc(sv.collection_name)}`;
   $("#btn-convert-all").hidden = scope !== "toconvert";
   $("#btn-remove-missing").hidden = scope !== "missing";
   $("#btn-rename-all").hidden = scope !== "torename";
@@ -446,8 +465,11 @@ async function keepSelection(keep) {
   if (v !== S.version) return;
   ensureVisible(first); selChanged();
 }
+// torna alla raccolta con la copertina selezionata (keepSelection fa il resto)
+$("#stack-back").onclick = () => { const sv = S.stackView; if (!sv) return; S.sel.clear(); S.sel.add(sv.cover); setScope("collection:" + sv.collection); };
 function scopeTitle(scope) {
   const [k, v] = scope.split(":"); const t = S.tree; if (!t) return "";
+  if (k === "stack") { const d = S.stackView; return d && d.id == v ? `Pila: ${d.photos.find(p => p.id === d.cover)?.n || ""}` : "Pila"; }
   const fixed = {all: "Tutte le foto", nocoll: "Foto senza raccolta", toconvert: "Da convertire (non DNG, JPEG, HEIC, PSD o video)", video: "Video", torename: "Da rinominare (nomi della fotocamera)", rejected: "Scartate (bandierina ✕), in tutto il catalogo", missing: "File mancanti", recent: "Importazione più recente"};
   if (fixed[k]) return fixed[k];
   if (k === "collection") { const c = t.collections.find(c => c.id == v); return c ? (c.set ? "Set: " : "Raccolta: ") + c.name : "?"; }
@@ -707,9 +729,11 @@ async function removeFromCurrentCollection() {
   const [k, v] = S.scope.split(":");
   const c = k === "collection" && S.tree.collections.find(c => c.id == v);
   if (!c || c.set || !S.sel.size) return;
-  const f = await dialog("Togli dalla raccolta", `<p>Togliere ${S.sel.size} foto dalla raccolta «${esc(c.name)}»?</p><p>I file non vengono toccati.</p>`, "Togli");
+  const stacks = [...S.sel].filter(id => STACK.has(id)).length;
+  const f = await dialog("Togli dalla raccolta", `<p>Togliere ${S.sel.size} foto dalla raccolta «${esc(c.name)}»?</p>
+    ${stacks ? `<p>${stacks === 1 ? "La pila selezionata esce" : `Le ${stacks} pile selezionate escono`} dalla raccolta con tutte le sue foto.</p>` : ""}<p>I file non vengono toccati.</p>`, "Togli");
   if (!f) return;
-  await safe(async () => { await api(`/api/collections/${c.id}/remove`, {ids: selIds()}); await loadTree(); reload(true); S.sel.clear(); selChanged(); });
+  await safe(async () => { await api(`/api/collections/${c.id}/remove`, {ids: await withStacks(selIds())}); await loadTree(); reload(true); S.sel.clear(); selChanged(); });
 }
 
 // ================================================================ pannello info
@@ -734,6 +758,7 @@ async function showInfo(refresh = false) {
     <button class="path" data-act="copy-path" title="${esc(d.path)}
 Clic per copiare il percorso completo">${ICON.folder}<span>${esc(shortPath(d.path))}</span>${ICON.copy}</button>
     ${pairRow(id)}
+    ${STACK.get(id) ? `<div class="stackbar" data-stack="${STACK.get(id).id}"></div>` : ""}
     ${rateBars(d.rating, d.label, d.flag)}
     ${actionRows(true)}
     <h4>Raccolte (${d.collections.length})</h4>
@@ -756,8 +781,17 @@ Clic per copiare il percorso completo">${ICON.folder}<span>${esc(shortPath(d.pat
       <tr><td>In catalogo dal</td><td>${fmtDate(d.added_at)}</td></tr>
       ${d.missing ? `<tr><td>Stato</td><td style="color:var(--red)">File non trovato</td></tr>` : ""}
     </table>`;
+  fillStackRow(box);
 }
 
+// pila: miniature dei componenti (clic: apri in Photoshop) e «Mostra le foto della pila»
+async function fillStackRow(box) {
+  const el = box.querySelector(".stackbar"); if (!el) return;
+  const d = await stackInfo(+el.dataset.stack).catch(() => null); if (!d) return;
+  el.innerHTML = `<div class="sb-head">${ICON.stack}<span>Pila di ${d.photos.length} foto</span>
+      <button class="link" data-stack-open="${d.id}">Mostra le foto della pila</button></div>
+    <div class="sb-thumbs">${d.photos.map(p => `<button data-ps="${p.id}" class="${p.id === d.cover ? "cover" : ""}" title="${esc(p.n)}${p.id === d.cover ? " (copertina)" : ""} — clic: apri in Photoshop"><img src="${thumbURL(p.id)}" alt="" onerror="this.remove()"></button>`).join("")}</div>`;
+}
 // gemello RAW di un JPG: si apre a parte (le altre operazioni valgono per tutti e due)
 function pairRow(id) {
   const p = PAIR.get(id); if (!p) return "";
@@ -828,6 +862,8 @@ function showMulti(box) {
 }
 
 $("#info").addEventListener("click", async e => {
+  const so = e.target.closest("[data-stack-open],[data-ps]");
+  if (so) { e.preventDefault(); return so.dataset.stackOpen ? enterStack(+so.dataset.stackOpen) : safe(() => api("/api/open", {ids: [+so.dataset.ps], how: "photoshop"})); }
   const t = e.target.closest("[data-open-pair],[data-rate],[data-flag],[data-label],[data-open],[data-act],[data-uncoll],[data-unkw],[data-goto],[data-rot]");
   if (!t) return;
   e.preventDefault();
@@ -864,17 +900,21 @@ const L = {i: -1, id: null, fitW: 0, fitH: 0, bx: 0, by: 0, z: 1, tx: 0, ty: 0, 
 const stage = $("#loupe-stage"), limg = $("#loupe-img");
 let loupeIdx = -1;
 
-// raw = true: mostra il RAW gemello invece del JPG (pulsante «DNG» o tasto V)
-function openLoupe(i, raw = false) {
+// alt = {id, n}: mostra un'altra foto al posto di quella della griglia: il RAW gemello
+// (pulsante JPG/DNG o tasto V) o un componente della pila (miniature nella barra)
+const pairAlt = it => it.p ? {id: it.p.id, n: splitName(it.n)[0] + "." + it.p.x} : null;
+function openLoupe(i, alt = null) {
   const it = itemAt(i); if (!it) return;
-  loupeIdx = i; S.cursor = i; S.sel.clear(); S.sel.add(it.id); selChanged();
-  raw = raw && !!it.p;
-  const showId = raw ? it.p.id : it.id;
-  const showName = raw ? splitName(it.n)[0] + "." + it.p.x : it.n;
+  if (loupeIdx !== i || $("#loupe").hidden) { loupeIdx = i; S.cursor = i; S.sel.clear(); S.sel.add(it.id); selChanged(); }
+  loupeIdx = i;
+  const showId = alt ? alt.id : it.id;
+  const showName = alt ? alt.n : it.n;
+  const raw = !!(alt && it.p && alt.id === it.p.id);
   const pb = $("#loupe-pair");
   pb.hidden = !it.p;
   if (it.p) pb.innerHTML = `<span class="${raw ? "" : "on"}">${esc(it.x.toUpperCase())}</span><span class="${raw ? "on" : ""}">${esc(it.p.x.toUpperCase())}</span>`;
   L.raw = raw;
+  loupeStackRow(it, showId);
   Object.assign(L, {i, id: showId, z: 1, tx: 0, ty: 0, natW: 0, full: "no", video: isVideo(it.x)});
   stopVideo();
   limg.hidden = L.video;
@@ -1074,7 +1114,23 @@ async function loupeStep(d) {
   if (!itemAt(i)) await loadPage(Math.floor(i / PAGE));
   ensureVisible(i); openLoupe(i);
 }
-$("#loupe-pair").onclick = e => { e.currentTarget.blur(); openLoupe(loupeIdx, !L.raw); };
+$("#loupe-pair").onclick = e => { e.currentTarget.blur(); const it = itemAt(loupeIdx); openLoupe(loupeIdx, L.raw ? null : pairAlt(it)); };
+// miniature della pila nella barra della vista ingrandita
+async function loupeStackRow(it, showId) {
+  const row = $("#loupe-stack");
+  if (!it.s) { row.hidden = true; row.innerHTML = ""; return; }
+  const d = await stackInfo(it.s.id).catch(() => null);
+  if (!d || itemAt(loupeIdx) !== it) return;
+  row.hidden = false;
+  row.innerHTML = d.photos.map(p => `<button data-alt="${p.id}" class="${p.id === showId ? "on" : ""}${p.id === d.cover ? " cover" : ""}" title="${esc(p.n)}"><img src="${thumbURL(p.id)}" alt=""></button>`).join("");
+}
+$("#loupe-stack").addEventListener("mousedown", e => e.preventDefault());
+$("#loupe-stack").addEventListener("click", e => {
+  const b = e.target.closest("[data-alt]"); if (!b) return;
+  const it = itemAt(loupeIdx), d = it && it.s && STACKINFO.get(it.s.id); if (!d) return;
+  const p = d.photos.find(p => p.id === +b.dataset.alt);
+  openLoupe(loupeIdx, p.id === it.id ? null : {id: p.id, n: p.n});
+});
 $("#loupe-prev").onclick = () => loupeStep(-1);
 $("#loupe-next").onclick = () => loupeStep(1);
 
@@ -1146,13 +1202,13 @@ document.addEventListener("keydown", async e => {
   if (loupe && !mod && !L.video) {
     const kz = e.key.toLowerCase();
     if (kz === "z") { e.preventDefault(); return loupeToggle(stage.clientWidth / 2, stage.clientHeight / 2); }
-    if (kz === "v" && itemAt(loupeIdx)?.p) { e.preventDefault(); return openLoupe(loupeIdx, !L.raw); }
+    if (kz === "v" && itemAt(loupeIdx)?.p) { e.preventDefault(); return openLoupe(loupeIdx, L.raw ? null : pairAlt(itemAt(loupeIdx))); }
     if (e.key === "+" || e.key === "=") { e.preventDefault(); return loupeKeyZoom(1.5); }
     if (e.key === "-") { e.preventDefault(); return loupeKeyZoom(1 / 1.5); }
   }
   if (loupe && !mod && (e.key === "ArrowRight" || e.key === "ArrowLeft")) { e.preventDefault(); return loupeStep(e.key === "ArrowRight" ? 1 : -1); }
   const shortcut = mod && (e.shiftKey && e.key.toLowerCase() === "e" ? "exportSel" :
-    {a: "selectAll", e: "photoshop", r: "finder", k: "keywords", d: "selectNone", backspace: "deleteFiles",
+    {a: "selectAll", e: "photoshop", r: "finder", k: "keywords", d: "selectNone", backspace: "deleteFiles", g: "stack",
      "[": "rotateLeft", "]": "rotateRight", arrowleft: "rotateLeft", arrowright: "rotateRight"}[e.key.toLowerCase()]);
   // nell'app per Mac queste scorciatoie arrivano dalla barra dei menu
   if (shortcut && !NATIVE) { e.preventDefault(); return COMMANDS[shortcut](); }
@@ -1325,6 +1381,43 @@ if (NATIVE) document.documentElement.classList.add("native");
 const selIds = () => withPairs([...S.sel]);     // con i RAW gemelli
 const shownIds = () => [...S.sel];              // solo le foto mostrate (aprire, esportare)
 const needSel = fn => () => S.sel.size ? fn() : toast("Seleziona prima una o più foto");
+// pila dalle foto selezionate nella raccolta aperta; copertina: il JPG (o quella sotto il cursore)
+async function createStack() {
+  const c = curCollection();
+  if (!c) return toast("Le pile si creano dentro una raccolta");
+  const ids = [...S.sel];
+  if (ids.length < 2) return toast("Seleziona almeno due foto: il JPG del montaggio e le foto di partenza");
+  const items = [];
+  for (const pg of S.pages.values()) for (const it of pg) if (S.sel.has(it.id)) items.push(it);
+  const cur = itemAt(S.cursor);
+  const jpgs = items.filter(it => /^jpe?g$/i.test(it.x || ""));
+  const cover = cur && S.sel.has(cur.id) && (jpgs.length !== 1 || jpgs[0].id === cur.id) ? cur.id : (jpgs[0] || items[0] || {id: ids[0]}).id;
+  // entrano anche i RAW gemelli e i componenti di pile già esistenti
+  const all = await withStacks(withPairs(ids));
+  await safe(async () => {
+    await api("/api/stacks/create", {collection: c.id, ids: all, cover});
+    S.sel.clear(); S.sel.add(cover); await reload(true); selChanged();
+    toast(`Pila di ${all.length} foto creata`);
+  });
+}
+async function stackAction(kind, sid, cover) {
+  await safe(async () => {
+    if (kind === "dissolve") { await api(`/api/stacks/${sid}/dissolve`, {}); toast("Pila sciolta"); }
+    if (kind === "cover") { await api(`/api/stacks/${sid}/cover`, {cover}); toast("Copertina cambiata"); }
+    STACKINFO.delete(sid);
+    if (S.scope === "stack:" + sid) {
+      if (kind === "dissolve") return setScope("collection:" + S.stackView.collection);
+      return enterStack(sid);
+    }
+    if (kind === "cover") { S.sel.clear(); S.sel.add(cover); }
+    await reload(true); selChanged();
+  });
+}
+// «Mostra le foto della pila»: la pila come una piccola raccolta, con «← Torna a …»
+async function enterStack(sid) {
+  const d = await safe(() => stackInfo(sid, true)); if (!d) return;
+  S.stackView = d; setScope("stack:" + sid);
+}
 const openWith = how => needSel(() => safe(() => api("/api/open", {ids: shownIds(), how})));
 
 const COMMANDS = {
@@ -1334,6 +1427,7 @@ const COMMANDS = {
     toast("Generazione anteprime avviata in background"); pollJobs();
   }),
   newColl: () => newCollection(false, selIds()), newSet: () => newCollection(true),
+  stack: () => createStack(),
   selectAll: () => {
     const a = document.activeElement;
     if (a && a.matches("input, textarea")) return a.select();
@@ -1537,6 +1631,11 @@ async function photoMenu() {
     recent.length && {label: "Aggiungi a raccolta recente", sub: recent.map(c => ({label: c.name, run: () => addToCollection(c.id, selIds())}))},
     {label: `Nuova raccolta con ${one ? "questa foto" : "queste foto"}…`, run: () => newCollection(false, selIds())},
     cur && {label: `Togli da «${cur.name}»`, key: "⌫", run: COMMANDS.removeFromColl},
+    cur && n > 1 && {label: "Crea pila", key: "⌘G", run: createStack},
+    cur && one && STACK.get([...S.sel][0]) && {label: "Mostra le foto della pila", run: () => enterStack(STACK.get([...S.sel][0]).id)},
+    cur && one && STACK.get([...S.sel][0]) && {label: "Sciogli pila", run: () => stackAction("dissolve", STACK.get([...S.sel][0]).id)},
+    k === "stack" && one && S.stackView && S.stackView.cover !== [...S.sel][0] && {label: "Usa come copertina della pila", run: () => stackAction("cover", S.stackView.id, [...S.sel][0])},
+    k === "stack" && S.stackView && {label: "Sciogli pila", run: () => stackAction("dissolve", S.stackView.id)},
     d && d.collections.length && {label: `Raccolte di questa foto (${d.collections.length})`, sub: d.collections.map(c => ({label: c.name, run: () => setScope("collection:" + c.id)}))},
     "-",
     {label: "Etichetta colore", sub: [...Object.entries(LABELS).map(([lk, name], i) => ({label: name, swatch: lk, key: i < 4 ? String(6 + i) : "", checked: d && d.label === lk, run: () => setMeta({label: lk})})),
@@ -2524,6 +2623,7 @@ async function onJobDone(j) {
   document.title = CAT.name;
   updateCatalogButton();
   S.scope = store.get("scope", "all");
+  if (S.scope.startsWith("stack:")) S.scope = "all";        // la vista di una pila non si riapre all'avvio
   S.expanded = new Set(store.get("expanded", []));
   $("#zoom").value = store.get("zoom", 180);
   for (const j of await api("/api/jobs").catch(() => [])) if (j.status !== "running") seenDone.add(j.id);

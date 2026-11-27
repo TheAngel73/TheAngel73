@@ -255,6 +255,15 @@ sincronizzazione rapida). Le colonne nuove si aggiungono con `ALTER TABLE` in
   Finder, esportazione). Rinomina con un clic: `rename/one` con `with` rinomina la coppia (il `.xmp`
   segue). Vista ingrandita: `openLoupe(i, raw)`, tasto V. Le cifre nella barra laterale contano
   ancora tutti i file.
+- **Pile** (solo nelle raccolte, non nei set): tabelle `stacks` (raccolta, copertina) e
+  `stack_photos` (componenti). `list_photos` con `scope=collection:N` aggiunge `stack_hide` (nasconde i
+  componenti delle pile la cui copertina è nella raccolta) e `stack_badges` (`it.s = {id, n}`). Una pila
+  vale finché la copertina è nella raccolta; i componenti contano solo se sono ancora nella raccolta.
+  `scope=stack:N` = copertina + componenti («Mostra le foto della pila», `enterStack`, `#stack-back`).
+  API: `stacks/create` (unisce pile esistenti), `stacks/N/cover`, `stacks/N/dissolve`, `GET stacks/N`.
+  `remove_from_collection` scioglie la pila se esce la copertina; l'interfaccia toglie la pila intera
+  (`withStacks`). Etichette, bandierine ecc. valgono solo per la copertina (come Lightroom con la pila
+  chiusa). Vista ingrandita: `openLoupe(i, alt)` con `alt = {id, n}` (RAW gemello o componente).
 - **Lavori in background**: `start_job`, con avanzamento in `/api/jobs`.
   `job.cancellable` mostra «Interrompi»; `job.quick` (sincronizzazione rapida) si
   ferma da solo al cambio di catalogo. L'interfaccia reagisce ai risultati in

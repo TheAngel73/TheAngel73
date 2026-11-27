@@ -631,6 +631,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         photo.addItem(.separator())
         cmd(photo, "Aggiungi a raccolta…", "addToColl")
         cmd(photo, "Togli dalla raccolta corrente", "removeFromColl")
+        cmd(photo, "Crea pila", "stack", "g")
         cmd(photo, "Aggiungi parole chiave…", "keywords", "k")
         photo.addItem(.separator())
         photo.addItem(.separator())
