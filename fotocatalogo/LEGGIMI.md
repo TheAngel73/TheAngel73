@@ -25,12 +25,31 @@ sposta o elimina solo quando lo chiedi tu, sempre con una conferma. I cataloghi 
 
 ## Requisiti
 
+- Un Mac con processore Apple (M1 o successivi) e macOS 12.3 o più recente.
+- Il NAS montato nel Finder (di solito compare in `/Volumes/NomeCartella`).
+- Solo per costruire l'app da sé con `Crea app.command`: Python 3 e gli strumenti per
+  sviluppatori (vedi sotto). L'app scaricata da **Releases** li ha già dentro.
+
+## Installare l'app già pronta (anche su un altro Mac)
+
+1. Nella pagina **Releases** del repository su GitHub scarica
+   `Provinia-<versione>-AppleSilicon.zip` e aprilo: compare **Provinia.app**.
+2. Trascinala in **Applicazioni**.
+3. Al primo avvio macOS dice che non può verificare lo sviluppatore (l'app non è
+   firmata da Apple): chiudi l'avviso, apri **Impostazioni di Sistema › Privacy e
+   sicurezza**, scorri in fondo e fai clic su **Apri comunque** accanto a Provinia.
+   Serve solo la prima volta.
+
+Se anche dopo non parte, apri il Terminale e scrivi
+`xattr -dr com.apple.quarantine /Applications/Provinia.app`, poi riaprila.
+
+## Costruire l'app da sé
+
+Requisiti in più per questa strada:
+
 - macOS con Python 3. Apri il Terminale e scrivi `python3 --version`. Se il Mac
   propone di installare gli «strumenti di sviluppo da riga di comando», accetta:
   bastano quelli, non serve installare nient'altro.
-- Il NAS montato nel Finder (di solito compare in `/Volumes/NomeCartella`).
-
-## Installare l'app
 
 1. Scarica questa cartella `fotocatalogo` sul Mac (per esempio in Documenti).
 2. Fai doppio clic su **`Crea app.command`**. La prima volta macOS potrebbe bloccarlo:

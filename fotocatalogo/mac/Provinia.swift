@@ -340,9 +340,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             if alive { self.loadApp(); return }   // già acceso (es. avviato dal .command)
             guard let script = Bundle.main.resourceURL?.appendingPathComponent("app/server.py") else { return }
             let p = Process()
-            p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            p.arguments = ["python3", script.path, "--no-browser"]
             var env = ProcessInfo.processInfo.environment
+            // Python dentro l'app (versione da condividere, costruita su GitHub); altrimenti
+            // quello del Mac (app creata in locale con «Crea app»)
+            let pyDir = Bundle.main.resourceURL!.appendingPathComponent("python")
+            let bundled = pyDir.appendingPathComponent("bin/python3")
+            if FileManager.default.isExecutableFile(atPath: bundled.path) {
+                // scaricata da internet: si toglie la «quarantena» al Python interno, se si può
+                let x = Process()
+                x.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
+                x.arguments = ["-dr", "com.apple.quarantine", pyDir.path]
+                if (try? x.run()) != nil { x.waitUntilExit() }
+                p.executableURL = bundled
+                p.arguments = [script.path, "--no-browser"]
+                env["PYTHONNOUSERSITE"] = "1"
+            } else {
+                p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+                p.arguments = ["python3", script.path, "--no-browser"]
+            }
             env["PATH"] = "/usr/bin:/opt/homebrew/bin:/usr/local/bin:/bin:" + (env["PATH"] ?? "")
             env["FOTOCAT_PORT"] = String(port)
             env["PYTHONDONTWRITEBYTECODE"] = "1"

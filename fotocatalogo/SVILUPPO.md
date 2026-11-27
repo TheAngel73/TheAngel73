@@ -295,6 +295,22 @@ Finder), Adobe DNG Converter
 (`/Applications/Adobe DNG Converter.app/Contents/MacOS/Adobe DNG Converter -c -p1 -d <dir> -o <nome> <file>`),
 `swiftc` e `codesign` (costruzione dell'app).
 
+## App da condividere (costruita su GitHub)
+
+- `.github/workflows/provinia-mac.yml` (nella radice del repository): su un Mac di GitHub
+  (`macos-15`, processore Apple) scarica Python 3.12 da python-build-standalone
+  (`aarch64-apple-darwin-install_only_stripped`, l'ultima release), lancia
+  `crea_app.sh --senza-domande --python DIR`, prova il motore con quel Python, comprime con
+  `ditto` e allega `Provinia-<VERSIONE>-AppleSilicon.zip` alla release appena pubblicata
+  (o agli «Artifacts» se avviato a mano).
+- `crea_app.sh --python DIR` copia Python in `Contents/Resources/python` (senza test, idlelib,
+  tkinter…). `Provinia.swift` usa quel Python se c'è (togliendogli la quarantena con
+  `xattr`), altrimenti `python3` del Mac come prima. Le app create in locale restano piccole.
+- **Solo Apple Silicon** (`-target arm64-apple-macos12.3`), scelta dell'utente: niente Intel.
+- Firma solo locale (ad hoc): chi la scarica deve fare **Apri comunque** una volta. Con
+  l'Apple Developer Program si potrebbe firmare con Developer ID e notarizzare nello stesso
+  workflow (certificati nei segreti di GitHub).
+
 ## Versioni
 
 - Il numero mostrato in «Informazioni su Provinia» viene dal file `VERSIONE`
