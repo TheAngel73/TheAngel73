@@ -353,6 +353,10 @@ Finder), Adobe DNG Converter
   e pulsanti rivisti nel pannello informazioni, icone uniformi, pallino del NAS aggiornato
   da solo, dialoghi e scorciatoie rivisti, barra delle attività più chiara, pannello di
   destra allargabile, anteprima intera, un solo menu aperto, rifiniture della vista ingrandita.
+- **1.2**: striscia delle foto vicine, esportazione verso Lightroom, nome e formato sulle miniature,
+  stelle tolte, selezione che segue il cambio di vista, JPG + RAW insieme, pile nelle raccolte,
+  triangolini viola/blu, Annulla/Ripeti, app da condividere costruita su GitHub (con Python, solo
+  Apple Silicon) e allegata da sola alla release.
   Le modifiche successive si fanno su un ramo di sviluppo; quando l'utente ne approva
   una serie si aumenta `VERSIONE` (1.1, 1.2…) e si aggiunge un paragrafo a `NOVITA.md`
   (scritto per chi usa l'app, non per chi sviluppa).
@@ -396,7 +400,7 @@ le prove in Chromium non mostrano i comportamenti di WebKit (immagini non annull
 
 Poi (fine novembre 2026): cursore dell'esposizione, pannello sinistro allargabile, nuovo
 aspetto → **1.0** (tag `v1.0`). Revisioni con i plugin di design dell'utente (ui-review /
-ui-polish) → **1.1** (tag `v1.1`): vedi `NOVITA.md` e la sezione «Versioni».
+ui-polish) → **1.1** (tag `v1.1`). Poi → **1.2** (tag `v1.2`): vedi `NOVITA.md` e la sezione «Versioni».
 
 **Come si rilascia una versione** (la sessione non può creare tag né spingere su `main`):
 1. su richiesta dell'utente: `VERSIONE`, paragrafo in `NOVITA.md`, nota in «Versioni»;
@@ -405,7 +409,7 @@ ui-polish) → **1.1** (tag `v1.1`): vedi `NOVITA.md` e la sezione «Versioni».
    (se la crea prima, il tag punta al `main` vecchio: con la 1.0 è successo);
 4. controllare con `gh api …/git/refs/tags` che il tag coincida con `main`, poi
    riallineare il ramo di sviluppo (`git merge --ff-only origin/main`).
-`NOVITA.md` (non ancora in `main`) entrerà con la prossima richiesta di unione.
+Pubblicando la release, il workflow «Provinia per Mac» allega da solo lo zip dell'app.
 
 Lezioni: nella revisione grafica guardare sempre le schermate vere, anche dei dialoghi
 (il cursore della qualità era sbagliato solo lì); in WebKit le percentuali di altezza
