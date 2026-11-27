@@ -264,6 +264,15 @@ sincronizzazione rapida). Le colonne nuove si aggiungono con `ALTER TABLE` in
   `remove_from_collection` scioglie la pila se esce la copertina; l'interfaccia toglie la pila intera
   (`withStacks`). Etichette, bandierine ecc. valgono solo per la copertina (come Lightroom con la pila
   chiusa). Vista ingrandita: `openLoupe(i, alt)` con `alt = {id, n}` (RAW gemello o componente).
+- **Annulla (⌘Z)**, `annulla.py`: registro in memoria (ultime 50, si svuota cambiando catalogo).
+  Prima di ogni operazione annullabile `server.registra(etichetta, fn)` salva un'istantanea:
+  `foto_colonne` (etichetta/bandierina/valutazione, rotazione), `tabella` (righe che soddisfano una
+  condizione: si cancellano quelle attuali e si rimettono le vecchie: parole chiave, appartenenza alle
+  raccolte, raccolte), `pile`. Rinomina e spostamento registrano dopo il lavoro solo i file cambiati
+  davvero (`undo_files`); annullare lancia un lavoro che rinomina (a gruppi con lo stesso nome base,
+  così le coppie JPG + RAW restano insieme) o sposta di nuovo. `POST /api/undo`, `GET /api/undo`.
+  Nell'app ⌘Z arriva dal menu Modifica (`undoAction` in Swift): se si sta scrivendo in un campo
+  (`fc.undoHere()` falso) diventa l'annulla del testo. Niente «Ripeti» per ora.
 - **Lavori in background**: `start_job`, con avanzamento in `/api/jobs`.
   `job.cancellable` mostra «Interrompi»; `job.quick` (sincronizzazione rapida) si
   ferma da solo al cambio di catalogo. L'interfaccia reagisce ai risultati in

@@ -1210,6 +1210,7 @@ document.addEventListener("keydown", async e => {
   if (loupe && !mod && (e.key === "ArrowRight" || e.key === "ArrowLeft")) { e.preventDefault(); return loupeStep(e.key === "ArrowRight" ? 1 : -1); }
   const shortcut = mod && (e.shiftKey && e.key.toLowerCase() === "e" ? "exportSel" :
     {a: "selectAll", e: "photoshop", r: "finder", k: "keywords", d: "selectNone", backspace: "deleteFiles", g: "stack",
+     z: e.shiftKey ? null : "undo",
      "[": "rotateLeft", "]": "rotateRight", arrowleft: "rotateLeft", arrowright: "rotateRight"}[e.key.toLowerCase()]);
   // nell'app per Mac queste scorciatoie arrivano dalla barra dei menu
   if (shortcut && !NATIVE) { e.preventDefault(); return COMMANDS[shortcut](); }
@@ -1349,7 +1350,7 @@ function helpDialog() {
     ["Aprire e modificare", [
       ["⌘E", "Apri in Photoshop"], ["⌘R", "Mostra nel Finder"], ["⌘C", "Copia le foto (da incollare nel Finder o in un'altra app)"],
       ["⌘← · ⌘→", "Ruota a sinistra · a destra"], ["F2", "Rinomina"], ["⇧⌘E", "Esporta in JPEG…"],
-      ["⌘⌫", "Elimina il file dal disco…"], ["⌥⌘M", "Mappa dei luoghi"]]],
+      ["⌘⌫", "Elimina il file dal disco…"], ["⌥⌘M", "Mappa dei luoghi"], ["⌘Z", "Annulla l'ultima operazione"]]],
     ["Vista ingrandita", [
       ["Invio · Spazio", "Apre e chiude la vista ingrandita (anche doppio clic)"], ["Clic · Z", "Adatta allo schermo · 100%"],
       ["Rotellina · + −", "Zoom (trascina per spostarti)"], ["← →", "Foto precedente · successiva"], ["V", "JPG ↔ RAW con lo stesso nome"], ["Doppio clic · Esc", "Torna alla griglia"]]],
@@ -1382,6 +1383,24 @@ if (NATIVE) document.documentElement.classList.add("native");
 const selIds = () => withPairs([...S.sel]);     // con i RAW gemelli
 const shownIds = () => [...S.sel];              // solo le foto mostrate (aprire, esportare)
 const needSel = fn => () => S.sel.size ? fn() : toast("Seleziona prima una o più foto");
+// ⌘Z: annulla l'ultima operazione (il motore tiene le ultime 50, vedi annulla.py)
+let undoBusy = false;
+async function undoLast() {
+  if (undoBusy) return;
+  undoBusy = true;
+  try {
+    const r = await api("/api/undo", {});
+    if (!r.label) return toast("Niente da annullare");
+    toast(`Annullato: ${r.label}`);
+    if (r.job) return pollJobs();               // file: si rinominano o spostano di nuovo
+    STACKINFO.clear();
+    await loadTree();
+    if (S.scope.startsWith("collection:") && !curCollection()) setScope("all");
+    else if (S.scope.startsWith("stack:")) { const sv = S.stackView; setScope(sv ? "collection:" + sv.collection : "all"); }
+    else { await reload(true); showInfo(true); }
+  } catch (e) { toast(e.message, true); }
+  finally { undoBusy = false; }
+}
 // pila dalle foto selezionate nella raccolta aperta; copertina: il JPG (o quella sotto il cursore)
 async function createStack() {
   const c = curCollection();
@@ -1429,6 +1448,7 @@ const COMMANDS = {
   }),
   newColl: () => newCollection(false, selIds()), newSet: () => newCollection(true),
   stack: () => createStack(),
+  undo: () => undoLast(),
   selectAll: () => {
     const a = document.activeElement;
     if (a && a.matches("input, textarea")) return a.select();
@@ -1473,6 +1493,12 @@ window.fc = {
     // mentre si scrive, ⌘← ⌘→ ⌘⌫ agiscono sul testo, non sulle foto
     if (document.activeElement?.matches("input, textarea") && ["rotateLeft", "rotateRight", "deleteFiles"].includes(name)) return;
     COMMANDS[name]?.();
+  },
+  // ⌘Z dal menu dell'app: true se tocca a Provinia (non si sta scrivendo in un campo di testo)
+  undoHere() {
+    const a = document.activeElement;
+    if ($("#dlg").open || !$("#catscreen").hidden) return false;
+    return !(a && a.matches("input, textarea, select"));
   },
   // ⌘C dal menu dell'app: le foto selezionate da copiare, oppure null se si sta copiando del testo
   copyIds() {
@@ -2334,6 +2360,8 @@ function startMove(ids, fid) {
   return safe(async () => { await api("/api/move", {ids, folder: fid}); toast("Spostamento avviato"); pollJobs(); });
 }
 function fileOpSummary(r) {
+  if (r.annullata && !(r.saltate || []).length && !(r.errori || []).length)
+    return toast(r.moved ? "File riportati nelle cartelle di prima" : "Nomi di prima ripristinati");
   const msg = r.moved ? `Spostate ${r.spostate.toLocaleString("it-IT")} foto in «${r.dest}»` : `Rinominati ${r.rinominate.toLocaleString("it-IT")} file`;
   const rows = [...(r.saltate || []), ...(r.errori || [])];
   if (!rows.length && !r.interrotta) return toast(msg);

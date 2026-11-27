@@ -513,6 +513,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     @objc func reloadUI(_ sender: Any?) { startServer() }
 
     // ⌘C: se si sta scrivendo o è selezionato del testo copia il testo, altrimenti le foto
+    // ⌘Z: annulla l'ultima operazione di Provinia; mentre si scrive in un campo, il testo
+    @objc func undoAction(_ sender: Any?) {
+        webView.evaluateJavaScript("window.fc && fc.undoHere ? fc.undoHere() : false") { result, _ in
+            if (result as? Bool) == true {
+                self.webView.evaluateJavaScript("fc.cmd('undo')", completionHandler: nil)
+            } else {
+                NSApp.sendAction(Selector(("undo:")), to: nil, from: sender)
+            }
+        }
+    }
+
     @objc func copyAction(_ sender: Any?) {
         webView.evaluateJavaScript("window.fc && fc.copyIds ? fc.copyIds() : null") { result, _ in
             let ids = (result as? [Any])?.compactMap { ($0 as? NSNumber)?.intValue } ?? []
@@ -611,7 +622,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         cmd(lib, "Cambia percorso del NAS…", "relocate")
 
         let edit = submenu("Modifica")
-        sys(edit, "Annulla", Selector(("undo:")), "z")
+        sys(edit, "Annulla", #selector(undoAction(_:)), "z", target: self)
         sys(edit, "Ripeti", Selector(("redo:")), "z", [.command, .shift])
         edit.addItem(.separator())
         sys(edit, "Taglia", #selector(NSText.cut(_:)), "x")
