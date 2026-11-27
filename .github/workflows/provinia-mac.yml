@@ -40,6 +40,8 @@ jobs:
       - name: Prova il motore con il Python dell'app
         run: |
           APP=fotocatalogo/build/Provinia.app
+          # come nell'app: niente file .pyc scritti dentro l'app (cambierebbero la firma)
+          export PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1
           export FOTOCAT_DATA="$RUNNER_TEMP/dati" FOTOCAT_BASE="$RUNNER_TEMP/base" FOTOCAT_PORT=8799
           "$APP/Contents/Resources/python/bin/python3" "$APP/Contents/Resources/app/server.py" --no-browser &
           pid=$!
