@@ -266,7 +266,8 @@ function makeCell(it, i) {
   el.draggable = true;
   if (it.f === -1) { el.classList.add("rejected"); el.title = "Scartata"; }
   if (it.l) el.classList.add("lab", "lab-" + it.l);
-  const ft = fileType(it.x);
+  // triangolino: blu per le pile, viola per JPG + RAW con lo stesso nome, altrimenti il formato
+  const ft = it.s ? ["stack", `Pila di ${it.s.n} foto`] : it.p ? ["pair", `${(it.x || "").toUpperCase()} + ${it.p.x.toUpperCase()} con lo stesso nome`] : fileType(it.x);
   const pending = it.th === 0 && !it.m;          // miniatura in preparazione (vedi wantThumbs)
   el.innerHTML = `<div class="im">${pending ? `<span class="ph wait">${esc(it.x || "")}</span>` : `<img loading="lazy" decoding="async" alt="" src="${thumbURL(it.id)}">`}</div>
     ${ft && ft[0] !== "video" ? `<span class="ftype ft-${ft[0]}" title="${ft[1]}"></span>` : ""}

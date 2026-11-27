@@ -632,3 +632,5 @@ button.link:hover { text-decoration: underline; background: none; }
 #loupe-stack button.on { opacity: 1; outline-color: var(--accent); }
 #loupe-stack img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .cell .sbadge.cover { background: var(--accent); box-shadow: none; padding: 1px 6px; }
+.cell .ft-stack { border-top-color: #4a90e2; }
+.cell .ft-pair { border-top-color: #a371f7; }

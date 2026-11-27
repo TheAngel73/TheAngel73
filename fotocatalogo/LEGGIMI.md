@@ -285,7 +285,8 @@ successive, così scorrendo sono già pronte. Comandi e clic hanno sempre la pre
 ## Come leggere le miniature
 
 - **Triangolino in alto a sinistra**: verde = JPEG o HEIC, giallo = PSD, rosso = RAW proprietario
-  (ARW, NEF, CR2…) da convertire. I DNG non hanno il triangolino.
+  (ARW, NEF, CR2…) da convertire, **viola** = JPG + RAW con lo stesso nome, **blu** = pila (con il
+  numero di foto accanto). I DNG singoli non hanno il triangolino.
 - **Striscia colorata sotto la foto**: l'etichetta colore.
 - **▶ MOV / MP4…** in alto a sinistra: video. Si riproducono nella vista ingrandita
   (MP4, MOV, M4V); gli altri formati si aprono con l'app predefinita. Li trovi tutti in
