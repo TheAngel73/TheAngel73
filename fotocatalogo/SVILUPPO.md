@@ -264,15 +264,19 @@ sincronizzazione rapida). Le colonne nuove si aggiungono con `ALTER TABLE` in
   `remove_from_collection` scioglie la pila se esce la copertina; l'interfaccia toglie la pila intera
   (`withStacks`). Etichette, bandierine ecc. valgono solo per la copertina (come Lightroom con la pila
   chiusa). Vista ingrandita: `openLoupe(i, alt)` con `alt = {id, n}` (RAW gemello o componente).
-- **Annulla (⌘Z)**, `annulla.py`: registro in memoria (ultime 50, si svuota cambiando catalogo).
-  Prima di ogni operazione annullabile `server.registra(etichetta, fn)` salva un'istantanea:
+- **Annulla e Ripeti (⌘Z / ⇧⌘Z)**, `annulla.py`: registro in memoria (ultime 50, si svuota cambiando
+  catalogo; una nuova operazione svuota i «ripeti»). Ogni voce ha una funzione `fotografa()` che salva
+  lo stato di ciò che cambierà e restituisce `rimetti()`; `server.registra()` va chiamata **prima**
+  dell'operazione (o con `prima=` se è già fatta: raccolta nuova, file già spostati). Annullare
+  fotografa lo stato attuale (per ripetere) e rimette quello salvato; ripetere è simmetrico. Istantanee:
   `foto_colonne` (etichetta/bandierina/valutazione, rotazione), `tabella` (righe che soddisfano una
-  condizione: si cancellano quelle attuali e si rimettono le vecchie: parole chiave, appartenenza alle
-  raccolte, raccolte), `pile`. Rinomina e spostamento registrano dopo il lavoro solo i file cambiati
-  davvero (`undo_files`); annullare lancia un lavoro che rinomina (a gruppi con lo stesso nome base,
-  così le coppie JPG + RAW restano insieme) o sposta di nuovo. `POST /api/undo`, `GET /api/undo`.
-  Nell'app ⌘Z arriva dal menu Modifica (`undoAction` in Swift): se si sta scrivendo in un campo
-  (`fc.undoHere()` falso) diventa l'annulla del testo. Niente «Ripeti» per ora.
+  condizione: parole chiave, appartenenza alle raccolte, raccolte), `pile`, `file` (nomi o cartelle:
+  rimettere lancia un lavoro che rinomina, a gruppi con lo stesso nome base, o sposta). Ogni voce
+  ricorda `dove` (vista e foto): `api()` aggiunge `_scope` a ogni POST, `do_POST` lo mette in
+  `annulla.VISTA`; la vista di una pila diventa la sua raccolta. L'interfaccia torna lì e riseleziona
+  le foto (`undoRedo`). Nell'app ⌘Z/⇧⌘Z arrivano dal menu Modifica (`undoAction`/`redoAction`): se si
+  sta scrivendo in un campo (`fc.undoHere()` falso) restano l'annulla/ripeti del testo.
+  La navigazione tra cartelle e raccolte **non** entra nel registro (scelta discussa con l'utente).
 - **Lavori in background**: `start_job`, con avanzamento in `/api/jobs`.
   `job.cancellable` mostra «Interrompi»; `job.quick` (sincronizzazione rapida) si
   ferma da solo al cambio di catalogo. L'interfaccia reagisce ai risultati in

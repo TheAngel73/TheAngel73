@@ -894,14 +894,21 @@ def coll_name(cid):
     return r["name"] if r else "?"
 
 
-def registra(etichetta, fn):
-    annulla.REGISTRO.aggiungi(cat, etichetta, fn)
+def registra(etichetta, fotografa, ids=(), prima=None):
+    """Operazione annullabile: va chiamata prima di farla (o con `prima` se è già fatta).
+    Ricorda anche dove era l'interfaccia, per tornarci annullando."""
+    scope = getattr(annulla.VISTA, "scope", None) or "all"
+    if scope.startswith("stack:"):              # la vista di una pila: si torna alla sua raccolta
+        r = cat.db.execute("SELECT collection_id FROM stacks WHERE id=?", (int(scope[6:]),)).fetchone()
+        scope = f"collection:{r[0]}" if r else "all"
+    dove = {"scope": scope, "ids": [int(i) for i in list(ids)[:2000]]}
+    annulla.REGISTRO.aggiungi(cat, etichetta, fotografa, dove, prima)
 
 
 def set_meta(body):
     ids = ids_of(body)
     what = "Etichetta" if "label" in body else "Bandierina" if "flag" in body else "Valutazione"
-    registra(what, annulla.foto_colonne(cat, ids, ["rating", "label", "flag"]))
+    registra(what, annulla.foto_colonne(cat, ids, ["rating", "label", "flag"]), ids)
     sets, vals = [], []
     if "rating" in body:
         sets.append("rating=?")
@@ -922,7 +929,7 @@ def set_meta(body):
 def edit_keywords(body):
     ids = ids_of(body)
     registra("Parole chiave", annulla.insieme(cat, annulla.tabella(
-        cat, "photo_keywords", f"photo_id IN ({annulla._q(ids)})")))
+        "photo_keywords", f"photo_id IN ({annulla._q(ids)})")), ids)
     with cat.write_lock:
         db = cat.db
         for name in body.get("add", []):
@@ -938,15 +945,17 @@ def edit_keywords(body):
         db.commit()
 
 
-def undo_files(etichetta, prima, indice):
+def undo_files(etichetta, prima, indice, scope=None):
     """Dopo una rinomina (indice 1) o uno spostamento (0): registra come tornare indietro."""
     ch = annulla.cambiati(cat, prima, indice)
     if not ch:
         return
-    inv = annulla.rinomina_inversa if indice == 1 else annulla.sposta_inverso
-    c = cat
+    if scope:                                   # il lavoro gira in un altro thread
+        annulla.VISTA.scope = scope
+    stato = {pid: prima[pid] for pid in ch}
     registra(f"{etichetta} ({len(ch)} file)" if len(ch) > 1 else etichetta,
-             lambda: start_job(f"Annulla: {etichetta.lower()}", lambda job: inv(c, ch, gestione_file, job)))
+             annulla.file(cat, ch, indice, gestione_file, start_job), ch,
+             prima=annulla.rimetti_file(cat, stato, indice, gestione_file, start_job))
 
 
 def pick_path(kind):
@@ -1171,7 +1180,7 @@ class Handler(BaseHTTPRequestHandler):
                 d = photo_detail(int(parts[2]))
                 return self.send_json(d) if d else self.not_found()
             if u.path == "/api/undo":
-                return self.send_json({"label": annulla.REGISTRO.ultima(cat)})
+                return self.send_json(annulla.REGISTRO.stato(cat))
             if u.path == "/api/jobs":
                 # i lavori finiti bene spariscono da soli dopo un minuto; gli errori restano
                 now = time.time()
@@ -1249,6 +1258,8 @@ class Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         ln = int(self.headers.get("Content-Length") or 0)
         body = json.loads(self.rfile.read(ln) or b"{}") if ln else {}
+        # vista dell'interfaccia (per Annulla: tornare dove è stata fatta l'operazione)
+        annulla.VISTA.scope = body.pop("_scope", None) if isinstance(body, dict) else None
         parts = u.path.strip("/").split("/")
         try:
             if parts[:2] == ["api", "catalogs"] and len(parts) == 3:
@@ -1282,26 +1293,30 @@ class Handler(BaseHTTPRequestHandler):
                 db.commit()
             if body.get("ids"):
                 add_to_collection(cid, ids_of(body))
-            registra(f"{'Nuovo set' if body.get('set') else 'Nuova raccolta'} «{name}»", lambda: delete_collection(cid))
+            registra(f"{'Nuovo set' if body.get('set') else 'Nuova raccolta'} «{name}»",
+                     annulla.insieme(cat, annulla.tabella("collections", "id=?", (cid,)),
+                                     annulla.tabella("collection_photos", "collection_id=?", (cid,)),
+                                     annulla.pile([cid])),
+                     ids_of(body) if body.get("ids") else (), prima=lambda: delete_collection(cid))
             return {"id": cid}
         if parts[1] == "collections" and len(parts) == 4:
             cid, action = int(parts[2]), parts[3]
             if action in ("add", "remove"):
                 ids = ids_of(body)
                 registra(f"{'Aggiunta a' if action == 'add' else 'Tolte da'} «{coll_name(cid)}»", annulla.insieme(
-                    cat, annulla.tabella(cat, "collection_photos",
+                    cat, annulla.tabella("collection_photos",
                                          f"collection_id=? AND photo_id IN ({annulla._q(ids)})", (cid,)),
-                    annulla.pile(cat, [cid])))
+                    annulla.pile([cid])), ids)
             if action == "delete":
                 ids = collection_descendants(cid)
                 q = annulla._q(ids)
                 registra(f"Raccolta eliminata «{coll_name(cid)}»", annulla.insieme(
-                    cat, annulla.tabella(cat, "collections", f"id IN ({q})"),
-                    annulla.tabella(cat, "collection_photos", f"collection_id IN ({q})"),
-                    annulla.pile(cat, ids)))
+                    cat, annulla.tabella("collections", f"id IN ({q})"),
+                    annulla.tabella("collection_photos", f"collection_id IN ({q})"),
+                    annulla.pile(ids)))
             if action == "update":
                 registra(f"Modifica di «{coll_name(cid)}»", annulla.insieme(
-                    cat, annulla.tabella(cat, "collections", "id=?", (cid,))))
+                    cat, annulla.tabella("collections", "id=?", (cid,))))
             if action == "add":
                 return add_to_collection(cid, ids_of(body))
             if action == "remove":
@@ -1320,14 +1335,15 @@ class Handler(BaseHTTPRequestHandler):
                     db.commit()
                 return None
         if route == "stacks/create":
-            registra("Crea pila", annulla.insieme(cat, annulla.pile(cat, [int(body["collection"])])))
+            registra("Crea pila", annulla.insieme(cat, annulla.pile([int(body["collection"])])), body.get("ids", []))
             return stack_create(int(body["collection"]), body.get("ids", []), body.get("cover"))
         if parts[1] == "stacks" and len(parts) == 4:
             sid, action = int(parts[2]), parts[3]
             sc = db.execute("SELECT collection_id FROM stacks WHERE id=?", (sid,)).fetchone()
             if sc:
+                cov = db.execute("SELECT cover_id FROM stacks WHERE id=?", (sid,)).fetchone()[0]
                 registra("Copertina della pila" if action == "cover" else "Sciogli pila",
-                         annulla.insieme(cat, annulla.pile(cat, [sc[0]])))
+                         annulla.insieme(cat, annulla.pile([sc[0]])), [cov])
             if action == "cover":
                 with cat.write_lock:
                     s = db.execute("SELECT cover_id FROM stacks WHERE id=?", (sid,)).fetchone()
@@ -1344,13 +1360,12 @@ class Handler(BaseHTTPRequestHandler):
                     db.execute("DELETE FROM stacks WHERE id=?", (sid,))
                     db.commit()
                 return None
-        if route == "undo":
-            voce = annulla.REGISTRO.togli(cat)
+        if route in ("undo", "redo"):
+            voce, res = annulla.REGISTRO.esegui(cat, ripeti=route == "redo")
             if not voce:
                 return {"label": None}
-            etichetta, fn = voce
-            res = fn()
-            return {"label": etichetta, "job": res.as_dict() if isinstance(res, Job) else None}
+            return {"label": voce.etichetta, "where": voce.dove,
+                    "job": res.as_dict() if isinstance(res, Job) else None}
         if route == "duplicates/find":
             job = start_job("Ricerca duplicati", lambda job: gestione_file.find(cat, job))
             job.cancellable = True
@@ -1369,7 +1384,7 @@ class Handler(BaseHTTPRequestHandler):
             return remove_missing(ids_of(body) if "ids" in body else None)
         if route == "rotate":
             ids, step = ids_of(body), 90 if int(body.get("dir", 90)) > 0 else 270
-            registra("Rotazione", annulla.foto_colonne(cat, ids, ["rotation"]))
+            registra("Rotazione", annulla.foto_colonne(cat, ids, ["rotation"]), ids)
             with cat.write_lock:
                 db.executemany("""UPDATE photos SET rotation=(COALESCE(rotation,0)+?)%360
                                   WHERE id=? AND COALESCE(ext,'') NOT IN ({})""".format(
@@ -1431,12 +1446,12 @@ class Handler(BaseHTTPRequestHandler):
             return None
         if route == "move":
             ids, fid = ids_of(body), int(body["folder"])
-            def run_move(job, ids=ids, fid=fid):
+            def run_move(job, ids=ids, fid=fid, scope=getattr(annulla.VISTA, "scope", None)):
                 prima = annulla.stato_file(cat, ids)
                 try:
                     return gestione_file.move(cat, ids, fid, job)
                 finally:
-                    undo_files("Spostamento", prima, 0)
+                    undo_files("Spostamento", prima, 0, scope)
             job = start_job("Spostamento", run_move)
             job.cancellable = True
             return job.as_dict()
@@ -1446,12 +1461,12 @@ class Handler(BaseHTTPRequestHandler):
                     "skipped": skipped[:50], "conflicts": conflicts[:50], "nconflicts": len(conflicts)}
         if route == "rename":
             ids, opts = ids_of(body), body.get("options", {})
-            def run_rename(job, ids=ids, opts=opts):
+            def run_rename(job, ids=ids, opts=opts, scope=getattr(annulla.VISTA, "scope", None)):
                 prima = annulla.stato_file(cat, ids)
                 try:
                     return gestione_file.rename(cat, ids, opts, job)
                 finally:
-                    undo_files("Rinomina", prima, 1)
+                    undo_files("Rinomina", prima, 1, scope)
             return start_job("Rinomina", run_rename).as_dict()
         if parts[1] == "folders" and len(parts) == 4 and parts[3] in ("create", "rename", "delete"):
             fid = int(parts[2])

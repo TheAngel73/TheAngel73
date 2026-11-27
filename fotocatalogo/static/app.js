@@ -6,6 +6,8 @@ const LABELS = {red: "Rossa", yellow: "Gialla", green: "Verde", blue: "Blu", pur
 const PAGE = 300;
 
 async function api(url, body) {
+  // la vista attuale accompagna i comandi: Annulla ci riporta qui
+  if (body && typeof body === "object" && !Array.isArray(body) && typeof S !== "undefined") body = {...body, _scope: S.scope};
   const opt = body === undefined ? {} : {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)};
   const r = await fetch(url, opt);
   const data = await r.json().catch(() => ({}));
@@ -1210,7 +1212,7 @@ document.addEventListener("keydown", async e => {
   if (loupe && !mod && (e.key === "ArrowRight" || e.key === "ArrowLeft")) { e.preventDefault(); return loupeStep(e.key === "ArrowRight" ? 1 : -1); }
   const shortcut = mod && (e.shiftKey && e.key.toLowerCase() === "e" ? "exportSel" :
     {a: "selectAll", e: "photoshop", r: "finder", k: "keywords", d: "selectNone", backspace: "deleteFiles", g: "stack",
-     z: e.shiftKey ? null : "undo",
+     z: e.shiftKey ? "redo" : "undo",
      "[": "rotateLeft", "]": "rotateRight", arrowleft: "rotateLeft", arrowright: "rotateRight"}[e.key.toLowerCase()]);
   // nell'app per Mac queste scorciatoie arrivano dalla barra dei menu
   if (shortcut && !NATIVE) { e.preventDefault(); return COMMANDS[shortcut](); }
@@ -1350,7 +1352,7 @@ function helpDialog() {
     ["Aprire e modificare", [
       ["⌘E", "Apri in Photoshop"], ["⌘R", "Mostra nel Finder"], ["⌘C", "Copia le foto (da incollare nel Finder o in un'altra app)"],
       ["⌘← · ⌘→", "Ruota a sinistra · a destra"], ["F2", "Rinomina"], ["⇧⌘E", "Esporta in JPEG…"],
-      ["⌘⌫", "Elimina il file dal disco…"], ["⌥⌘M", "Mappa dei luoghi"], ["⌘Z", "Annulla l'ultima operazione"]]],
+      ["⌘⌫", "Elimina il file dal disco…"], ["⌥⌘M", "Mappa dei luoghi"], ["⌘Z · ⇧⌘Z", "Annulla · Ripeti"]]],
     ["Vista ingrandita", [
       ["Invio · Spazio", "Apre e chiude la vista ingrandita (anche doppio clic)"], ["Clic · Z", "Adatta allo schermo · 100%"],
       ["Rotellina · + −", "Zoom (trascina per spostarti)"], ["← →", "Foto precedente · successiva"], ["V", "JPG ↔ RAW con lo stesso nome"], ["Doppio clic · Esc", "Torna alla griglia"]]],
@@ -1383,21 +1385,28 @@ if (NATIVE) document.documentElement.classList.add("native");
 const selIds = () => withPairs([...S.sel]);     // con i RAW gemelli
 const shownIds = () => [...S.sel];              // solo le foto mostrate (aprire, esportare)
 const needSel = fn => () => S.sel.size ? fn() : toast("Seleziona prima una o più foto");
-// ⌘Z: annulla l'ultima operazione (il motore tiene le ultime 50, vedi annulla.py)
+// ⌘Z / ⇧⌘Z: annulla o ripete (il motore tiene le ultime 50, vedi annulla.py). Si torna nella
+// cartella o raccolta in cui era stata fatta l'operazione, con le foto interessate selezionate.
 let undoBusy = false;
-async function undoLast() {
+async function undoRedo(redo = false) {
   if (undoBusy) return;
   undoBusy = true;
   try {
-    const r = await api("/api/undo", {});
-    if (!r.label) return toast("Niente da annullare");
-    toast(`Annullato: ${r.label}`);
-    if (r.job) return pollJobs();               // file: si rinominano o spostano di nuovo
+    const r = await api(redo ? "/api/redo" : "/api/undo", {});
+    if (!r.label) return toast(redo ? "Niente da ripetere" : "Niente da annullare");
+    toast(`${redo ? "Ripetuto" : "Annullato"}: ${r.label}`);
     STACKINFO.clear();
+    if (r.job) pollJobs();                       // file: si rinominano o spostano di nuovo
     await loadTree();
-    if (S.scope.startsWith("collection:") && !curCollection()) setScope("all");
-    else if (S.scope.startsWith("stack:")) { const sv = S.stackView; setScope(sv ? "collection:" + sv.collection : "all"); }
-    else { await reload(true); showInfo(true); }
+    const w = r.where || {}, ids = (w.ids || []).filter(Boolean);
+    let scope = w.scope || S.scope;
+    const [k, v] = scope.split(":");
+    if (k === "collection" && !S.tree.collections.find(c => c.id == v)) scope = "all";      // raccolta sparita
+    if (k === "folder" && !S.tree.folders.find(f => f.id == v)) scope = "all";
+    if (scope !== S.scope || ids.length) {
+      S.sel.clear(); ids.forEach(id => S.sel.add(id));
+      setScope(scope);                           // keepSelection riseleziona le foto presenti
+    } else { await reload(true); showInfo(true); }
   } catch (e) { toast(e.message, true); }
   finally { undoBusy = false; }
 }
@@ -1448,7 +1457,7 @@ const COMMANDS = {
   }),
   newColl: () => newCollection(false, selIds()), newSet: () => newCollection(true),
   stack: () => createStack(),
-  undo: () => undoLast(),
+  undo: () => undoRedo(false), redo: () => undoRedo(true),
   selectAll: () => {
     const a = document.activeElement;
     if (a && a.matches("input, textarea")) return a.select();
@@ -2360,8 +2369,7 @@ function startMove(ids, fid) {
   return safe(async () => { await api("/api/move", {ids, folder: fid}); toast("Spostamento avviato"); pollJobs(); });
 }
 function fileOpSummary(r) {
-  if (r.annullata && !(r.saltate || []).length && !(r.errori || []).length)
-    return toast(r.moved ? "File riportati nelle cartelle di prima" : "Nomi di prima ripristinati");
+  if (r.annullata && !(r.saltate || []).length && !(r.errori || []).length) return;     // annulla/ripeti: basta l'avviso
   const msg = r.moved ? `Spostate ${r.spostate.toLocaleString("it-IT")} foto in «${r.dest}»` : `Rinominati ${r.rinominate.toLocaleString("it-IT")} file`;
   const rows = [...(r.saltate || []), ...(r.errori || [])];
   if (!rows.length && !r.interrotta) return toast(msg);

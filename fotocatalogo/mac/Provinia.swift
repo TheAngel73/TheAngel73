@@ -524,6 +524,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         }
     }
 
+    @objc func redoAction(_ sender: Any?) {
+        webView.evaluateJavaScript("window.fc && fc.undoHere ? fc.undoHere() : false") { result, _ in
+            if (result as? Bool) == true {
+                self.webView.evaluateJavaScript("fc.cmd('redo')", completionHandler: nil)
+            } else {
+                NSApp.sendAction(Selector(("redo:")), to: nil, from: sender)
+            }
+        }
+    }
+
     @objc func copyAction(_ sender: Any?) {
         webView.evaluateJavaScript("window.fc && fc.copyIds ? fc.copyIds() : null") { result, _ in
             let ids = (result as? [Any])?.compactMap { ($0 as? NSNumber)?.intValue } ?? []
@@ -623,7 +633,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
 
         let edit = submenu("Modifica")
         sys(edit, "Annulla", #selector(undoAction(_:)), "z", target: self)
-        sys(edit, "Ripeti", Selector(("redo:")), "z", [.command, .shift])
+        sys(edit, "Ripeti", #selector(redoAction(_:)), "z", [.command, .shift], target: self)
         edit.addItem(.separator())
         sys(edit, "Taglia", #selector(NSText.cut(_:)), "x")
         sys(edit, "Copia", #selector(copyAction(_:)), "c", target: self)
