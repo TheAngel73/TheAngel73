@@ -19,7 +19,7 @@ jobs:
   app:
     runs-on: macos-15          # Mac con processore Apple
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Scarica Python (python-build-standalone, 3.12)
         env:
