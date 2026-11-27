@@ -7,6 +7,7 @@ Solo libreria standard di Python: non serve installare nulla.
 import collections
 import json
 import os
+import re
 import zlib
 import select
 import signal
@@ -27,8 +28,9 @@ sys.path.insert(0, HERE)
 
 from catalog import EXIF_EXT, PHOTO_EXT, QT_EXT, nfc, now, resolve_path  # noqa: E402
 CHUNK = 1024 * 1024
-from lightroom import import_lrcat  # noqa: E402
+from lightroom import import_lrcat, export_lrcat  # noqa: E402
 import catalogs  # noqa: E402
+import annulla  # noqa: E402
 import conversione  # noqa: E402
 import gestione_file  # noqa: E402
 import esporta  # noqa: E402
@@ -419,6 +421,9 @@ def scope_filter(scope, deep=True):
                 f"({','.join(map(str, ids))}))", [])
     if kind == "keyword":
         return "p.id IN (SELECT photo_id FROM photo_keywords WHERE keyword_id=?)", [int(val)]
+    if kind == "stack":                     # «Mostra le foto della pila»: copertina e componenti
+        return ("(p.id = (SELECT cover_id FROM stacks WHERE id=?) OR p.id IN "
+                "(SELECT photo_id FROM stack_photos WHERE stack_id=?))", [int(val), int(val)])
     if kind == "toconvert":
         return f"COALESCE(p.ext,'') NOT IN ({','.join(repr(e) for e in NOT_TO_CONVERT)})", []
     if kind == "video":
@@ -498,8 +503,136 @@ def build_query(q):
     return " AND ".join(where), args, f"{sort} {direction}, p.id {direction}"
 
 
+# JPG e RAW con lo stesso nome nella stessa cartella (es. ChiaraC 3777.dng + .jpg ritoccato):
+# con «pairs» la vista mostra solo il JPG, che porta con sé il RAW («p»). Il RAW resta
+# visibile da solo se il JPG non è nella vista (altra raccolta, filtri).
+PAIR_JPG = ("jpg", "jpeg")
+PAIR_RAW = ("dng", "nef", "nrw", "cr2", "cr3", "crw", "arw", "srf", "sr2", "raf", "orf", "rw2", "pef",
+            "srw", "x3f", "3fr", "iiq", "erf", "mos", "mrw", "raw", "rwl", "kdc", "dcr", "mef")
+_STEM = "lower(substr({a}.filename, 1, length({a}.filename) - length({a}.ext) - 1))"
+
+
+def pair_query(where, args):
+    """Condizione che nasconde i RAW il cui JPG gemello è nella stessa vista."""
+    jw = re.sub(r"\bp\.", "j.", where)
+    cond = (f"NOT (p.ext IN ({','.join('?' * len(PAIR_RAW))}) AND EXISTS (SELECT 1 FROM photos j "
+            f"WHERE j.folder_id = p.folder_id AND j.ext IN ('jpg','jpeg') AND {_STEM.format(a='j')} = "
+            f"{_STEM.format(a='p')} AND {jw}))")
+    return f"({where}) AND {cond}", args + list(PAIR_RAW) + args
+
+
+def pair_partners(where, args, rows):
+    """Per i JPG della pagina: il RAW gemello nascosto (id ed estensione)."""
+    out = {}
+    jpgs = [r for r in rows if (r["ext"] or "") in PAIR_JPG]
+    if not jpgs:
+        return out
+    db = cat.db
+    by_key = {}
+    for r in jpgs:
+        by_key[(r["folder_id"], r["filename"][:-(len(r["ext"]) + 1)].lower())] = r["id"]
+    folders = sorted({k[0] for k in by_key})
+    for i in range(0, len(folders), 500):
+        ch = folders[i:i + 500]
+        for c in db.execute(
+                f"""SELECT p.id, p.folder_id, p.filename, p.ext FROM photos p
+                    WHERE p.folder_id IN ({','.join('?' * len(ch))})
+                      AND p.ext IN ({','.join('?' * len(PAIR_RAW))}) AND ({where})""",
+                ch + list(PAIR_RAW) + args):
+            jid = by_key.get((c["folder_id"], c["filename"][:-(len(c["ext"]) + 1)].lower()))
+            if jid and jid not in out:
+                out[jid] = {"id": c["id"], "x": c["ext"]}
+    return out
+
+
+# ---------------------------------------------------------------- pile (solo nelle raccolte)
+# Una pila appartiene a una raccolta: copertina (es. il JPG di un montaggio) e componenti (i RAW).
+# Nella raccolta si vede solo la copertina; altrove le foto restano normali. Una pila vale finché
+# la copertina è nella raccolta; i componenti contano solo se sono ancora nella raccolta.
+def _stack_coll(q):
+    kind, _, val = (q.get("scope") or "").partition(":")
+    if kind != "collection":
+        return None
+    c = cat.db.execute("SELECT is_set FROM collections WHERE id=?", (int(val),)).fetchone()
+    return int(val) if c and not c["is_set"] else None
+
+
+def stack_hide(cid):
+    return ("""p.id NOT IN (SELECT sp.photo_id FROM stack_photos sp JOIN stacks s ON s.id=sp.stack_id
+               WHERE s.collection_id=? AND sp.photo_id <> s.cover_id AND EXISTS (SELECT 1 FROM collection_photos c
+               WHERE c.collection_id=s.collection_id AND c.photo_id=s.cover_id))""", [cid])
+
+
+def stack_badges(cid, ids):
+    """Copertine della pagina -> {id della pila, numero di foto (copertina compresa)}."""
+    if not ids:
+        return {}
+    out = {}
+    q = ",".join(map(str, ids))
+    for r in cat.db.execute(f"""SELECT s.id, s.cover_id, (SELECT count(*) FROM stack_photos sp
+                                 JOIN collection_photos c ON c.photo_id=sp.photo_id AND c.collection_id=s.collection_id
+                                 WHERE sp.stack_id=s.id AND sp.photo_id <> s.cover_id) AS n
+                                FROM stacks s WHERE s.collection_id=? AND s.cover_id IN ({q})""", (cid,)):
+        if r["n"]:
+            out[r["cover_id"]] = {"id": r["id"], "n": r["n"] + 1}
+    return out
+
+
+def stack_info(sid):
+    s = cat.db.execute("SELECT * FROM stacks WHERE id=?", (sid,)).fetchone()
+    if not s:
+        raise ValueError("Pila non trovata")
+    rows = cat.db.execute("""SELECT p.id, p.filename, p.ext FROM photos p WHERE p.id=? OR p.id IN
+                             (SELECT sp.photo_id FROM stack_photos sp JOIN collection_photos c
+                              ON c.photo_id=sp.photo_id AND c.collection_id=? WHERE sp.stack_id=?)
+                             ORDER BY p.id=? DESC, p.capture_time, p.filename""",
+                          (s["cover_id"], s["collection_id"], sid, s["cover_id"])).fetchall()
+    coll = cat.db.execute("SELECT name FROM collections WHERE id=?", (s["collection_id"],)).fetchone()
+    return {"id": sid, "collection": s["collection_id"], "collection_name": coll["name"] if coll else "",
+            "cover": s["cover_id"], "photos": [{"id": r["id"], "n": r["filename"], "x": r["ext"]} for r in rows]}
+
+
+def stack_create(cid, ids, cover):
+    ids = [int(i) for i in ids]
+    cover = int(cover) if cover else None
+    with cat.write_lock:
+        db = cat.db
+        inside = {r[0] for r in db.execute(
+            f"SELECT photo_id FROM collection_photos WHERE collection_id=? AND photo_id IN ({','.join('?' * len(ids))})",
+            [cid] + ids)}
+        ids = [i for i in ids if i in inside]
+        if len(ids) < 2:
+            raise ValueError("Per una pila servono almeno due foto della raccolta")
+        if cover not in ids:
+            cover = ids[0]
+        # pile già esistenti con queste foto: si uniscono a quella nuova
+        old = [r[0] for r in db.execute(
+            f"""SELECT DISTINCT s.id FROM stacks s LEFT JOIN stack_photos sp ON sp.stack_id=s.id
+                WHERE s.collection_id=? AND (s.cover_id IN ({','.join('?' * len(ids))})
+                OR sp.photo_id IN ({','.join('?' * len(ids))}))""", [cid] + ids + ids)]
+        members = set(ids)
+        for sid in old:
+            members |= {r[0] for r in db.execute("SELECT photo_id FROM stack_photos WHERE stack_id=?", (sid,))}
+            members.add(db.execute("SELECT cover_id FROM stacks WHERE id=?", (sid,)).fetchone()[0])
+            db.execute("DELETE FROM stack_photos WHERE stack_id=?", (sid,))
+            db.execute("DELETE FROM stacks WHERE id=?", (sid,))
+        sid = db.execute("INSERT INTO stacks(collection_id, cover_id, created_at) VALUES(?,?,?)",
+                         (cid, cover, now())).lastrowid
+        db.executemany("INSERT OR IGNORE INTO stack_photos VALUES(?,?)", [(sid, i) for i in members if i != cover])
+        db.commit()
+    return {"id": sid}
+
+
 def list_photos(q):
     where, args, order = build_query(q)
+    stack_cid = _stack_coll(q)
+    if stack_cid:
+        sw, sa = stack_hide(stack_cid)
+        where, args = f"({where}) AND {sw}", args + sa
+    pairs = q.get("pairs") == "1"
+    if pairs:
+        base_where, base_args = where, args
+        where, args = pair_query(where, args)
     db = cat.db
     offset = int(q.get("offset", 0))
     limit = min(int(q.get("limit", 300)), 1_000_000 if q.get("ids_only") else 5000)
@@ -509,10 +642,12 @@ def list_photos(q):
         return {"ids": [r[0] for r in rows]}
     total = db.execute(f"SELECT count(*) FROM photos p WHERE {where}", args).fetchone()[0]
     rows = db.execute(
-        f"""SELECT p.id, p.filename, p.ext, p.capture_time, p.rating, p.label, p.flag, p.missing,
-                   p.added_at, p.mtime, p.rotation
+        f"""SELECT p.id, p.folder_id, p.filename, p.ext, p.capture_time, p.rating, p.label, p.flag,
+                   p.missing, p.added_at, p.mtime, p.rotation
             FROM photos p WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?""",
         args + [limit, offset]).fetchall()
+    partners = pair_partners(base_where, base_args, rows) if pairs else {}
+    badges = stack_badges(stack_cid, [r["id"] for r in rows]) if stack_cid else {}
     # prepara in background le miniature di questa pagina (quelle visibili arrivano comunque prima)
     thumbs.PREFETCH.add(cat, THUMB_DIR, [r["id"] for r in rows if not r["missing"]])
     # th: miniatura già pronta (1), impossibile (-1) o da creare (0): la griglia mostra
@@ -520,7 +655,9 @@ def list_photos(q):
     return {"total": total, "offset": offset, "items": [
         {"id": r["id"], "n": r["filename"], "x": r["ext"], "t": r["capture_time"],
          "r": r["rating"], "l": r["label"], "f": r["flag"], "m": r["missing"], "v": version(r),
-         "o": r["rotation"] or 0, "th": thumbs.PREFETCH.state(THUMB_DIR, r["id"])} for r in rows]}
+         "o": r["rotation"] or 0, "th": thumbs.PREFETCH.state(THUMB_DIR, r["id"]),
+         **({"p": partners[r["id"]]} if r["id"] in partners else {}),
+         **({"s": badges[r["id"]]} if r["id"] in badges else {})} for r in rows]}
 
 
 def version(r):
@@ -742,11 +879,36 @@ def remove_from_collection(cid, ids):
     with cat.write_lock:
         cat.db.executemany("DELETE FROM collection_photos WHERE collection_id=? AND photo_id=?",
                            [(cid, i) for i in ids])
+        # pile: una copertina tolta scioglie la pila, un componente tolto ne esce
+        for i in ids:
+            for (sid,) in cat.db.execute("SELECT id FROM stacks WHERE collection_id=? AND cover_id=?", (cid, i)).fetchall():
+                cat.db.execute("DELETE FROM stack_photos WHERE stack_id=?", (sid,))
+                cat.db.execute("DELETE FROM stacks WHERE id=?", (sid,))
+            cat.db.execute("DELETE FROM stack_photos WHERE photo_id=? AND stack_id IN "
+                           "(SELECT id FROM stacks WHERE collection_id=?)", (i, cid))
         cat.db.commit()
+
+
+def coll_name(cid):
+    r = cat.db.execute("SELECT name FROM collections WHERE id=?", (cid,)).fetchone()
+    return r["name"] if r else "?"
+
+
+def registra(etichetta, fotografa, ids=(), prima=None):
+    """Operazione annullabile: va chiamata prima di farla (o con `prima` se è già fatta).
+    Ricorda anche dove era l'interfaccia, per tornarci annullando."""
+    scope = getattr(annulla.VISTA, "scope", None) or "all"
+    if scope.startswith("stack:"):              # la vista di una pila: si torna alla sua raccolta
+        r = cat.db.execute("SELECT collection_id FROM stacks WHERE id=?", (int(scope[6:]),)).fetchone()
+        scope = f"collection:{r[0]}" if r else "all"
+    dove = {"scope": scope, "ids": [int(i) for i in list(ids)[:2000]]}
+    annulla.REGISTRO.aggiungi(cat, etichetta, fotografa, dove, prima)
 
 
 def set_meta(body):
     ids = ids_of(body)
+    what = "Etichetta" if "label" in body else "Bandierina" if "flag" in body else "Valutazione"
+    registra(what, annulla.foto_colonne(cat, ids, ["rating", "label", "flag"]), ids)
     sets, vals = [], []
     if "rating" in body:
         sets.append("rating=?")
@@ -766,6 +928,8 @@ def set_meta(body):
 
 def edit_keywords(body):
     ids = ids_of(body)
+    registra("Parole chiave", annulla.insieme(cat, annulla.tabella(
+        "photo_keywords", f"photo_id IN ({annulla._q(ids)})")), ids)
     with cat.write_lock:
         db = cat.db
         for name in body.get("add", []):
@@ -779,6 +943,19 @@ def edit_keywords(body):
             db.executemany("DELETE FROM photo_keywords WHERE photo_id=? AND keyword_id=?",
                            [(i, int(kid)) for i in ids])
         db.commit()
+
+
+def undo_files(etichetta, prima, indice, scope=None):
+    """Dopo una rinomina (indice 1) o uno spostamento (0): registra come tornare indietro."""
+    ch = annulla.cambiati(cat, prima, indice)
+    if not ch:
+        return
+    if scope:                                   # il lavoro gira in un altro thread
+        annulla.VISTA.scope = scope
+    stato = {pid: prima[pid] for pid in ch}
+    registra(f"{etichetta} ({len(ch)} file)" if len(ch) > 1 else etichetta,
+             annulla.file(cat, ch, indice, gestione_file, start_job), ch,
+             prima=annulla.rimetti_file(cat, stato, indice, gestione_file, start_job))
 
 
 def pick_path(kind):
@@ -854,6 +1031,8 @@ def delete_collection(cid):
         ids = collection_descendants(cid)
         q = ",".join(map(str, ids))
         cat.db.execute(f"DELETE FROM collection_photos WHERE collection_id IN ({q})")
+        cat.db.execute(f"DELETE FROM stack_photos WHERE stack_id IN (SELECT id FROM stacks WHERE collection_id IN ({q}))")
+        cat.db.execute(f"DELETE FROM stacks WHERE collection_id IN ({q})")
         cat.db.execute(f"DELETE FROM collections WHERE id IN ({q})")
         cat.db.commit()
 
@@ -995,9 +1174,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(gps_points(q))
             if u.path == "/api/photos":
                 return self.send_json(list_photos(q))
+            if parts[:2] == ["api", "stacks"] and len(parts) == 3:
+                return self.send_json(stack_info(int(parts[2])))
             if parts[:2] == ["api", "photo"] and len(parts) == 3:
                 d = photo_detail(int(parts[2]))
                 return self.send_json(d) if d else self.not_found()
+            if u.path == "/api/undo":
+                return self.send_json(annulla.REGISTRO.stato(cat))
             if u.path == "/api/jobs":
                 # i lavori finiti bene spariscono da soli dopo un minuto; gli errori restano
                 now = time.time()
@@ -1075,6 +1258,8 @@ class Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         ln = int(self.headers.get("Content-Length") or 0)
         body = json.loads(self.rfile.read(ln) or b"{}") if ln else {}
+        # vista dell'interfaccia (per Annulla: tornare dove è stata fatta l'operazione)
+        annulla.VISTA.scope = body.pop("_scope", None) if isinstance(body, dict) else None
         parts = u.path.strip("/").split("/")
         try:
             if parts[:2] == ["api", "catalogs"] and len(parts) == 3:
@@ -1108,9 +1293,30 @@ class Handler(BaseHTTPRequestHandler):
                 db.commit()
             if body.get("ids"):
                 add_to_collection(cid, ids_of(body))
+            registra(f"{'Nuovo set' if body.get('set') else 'Nuova raccolta'} «{name}»",
+                     annulla.insieme(cat, annulla.tabella("collections", "id=?", (cid,)),
+                                     annulla.tabella("collection_photos", "collection_id=?", (cid,)),
+                                     annulla.pile([cid])),
+                     ids_of(body) if body.get("ids") else (), prima=lambda: delete_collection(cid))
             return {"id": cid}
         if parts[1] == "collections" and len(parts) == 4:
             cid, action = int(parts[2]), parts[3]
+            if action in ("add", "remove"):
+                ids = ids_of(body)
+                registra(f"{'Aggiunta a' if action == 'add' else 'Tolte da'} «{coll_name(cid)}»", annulla.insieme(
+                    cat, annulla.tabella("collection_photos",
+                                         f"collection_id=? AND photo_id IN ({annulla._q(ids)})", (cid,)),
+                    annulla.pile([cid])), ids)
+            if action == "delete":
+                ids = collection_descendants(cid)
+                q = annulla._q(ids)
+                registra(f"Raccolta eliminata «{coll_name(cid)}»", annulla.insieme(
+                    cat, annulla.tabella("collections", f"id IN ({q})"),
+                    annulla.tabella("collection_photos", f"collection_id IN ({q})"),
+                    annulla.pile(ids)))
+            if action == "update":
+                registra(f"Modifica di «{coll_name(cid)}»", annulla.insieme(
+                    cat, annulla.tabella("collections", "id=?", (cid,))))
             if action == "add":
                 return add_to_collection(cid, ids_of(body))
             if action == "remove":
@@ -1128,6 +1334,38 @@ class Handler(BaseHTTPRequestHandler):
                         db.execute("UPDATE collections SET parent_id=? WHERE id=?", (parent, cid))
                     db.commit()
                 return None
+        if route == "stacks/create":
+            registra("Crea pila", annulla.insieme(cat, annulla.pile([int(body["collection"])])), body.get("ids", []))
+            return stack_create(int(body["collection"]), body.get("ids", []), body.get("cover"))
+        if parts[1] == "stacks" and len(parts) == 4:
+            sid, action = int(parts[2]), parts[3]
+            sc = db.execute("SELECT collection_id FROM stacks WHERE id=?", (sid,)).fetchone()
+            if sc:
+                cov = db.execute("SELECT cover_id FROM stacks WHERE id=?", (sid,)).fetchone()[0]
+                registra("Copertina della pila" if action == "cover" else "Sciogli pila",
+                         annulla.insieme(cat, annulla.pile([sc[0]])), [cov])
+            if action == "cover":
+                with cat.write_lock:
+                    s = db.execute("SELECT cover_id FROM stacks WHERE id=?", (sid,)).fetchone()
+                    new = int(body["cover"])
+                    if s and new != s["cover_id"]:
+                        db.execute("DELETE FROM stack_photos WHERE stack_id=? AND photo_id=?", (sid, new))
+                        db.execute("INSERT OR IGNORE INTO stack_photos VALUES(?,?)", (sid, s["cover_id"]))
+                        db.execute("UPDATE stacks SET cover_id=? WHERE id=?", (new, sid))
+                        db.commit()
+                return stack_info(sid)
+            if action == "dissolve":
+                with cat.write_lock:
+                    db.execute("DELETE FROM stack_photos WHERE stack_id=?", (sid,))
+                    db.execute("DELETE FROM stacks WHERE id=?", (sid,))
+                    db.commit()
+                return None
+        if route in ("undo", "redo"):
+            voce, res = annulla.REGISTRO.esegui(cat, ripeti=route == "redo")
+            if not voce:
+                return {"label": None}
+            return {"label": voce.etichetta, "where": voce.dove,
+                    "job": res.as_dict() if isinstance(res, Job) else None}
         if route == "duplicates/find":
             job = start_job("Ricerca duplicati", lambda job: gestione_file.find(cat, job))
             job.cancellable = True
@@ -1146,6 +1384,7 @@ class Handler(BaseHTTPRequestHandler):
             return remove_missing(ids_of(body) if "ids" in body else None)
         if route == "rotate":
             ids, step = ids_of(body), 90 if int(body.get("dir", 90)) > 0 else 270
+            registra("Rotazione", annulla.foto_colonne(cat, ids, ["rotation"]), ids)
             with cat.write_lock:
                 db.executemany("""UPDATE photos SET rotation=(COALESCE(rotation,0)+?)%360
                                   WHERE id=? AND COALESCE(ext,'') NOT IN ({})""".format(
@@ -1186,11 +1425,14 @@ class Handler(BaseHTTPRequestHandler):
             return {"paths": out}
         if route == "rename/one":
             pid, name = int(body["id"]), body.get("name")
-            _, _, conflicts = gestione_file.rename_plan(cat, [pid], {"name": name})
+            pids = [pid] + [int(x) for x in body.get("with", []) if int(x) != pid]   # gemello JPG/RAW
+            _, _, conflicts = gestione_file.rename_plan(cat, pids, {"name": name})
             if conflicts:
                 raise ValueError(f"«{conflicts[0][0]}»: {conflicts[0][1]}")
             job = Job("Rinomina")
-            res = gestione_file.rename(cat, [pid], {"name": name}, job)
+            prima = annulla.stato_file(cat, pids)
+            res = gestione_file.rename(cat, pids, {"name": name}, job)
+            undo_files("Rinomina", prima, 1)
             if res["errori"]:
                 raise ValueError(f"Rinomina non riuscita: {res['errori'][0][1]}")
             if res["saltate"]:
@@ -1204,7 +1446,13 @@ class Handler(BaseHTTPRequestHandler):
             return None
         if route == "move":
             ids, fid = ids_of(body), int(body["folder"])
-            job = start_job("Spostamento", lambda job: gestione_file.move(cat, ids, fid, job))
+            def run_move(job, ids=ids, fid=fid, scope=getattr(annulla.VISTA, "scope", None)):
+                prima = annulla.stato_file(cat, ids)
+                try:
+                    return gestione_file.move(cat, ids, fid, job)
+                finally:
+                    undo_files("Spostamento", prima, 0, scope)
+            job = start_job("Spostamento", run_move)
             job.cancellable = True
             return job.as_dict()
         if route == "rename/preview":
@@ -1213,7 +1461,13 @@ class Handler(BaseHTTPRequestHandler):
                     "skipped": skipped[:50], "conflicts": conflicts[:50], "nconflicts": len(conflicts)}
         if route == "rename":
             ids, opts = ids_of(body), body.get("options", {})
-            return start_job("Rinomina", lambda job: gestione_file.rename(cat, ids, opts, job)).as_dict()
+            def run_rename(job, ids=ids, opts=opts, scope=getattr(annulla.VISTA, "scope", None)):
+                prima = annulla.stato_file(cat, ids)
+                try:
+                    return gestione_file.rename(cat, ids, opts, job)
+                finally:
+                    undo_files("Rinomina", prima, 1, scope)
+            return start_job("Rinomina", run_rename).as_dict()
         if parts[1] == "folders" and len(parts) == 4 and parts[3] in ("create", "rename", "delete"):
             fid = int(parts[2])
             if parts[3] == "create":
@@ -1278,6 +1532,11 @@ class Handler(BaseHTTPRequestHandler):
             if not os.path.exists(path):
                 raise ValueError(f"File non trovato: {path}")
             return start_job("Importazione Lightroom", lambda job: import_lrcat(cat, path, job)).as_dict()
+        if route == "export/lightroom":
+            path = os.path.expanduser(body.get("path", "").strip())
+            if not os.path.isfile(path):
+                raise ValueError(f"File non trovato: {path}")
+            return start_job("Esportazione verso Lightroom", lambda job: {"lrexport": export_lrcat(cat, path, job)}).as_dict()
         if route == "thumbs/want":
             # miniature sullo schermo adesso: passano davanti a tutto
             res = thumbs.PREFETCH.want(cat, THUMB_DIR, ids_of(body)[:400], timeout=8)

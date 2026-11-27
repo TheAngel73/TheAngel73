@@ -16,9 +16,11 @@
     <div class="menu" id="menu-library" hidden>
       <button data-act="add-folder">Aggiungi cartella di foto…</button>
       <button data-act="import-lr">Importa catalogo Lightroom…</button>
+      <button data-act="export-lr">Esporta nel catalogo Lightroom…</button>
       <hr>
       <button data-act="dups">Trova duplicati…</button>
       <button data-act="pregen">Genera anteprime della vista corrente</button>
+      <button data-act="pairs" class="check" title="Un JPG e un RAW (DNG, NEF…) con lo stesso nome nella stessa cartella si vedono come una foto sola">JPG e RAW con lo stesso nome insieme</button>
       <button data-act="relocate">Cambia percorso del NAS…</button>
       <hr>
       <button data-act="del-rejected" class="danger-item">Elimina dal disco tutte le scartate…</button>
@@ -59,7 +61,6 @@
     <option value="date:desc">Data scatto ↓</option>
     <option value="name:asc">Nome file</option>
     <option value="added:desc">Aggiunte di recente</option>
-    <option value="rating:desc">Valutazione</option>
   </select>
   <button id="clear-filters" title="Togli tutti i filtri" hidden>✕</button>
   <span class="tsep"></span>
@@ -94,7 +95,7 @@
   </aside>
 
   <section id="center">
-    <div id="viewbar"><span id="view-title">Tutte le foto</span> <span id="view-count"></span>
+    <div id="viewbar"><button id="stack-back" class="link" hidden title="Torna alla raccolta"></button><span id="view-title">Tutte le foto</span> <span id="view-count"></span>
       <span id="active-filters"></span>
       <span id="sel-count"></span>
       <button id="btn-convert-all" class="mini-btn" hidden>Converti tutti (RAW e PNG)…</button>
@@ -114,8 +115,9 @@
     <video id="loupe-video" controls playsinline preload="metadata" hidden></video>
     <div id="loupe-novideo" hidden><p>Questo formato video non si può riprodurre qui.</p>
       <button type="button" class="primary">Apri con l'app predefinita</button></div></div>
+  <div id="loupe-strip" aria-label="Foto vicine"><div class="strip-track"></div></div>
   <div id="loupe-bar"><span id="loupe-name"></span>
-    <span class="loupe-tools"><button id="loupe-rotl" title="Ruota a sinistra (⌘←)"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.2 7.4A5 5 0 1 1 4.6 11.6"/><path d="M3 3.8v3.8h3.8"/></svg></button><button id="loupe-rotr" title="Ruota a destra (⌘→)"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M12.8 7.4A5 5 0 1 0 11.4 11.6"/><path d="M13 3.8v3.8H9.2"/></svg></button>
+    <span id="loupe-stack" hidden></span><span class="loupe-tools"><button id="loupe-pair" class="pairsw" hidden title="Mostra l'altra versione con lo stesso nome (V)"></button><button id="loupe-rotl" title="Ruota a sinistra (⌘←)"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.2 7.4A5 5 0 1 1 4.6 11.6"/><path d="M3 3.8v3.8h3.8"/></svg></button><button id="loupe-rotr" title="Ruota a destra (⌘→)"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M12.8 7.4A5 5 0 1 0 11.4 11.6"/><path d="M13 3.8v3.8H9.2"/></svg></button>
       <label class="expo" title="Esposizione solo per la visione: il file non viene modificato. Doppio clic per azzerare">☀
         <input type="range" id="loupe-expo" min="-3" max="3" step="0.1" value="0"><span id="loupe-expo-val">0 EV</span></label></span>
     <span id="loupe-zoom"></span>

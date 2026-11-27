@@ -46,7 +46,7 @@ messaggi, commenti e commit sono **in italiano**.
 | `server.py` | server HTTP (`ThreadingHTTPServer`), API, lavori in background (`Job`, `start_job`), cataloghi aperti |
 | `catalog.py` | classe `Catalog`: schema SQLite, connessioni per thread, scansione completa, **sincronizzazione rapida**, riconoscimento dei nomi da fotocamera |
 | `catalogs.py` | più cataloghi in `~/Documents/Provinia`, cataloghi **cifrati** (immagini disco `hdiutil`), impostazioni, migrazione dalla prima versione e dal vecchio nome (`migrate_name`) |
-| `lightroom.py` | importazione da `.lrcat`, letta da una **copia temporanea** |
+| `lightroom.py` | importazione da `.lrcat`, letta da una **copia temporanea**; esportazione verso un catalogo (`export_lrcat`) |
 | `thumbs.py` | miniature (QuickLook/sips), preparazione in background (`Prefetcher`), piena risoluzione, rotazione, `find_imghelper()` |
 | `conversione.py` | RAW → DNG (Adobe DNG Converter), PNG → JPEG (`fcimg`) |
 | `gestione_file.py` | duplicati, elimina dal disco, sposta, **rinomina**, cartelle, recupero delle rinomine interrotte |
@@ -162,7 +162,9 @@ sincronizzazione rapida). Le colonne nuove si aggiungono con `ALTER TABLE` in
   Mercatore; contorni in `static/mondo.json` (1:50M) e `mondo-dettaglio.json` (1:10M, griglia
   più fine, caricato quando si ingrandisce), generati con `strumenti/crea_mappa.py` da
   world-atlas (Natural Earth, pubblico dominio; licenze in `static/mondo-LICENSE.txt`). Il
-  filtro «Stelle» è stato tolto dalla barra (l'utente non usa le valutazioni; i dati restano).
+  filtro «Stelle» è stato tolto dalla barra; poi (1.2) le stelle sono state tolte da **tutta
+  l'interfaccia** (pannello, miniature, vista ingrandita, tasto destro, tasti 0–5, ordinamento):
+  l'utente non le usa. La colonna `rating` resta, importata ed esportata con Lightroom.
   Attenzione: il lavoro in background cede il passo alle miniature (`wait_viewer_idle`) ma
   **al massimo 3 s**: prima aspettava all'infinito e una miniatura impossibile da creare
   (file non raggiungibile, richiesto di continuo dalla pagina) fermava la lettura GPS per
@@ -218,6 +220,63 @@ sincronizzazione rapida). Le colonne nuove si aggiungono con `ALTER TABLE` in
   `brightness(2^(EV/2,2))` sull'`<img>`, che nei valori sRGB equivale a moltiplicare
   la luce lineare per 2^EV. Nessun file toccato. Dopo l'uso il cursore perde il
   focus, così le frecce tornano a scorrere le foto.
+- **Striscia delle foto vicine** (`STRIP`, `stripRender` in `app.js`): `#loupe-strip` sopra
+  `#loupe-bar`, si apre quando il mouse arriva sulla barra e si chiude `STRIP_HIDE_MS` (2,5 s)
+  dopo che è tornato sulla foto. Contiene solo ±`STRIP_SPAN` (60) foto attorno a quella aperta,
+  carica le pagine che servono e toglie le miniature uscite (`dropCell`, per non lasciarle in
+  coda in WebKit). `mousedown` senza focus, così le frecce continuano a scorrere le foto.
+- **Esportazione verso Lightroom** (`export_lrcat` in `lightroom.py`): non si crea un catalogo
+  da zero (oltre 130 tabelle; le impostazioni di sviluppo dipendono dalla fotocamera). L'utente
+  importa le foto in un catalogo nuovo con Lightroom 16; Provinia abbina le foto per percorso
+  (senza maiuscole/minuscole, NFC) e aggiorna `Adobe_images` (`rating`, `colorLabels` con i nomi
+  **italiani** «Rossa», «Gialla», «Verde», «Blu», «Viola», `pick`, `orientation` AB/BC/CD/DA =
+  passi di 90° in senso orario, solo se in Provinia c'è una rotazione), aggiunge parole chiave
+  (`AgLibraryKeyword`, sotto la radice `AgLibraryKeyword_rootTagID`) e raccolte/set
+  (`AgLibraryCollection`, `creationId` …collection/…group, più `AgLibraryCollectionContent` e
+  `AgLibraryCollectionChangeCounter` come fa Lightroom). Gli `id_local` nuovi vengono da
+  `Adobe_entityIDCounter`, aggiornato alla fine; `genealogy` = per ogni livello `/` + numero di
+  cifre + id. Rifiuta se c'è il file `.lrcat.lock` (Lightroom aperto) o se nessuna foto
+  corrisponde; copia di sicurezza prima di scrivere, tutto in una transazione.
+  Lo schema è stato ricavato da due cataloghi di prova dell'utente (LrC 16.0.1, catalogo
+  vuoto e catalogo con 6 foto). Anche l'importazione ora riconosce le etichette italiane e salta
+  la «quick collection» (`systemOnly`).
+- **Selezione che segue il cambio di vista** (`keepSelection` in `app.js`): `setScope` ricorda la
+  selezione, dopo `reload()` chiede gli id della vista nuova (`ids_only`, con i filtri attivi) e
+  riseleziona quelli in comune, con il cursore sul primo. Non agisce se nel frattempo la vista è
+  cambiata (`S.version`) o l'utente ha già selezionato altro. Ricerca e filtri non la usano.
+- **JPG e RAW con lo stesso nome** (flusso dell'utente: DNG + JPG ritoccato salvato accanto).
+  `pairs=1` in `/api/photos` → `pair_query` in `server.py` nasconde i RAW il cui JPG gemello
+  (stessa cartella, stesso nome senza estensione) **è nella stessa vista**: la condizione della vista
+  viene ripetuta per il gemello (`\bp.` → `j.`). Indice per espressione `ix_photos_stem`
+  (`catalog.py`): l'espressione deve restare identica a `_STEM`, altrimenti 170 000 foto passano
+  da 0,3 s a oltre 10 s. `pair_partners` allega il RAW al JPG (`it.p = {id, x}`).
+  Nell'interfaccia `PAIR` (id JPG → RAW), `selIds()` comprende i gemelli (etichette, raccolte,
+  parole chiave, rotazione, spostamento, eliminazione, trascinamento), `shownIds()` no (Photoshop,
+  Finder, esportazione). Rinomina con un clic: `rename/one` con `with` rinomina la coppia (il `.xmp`
+  segue). Vista ingrandita: `openLoupe(i, raw)`, tasto V. Le cifre nella barra laterale contano
+  ancora tutti i file.
+- **Pile** (solo nelle raccolte, non nei set): tabelle `stacks` (raccolta, copertina) e
+  `stack_photos` (componenti). `list_photos` con `scope=collection:N` aggiunge `stack_hide` (nasconde i
+  componenti delle pile la cui copertina è nella raccolta) e `stack_badges` (`it.s = {id, n}`). Una pila
+  vale finché la copertina è nella raccolta; i componenti contano solo se sono ancora nella raccolta.
+  `scope=stack:N` = copertina + componenti («Mostra le foto della pila», `enterStack`, `#stack-back`).
+  API: `stacks/create` (unisce pile esistenti), `stacks/N/cover`, `stacks/N/dissolve`, `GET stacks/N`.
+  `remove_from_collection` scioglie la pila se esce la copertina; l'interfaccia toglie la pila intera
+  (`withStacks`). Etichette, bandierine ecc. valgono solo per la copertina (come Lightroom con la pila
+  chiusa). Vista ingrandita: `openLoupe(i, alt)` con `alt = {id, n}` (RAW gemello o componente).
+- **Annulla e Ripeti (⌘Z / ⇧⌘Z)**, `annulla.py`: registro in memoria (ultime 50, si svuota cambiando
+  catalogo; una nuova operazione svuota i «ripeti»). Ogni voce ha una funzione `fotografa()` che salva
+  lo stato di ciò che cambierà e restituisce `rimetti()`; `server.registra()` va chiamata **prima**
+  dell'operazione (o con `prima=` se è già fatta: raccolta nuova, file già spostati). Annullare
+  fotografa lo stato attuale (per ripetere) e rimette quello salvato; ripetere è simmetrico. Istantanee:
+  `foto_colonne` (etichetta/bandierina/valutazione, rotazione), `tabella` (righe che soddisfano una
+  condizione: parole chiave, appartenenza alle raccolte, raccolte), `pile`, `file` (nomi o cartelle:
+  rimettere lancia un lavoro che rinomina, a gruppi con lo stesso nome base, o sposta). Ogni voce
+  ricorda `dove` (vista e foto): `api()` aggiunge `_scope` a ogni POST, `do_POST` lo mette in
+  `annulla.VISTA`; la vista di una pila diventa la sua raccolta. L'interfaccia torna lì e riseleziona
+  le foto (`undoRedo`). Nell'app ⌘Z/⇧⌘Z arrivano dal menu Modifica (`undoAction`/`redoAction`): se si
+  sta scrivendo in un campo (`fc.undoHere()` falso) restano l'annulla/ripeti del testo.
+  La navigazione tra cartelle e raccolte **non** entra nel registro (scelta discussa con l'utente).
 - **Lavori in background**: `start_job`, con avanzamento in `/api/jobs`.
   `job.cancellable` mostra «Interrompi»; `job.quick` (sincronizzazione rapida) si
   ferma da solo al cambio di catalogo. L'interfaccia reagisce ai risultati in
@@ -269,6 +328,22 @@ Finder), Adobe DNG Converter
 (`/Applications/Adobe DNG Converter.app/Contents/MacOS/Adobe DNG Converter -c -p1 -d <dir> -o <nome> <file>`),
 `swiftc` e `codesign` (costruzione dell'app).
 
+## App da condividere (costruita su GitHub)
+
+- `.github/workflows/provinia-mac.yml` (nella radice del repository): su un Mac di GitHub
+  (`macos-15`, processore Apple) scarica Python 3.12 da python-build-standalone
+  (`aarch64-apple-darwin-install_only_stripped`, l'ultima release), lancia
+  `crea_app.sh --senza-domande --python DIR`, prova il motore con quel Python, comprime con
+  `ditto` e allega `Provinia-<VERSIONE>-AppleSilicon.zip` alla release appena pubblicata
+  (o agli «Artifacts» se avviato a mano).
+- `crea_app.sh --python DIR` copia Python in `Contents/Resources/python` (senza test, idlelib,
+  tkinter…). `Provinia.swift` usa quel Python se c'è (togliendogli la quarantena con
+  `xattr`), altrimenti `python3` del Mac come prima. Le app create in locale restano piccole.
+- **Solo Apple Silicon** (`-target arm64-apple-macos12.3`), scelta dell'utente: niente Intel.
+- Firma solo locale (ad hoc): chi la scarica deve fare **Apri comunque** una volta. Con
+  l'Apple Developer Program si potrebbe firmare con Developer ID e notarizzare nello stesso
+  workflow (certificati nei segreti di GitHub).
+
 ## Versioni
 
 - Il numero mostrato in «Informazioni su Provinia» viene dal file `VERSIONE`
@@ -278,8 +353,13 @@ Finder), Adobe DNG Converter
   e pulsanti rivisti nel pannello informazioni, icone uniformi, pallino del NAS aggiornato
   da solo, dialoghi e scorciatoie rivisti, barra delle attività più chiara, pannello di
   destra allargabile, anteprima intera, un solo menu aperto, rifiniture della vista ingrandita.
+- **1.2**: striscia delle foto vicine, esportazione verso Lightroom, nome e formato sulle miniature,
+  stelle tolte, selezione che segue il cambio di vista, JPG + RAW insieme, pile nelle raccolte,
+  triangolini viola/blu, Annulla/Ripeti, app da condividere costruita su GitHub (con Python, solo
+  Apple Silicon) e allegata da sola alla release.
   Le modifiche successive si fanno su un ramo di sviluppo; quando l'utente ne approva
-  una serie si aumenta `VERSIONE` (1.1, 1.2…).
+  una serie si aumenta `VERSIONE` (1.1, 1.2…) e si aggiunge un paragrafo a `NOVITA.md`
+  (scritto per chi usa l'app, non per chi sviluppa).
 
 ## Come provare le modifiche
 
@@ -318,8 +398,25 @@ Informazioni su), dati di scatto nel pannello, mappa dei luoghi con GPS e nomi d
 Lezioni: verificare che un menu sia davvero **visibile** (non solo aperto) negli screenshot;
 le prove in Chromium non mostrano i comportamenti di WebKit (immagini non annullate, cache).
 
+Poi (fine novembre 2026): cursore dell'esposizione, pannello sinistro allargabile, nuovo
+aspetto → **1.0** (tag `v1.0`). Revisioni con i plugin di design dell'utente (ui-review /
+ui-polish) → **1.1** (tag `v1.1`). Poi → **1.2** (tag `v1.2`): vedi `NOVITA.md` e la sezione «Versioni».
+
+**Come si rilascia una versione** (la sessione non può creare tag né spingere su `main`):
+1. su richiesta dell'utente: `VERSIONE`, paragrafo in `NOVITA.md`, nota in «Versioni»;
+2. richiesta di unione dal ramo di sviluppo verso `main` con `gh api … /pulls`;
+3. l'utente la unisce e **poi** crea la release `vX.Y` su `main` dalla pagina Releases
+   (se la crea prima, il tag punta al `main` vecchio: con la 1.0 è successo);
+4. controllare con `gh api …/git/refs/tags` che il tag coincida con `main`, poi
+   riallineare il ramo di sviluppo (`git merge --ff-only origin/main`).
+Pubblicando la release, il workflow «Provinia per Mac» allega da solo lo zip dell'app.
+
+Lezioni: nella revisione grafica guardare sempre le schermate vere, anche dei dialoghi
+(il cursore della qualità era sbagliato solo lì); in WebKit le percentuali di altezza
+dentro un box con `aspect-ratio` sono inaffidabili (usare px).
+
 Idee discusse ma non fatte:
-- altri ritocchi estetici: l'utente è soddisfatto, ma ne potrebbe chiedere;
+- dalla revisione grafica, non scelti: nessuno di rilievo rimasto;
 - nomi dei luoghi: sigla della provincia in Italia (servono i codici ISTAT delle province);
 - la mappa non «gira» oltre la linea del cambio di data (un'area tra Alaska e Siberia si
   sceglie solo con ⇧ + trascina dai due lati);

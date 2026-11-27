@@ -1,6 +1,6 @@
 # Provinia
 
-*(fino a novembre 2026 si chiamava FotoCatalogo)*
+*(fino a novembre 2026 si chiamava FotoCatalogo)* · Versione corrente e novità: [`NOVITA.md`](NOVITA.md)
 
 Catalogo foto per Mac, pensato per sostituire la **Libreria** di Lightroom quando
 le foto si modificano in Photoshop. Non ha strumenti di sviluppo o ritocco: solo
@@ -11,25 +11,45 @@ catalogazione.
   pannello a destra mostra sempre tutte le raccolte della foto selezionata
 - **Dati di scatto** nel pannello a destra: fotocamera, obiettivo, focale, tempo, apertura,
   ISO (quando presenti nel file) e data dell'ultima modifica del file
-- **Parole chiave**, **stelle**, **etichette colore**, **bandierine** (scelta/scartata)
-- Ricerca per nome file, parola chiave o cartella, con filtri per anno, formato, stelle ed etichetta
+- **Parole chiave**, **etichette colore**, **bandierine** (scelta/scartata)
+- Ricerca per nome file, parola chiave, cartella o luogo, con filtri per etichetta, bandierina, anno, formato
+  e per **luogo** sulla mappa delle foto con posizione GPS
 - **Importazione dal catalogo Lightroom** (`.lrcat`): cartelle, raccolte, set,
-  parole chiave, stelle, etichette e bandierine
+  parole chiave, etichette e bandierine, e **esportazione verso Lightroom**
 - **Apri in Photoshop** (⌘E) e **Mostra nel Finder** (⌘R)
 - Miniature di JPEG, PSD, TIFF, HEIC e RAW (NEF, CR2/CR3, ARW, RAF, DNG…) generate da macOS
 - Pensato per grandi archivi (oltre 170 000 foto): la griglia carica solo ciò che vedi
 
-**Le foto non vengono mai modificate, spostate o cancellate.** L'app legge soltanto
-i file sul NAS. I cataloghi sono salvati sul Mac in **`Documenti/Provinia/`**.
+**Le foto non vengono mai modificate.** L'app legge i file sul NAS e li rinomina,
+sposta o elimina solo quando lo chiedi tu, sempre con una conferma. I cataloghi sono salvati sul Mac in **`Documenti/Provinia/`**.
 
 ## Requisiti
+
+- Un Mac con processore Apple (M1 o successivi) e macOS 12.3 o più recente.
+- Il NAS montato nel Finder (di solito compare in `/Volumes/NomeCartella`).
+- Solo per costruire l'app da sé con `Crea app.command`: Python 3 e gli strumenti per
+  sviluppatori (vedi sotto). L'app scaricata da **Releases** li ha già dentro.
+
+## Installare l'app già pronta (anche su un altro Mac)
+
+1. Nella pagina **Releases** del repository su GitHub scarica
+   `Provinia-<versione>-AppleSilicon.zip` e aprilo: compare **Provinia.app**.
+2. Trascinala in **Applicazioni**.
+3. Al primo avvio macOS dice che non può verificare lo sviluppatore (l'app non è
+   firmata da Apple): chiudi l'avviso, apri **Impostazioni di Sistema › Privacy e
+   sicurezza**, scorri in fondo e fai clic su **Apri comunque** accanto a Provinia.
+   Serve solo la prima volta.
+
+Se anche dopo non parte, apri il Terminale e scrivi
+`xattr -dr com.apple.quarantine /Applications/Provinia.app`, poi riaprila.
+
+## Costruire l'app da sé
+
+Requisiti in più per questa strada:
 
 - macOS con Python 3. Apri il Terminale e scrivi `python3 --version`. Se il Mac
   propone di installare gli «strumenti di sviluppo da riga di comando», accetta:
   bastano quelli, non serve installare nient'altro.
-- Il NAS montato nel Finder (di solito compare in `/Volumes/NomeCartella`).
-
-## Installare l'app
 
 1. Scarica questa cartella `fotocatalogo` sul Mac (per esempio in Documenti).
 2. Fai doppio clic su **`Crea app.command`**. La prima volta macOS potrebbe bloccarlo:
@@ -70,6 +90,26 @@ Il catalogo di Lightroom viene solo letto, quindi puoi continuare a usare Lightr
 finché non sei sicuro del passaggio. Puoi anche ripetere l'importazione: le foto già
 presenti non vengono duplicate.
 
+## Tornare a Lightroom (esportazione)
+
+Provinia non crea da sola un catalogo Lightroom (il formato interno non è pubblico e
+dipende dalla fotocamera): le foto le importa Lightroom, poi Provinia ci riporta sopra
+il tuo lavoro.
+
+1. In Lightroom: **File › Nuovo catalogo**, poi importa le cartelle del NAS con
+   **Aggiungi** (le foto restano dove sono). Aspetta la fine e **chiudi Lightroom**.
+   Le cartelle da aggiungere sono elencate nella finestra dell'esportazione: devono essere
+   le stesse di Provinia, con lo stesso percorso, altrimenti quelle foto vengono saltate.
+2. In Provinia: **Libreria › Esporta nel catalogo Lightroom…** e scegli quel `.lrcat`.
+3. Provinia fa una **copia di sicurezza** accanto («… (prima di Provinia data ora).lrcat»)
+   e poi riporta nel catalogo etichette colore, bandierine, rotazioni, parole
+   chiave, raccolte e set. Alla fine dice quante foto ha aggiornato e quali cartelle
+   mancano in Lightroom.
+
+Si può ripetere: le raccolte e le parole chiave già presenti non vengono duplicate.
+L'esportazione aggiunge e aggiorna, non toglie: una parola chiave tolta in Provinia resta
+in Lightroom. Le regolazioni dello Sviluppo non ci sono (Provinia non le conserva).
+
 ## Uso quotidiano
 
 | Azione | Come |
@@ -78,8 +118,13 @@ presenti non vengono duplicate.
 | Nuova raccolta / nuovo set | **＋** / **▤** accanto a «Raccolte» |
 | Spostare una raccolta in un set | trascinala sul set (sul titolo «Raccolte» per riportarla al primo livello) |
 | Togliere foto dalla raccolta aperta | **⌫ Backspace** |
-| Stelle / etichette / bandierine | **0–5** / **6 7 8 9** / **P X U** |
+| Etichette / bandierine | **6 7 8 9** / **P X U** |
 | Vista ingrandita | doppio clic, **Spazio** o **Invio**, poi **← →** |
+| Ritrovare le foto scelte in un'altra cartella o raccolta | seleziona le foto e clicca su un'altra cartella o raccolta: restano selezionate quelle presenti anche lì (es. raccolta «Pippo» → cartella «Vacanza con Pippo») |
+| JPG ritoccato e RAW con lo stesso nome | si vedono come **una foto sola** (il JPG) con le etichette **JPG DNG** in basso; nel pannello «Anche in DNG» apre il RAW, nella vista ingrandita **V** o il pulsante JPG/DNG passa dall'uno all'altro. Etichette, bandierine, raccolte, parole chiave, rotazione, rinomina, spostamento ed eliminazione valgono per tutti e due; Photoshop ed esportazione per quello mostrato. Si disattiva da **Libreria › JPG e RAW con lo stesso nome insieme** |
+| Pile (solo nelle raccolte) | seleziona il JPG di un montaggio e le foto di partenza, poi tasto destro › **Crea pila** (**⌘G**): nella raccolta resta solo la copertina (il JPG) con il numero di foto. Nel pannello le miniature dei componenti (clic: Photoshop) e **Mostra le foto della pila**; nella vista ingrandita le miniature nella barra in basso. Dal tasto destro: **Usa come copertina**, **Sciogli pila**. Togliendo la copertina dalla raccolta esce tutta la pila. Nelle cartelle e nelle altre raccolte le foto si vedono normalmente |
+| Annullare e ripetere | **⌘Z** annulla l'ultima operazione, e ripetendolo quelle prima (fino a 50); **⇧⌘Z** le rifà. Si torna nella cartella o raccolta in cui era stata fatta, con le foto interessate selezionate. Vale per: etichette, bandierine, rotazioni, parole chiave, foto aggiunte o tolte da una raccolta, raccolte create, modificate o eliminate, pile, **rinomine e spostamenti dei file** (che tornano con il nome e nella cartella di prima). Non si annullano eliminazioni dal disco e conversioni. Una nuova operazione cancella quelle da ripetere; il registro si svuota chiudendo l'app o cambiando catalogo |
+| Saltare a una foto vicina | nella vista ingrandita porta il mouse sulla barra in basso: compare la **striscia delle foto vicine** (rotellina per scorrerla, clic per aprire). Tornando sulla foto sparisce dopo un paio di secondi |
 | Zoom nella vista ingrandita | **clic** (o **Z**): adatta ↔ 100% · **doppio clic** o **Esc**: torna alla griglia · **rotellina** o pizzico sul trackpad · **+ −** · trascina per spostarti |
 | Selezionare tutto | **⌘A** |
 | Nuove foto sul NAS | trovate da sole all'apertura del catalogo; in qualsiasi momento: **⟳** o tasto destro › Sincronizza |
@@ -110,7 +155,7 @@ Converti tutti (RAW e PNG)…**, oppure menu **Foto** dell'app.
 - **PNG → JPEG**: con gli strumenti di macOS, qualità 92%. Le parti trasparenti diventano
   bianche (un JPEG non può essere trasparente), data del file e dati EXIF/GPS restano.
 - Il nuovo file viene salvato nella stessa cartella, verificato, e nel catalogo **prende il
-  posto dell'originale** con raccolte, parole chiave, stelle, etichette e bandierine.
+  posto dell'originale** con raccolte, parole chiave, etichette e bandierine.
 - Poi l'originale (e il suo eventuale `.xmp`) viene **cancellato**: sul NAS finisce nel
   cestino di rete, se attivo. Se la conversione non riesce, l'originale non viene toccato.
 - Se esiste già un file con lo stesso nome di destinazione, l'originale viene saltato.
@@ -128,7 +173,7 @@ Converti tutti (RAW e PNG)…**, oppure menu **Foto** dell'app.
   poi quella nella **cartella preferita** (se l'hai indicata), poi quella con più
   informazioni di catalogo, poi quella nella cartella creata più di recente.
   Clic su una copia per tenerla, «Salta» per lasciare il gruppo com'è;
-- prima di eliminare, raccolte, parole chiave, stelle, etichetta e bandierina delle copie
+- prima di eliminare, raccolte, parole chiave, etichetta e bandierina delle copie
   eliminate vengono **riunite sulla copia che resta**.
 
 **Elimina dal disco**: tasto destro › Elimina dal disco… (⌘⌫). Cancella i file (e i loro
@@ -185,8 +230,8 @@ trascinata viene ricreata con le sue sottocartelle. I file che non sono foto o v
 quelli con un nome già presente nella destinazione, vengono saltati.
 
 **Spostare**: trascina le foto su una cartella della barra laterale, oppure tasto destro ›
-**Sposta in…**. Il file si sposta sul disco con il suo `.xmp`; raccolte, parole chiave e
-stelle restano. Se nella destinazione esiste già un file con lo stesso nome viene saltato.
+**Sposta in…**. Il file si sposta sul disco con il suo `.xmp`; raccolte, parole chiave ed
+etichette restano. Se nella destinazione esiste già un file con lo stesso nome viene saltato.
 
 **Cartelle** (tasto destro): Nuova cartella…, Rinomina cartella…, Elimina cartella vuota….
 
@@ -241,7 +286,8 @@ successive, così scorrendo sono già pronte. Comandi e clic hanno sempre la pre
 ## Come leggere le miniature
 
 - **Triangolino in alto a sinistra**: verde = JPEG o HEIC, giallo = PSD, rosso = RAW proprietario
-  (ARW, NEF, CR2…) da convertire. I DNG non hanno il triangolino.
+  (ARW, NEF, CR2…) da convertire, **viola** = JPG + RAW con lo stesso nome, **blu** = pila (con il
+  numero di foto accanto). I DNG singoli non hanno il triangolino.
 - **Striscia colorata sotto la foto**: l'etichetta colore.
 - **▶ MOV / MP4…** in alto a sinistra: video. Si riproducono nella vista ingrandita
   (MP4, MOV, M4V); gli altri formati si aprono con l'app predefinita. Li trovi tutti in
@@ -255,7 +301,7 @@ Come in Lightroom, puoi avere più cataloghi. Stanno tutti in `Documenti/Provini
 ```
 Documenti/Provinia/
 ├── Catalogo principale/          ← catalogo normale: una cartella
-│   ├── catalogo.db               ← raccolte, parole chiave, stelle… (il file importante)
+│   ├── catalogo.db               ← raccolte, parole chiave, etichette… (il file importante)
 │   └── miniature/                ← si possono cancellare, vengono ricreate
 └── Personale.sparsebundle        ← catalogo protetto: immagine disco cifrata
 ```

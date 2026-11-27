@@ -1,0 +1,73 @@
+# Costruisce Provinia.app per i Mac con processore Apple (M1 e successivi), con Python
+# incluso, e la mette nella pagina Releases. Parte da sola quando si pubblica una release;
+# si può anche avviare a mano da Actions › «Provinia per Mac» › Run workflow (in quel caso
+# l'app si scarica dagli «Artifacts» della costruzione).
+name: Provinia per Mac
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+  push:                        # prova sul ramo di sviluppo, prima di unire in main
+    branches: [claude/charming-gauss-qk1g5w]
+    paths: ["fotocatalogo/mac/**", ".github/workflows/provinia-mac.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  app:
+    runs-on: macos-15          # Mac con processore Apple
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Scarica Python (python-build-standalone, 3.12)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          url=$(gh api repos/astral-sh/python-build-standalone/releases/latest --jq \
+            '[.assets[] | select(.name | test("^cpython-3\\.12\\.[0-9]+\\+[0-9]+-aarch64-apple-darwin-install_only_stripped\\.tar\\.gz$")) | .browser_download_url][0]')
+          echo "Python: $url"
+          test -n "$url"
+          curl -fsSL "$url" -o python.tar.gz
+          mkdir -p "$RUNNER_TEMP/py"
+          tar -xzf python.tar.gz -C "$RUNNER_TEMP/py"
+          "$RUNNER_TEMP/py/python/bin/python3" --version
+
+      - name: Costruisci l'app
+        run: fotocatalogo/mac/crea_app.sh --senza-domande --python "$RUNNER_TEMP/py/python"
+
+      - name: Prova il motore con il Python dell'app
+        run: |
+          APP=fotocatalogo/build/Provinia.app
+          # come nell'app: niente file .pyc scritti dentro l'app (cambierebbero la firma)
+          export PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1
+          export FOTOCAT_DATA="$RUNNER_TEMP/dati" FOTOCAT_BASE="$RUNNER_TEMP/base" FOTOCAT_PORT=8799
+          "$APP/Contents/Resources/python/bin/python3" "$APP/Contents/Resources/app/server.py" --no-browser &
+          pid=$!
+          for i in $(seq 1 30); do
+            curl -fs http://127.0.0.1:8799/api/catalogs >/dev/null && break
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8799/api/catalogs
+          kill $pid
+          file "$APP/Contents/MacOS/Provinia" "$APP/Contents/Resources/bin/fcimg"
+          codesign --verify --deep --verbose=2 "$APP"
+          du -sh "$APP"
+
+      - name: Comprimi
+        run: |
+          VER=$(tr -d ' \n' < fotocatalogo/VERSIONE)
+          echo "ZIP=Provinia-$VER-AppleSilicon.zip" >> "$GITHUB_ENV"
+          ditto -c -k --keepParent fotocatalogo/build/Provinia.app "Provinia-$VER-AppleSilicon.zip"
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: Provinia-AppleSilicon
+          path: ${{ env.ZIP }}
+
+      - name: Aggiungi alla release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" "$ZIP" --clobber

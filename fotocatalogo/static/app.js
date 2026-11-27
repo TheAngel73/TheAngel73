@@ -6,6 +6,8 @@ const LABELS = {red: "Rossa", yellow: "Gialla", green: "Verde", blue: "Blu", pur
 const PAGE = 300;
 
 async function api(url, body) {
+  // la vista attuale accompagna i comandi: Annulla ci riporta qui
+  if (body && typeof body === "object" && !Array.isArray(body) && typeof S !== "undefined") body = {...body, _scope: S.scope};
   const opt = body === undefined ? {} : {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)};
   const r = await fetch(url, opt);
   const data = await r.json().catch(() => ({}));
@@ -21,7 +23,7 @@ function toast(msg, isError = false) {
 async function safe(fn) { try { return await fn(); } catch (e) { toast(e.message, true); } }
 // catalogo aperto: {path, name, protected, uid}. Le preferenze di vista sono per catalogo.
 let CAT = null;
-const GLOBAL_KEYS = new Set(["zoom", "sort"]);
+const GLOBAL_KEYS = new Set(["zoom", "sort", "pairs"]);
 const skey = k => "fc:" + (GLOBAL_KEYS.has(k) || !CAT ? "" : CAT.uid + ":") + k;
 // "v" cambia quando cambia il file: così il browser non mostra miniature vecchie
 const VERS = new Map();
@@ -91,11 +93,31 @@ const S = {
   detail: null,
 };
 
+// JPG e RAW con lo stesso nome (es. DNG + JPG ritoccato) mostrati come una foto sola:
+// il server nasconde il RAW e lo allega al JPG (it.p = {id, x}). Le operazioni sulla
+// selezione valgono per entrambi (selIds), aprire ed esportare solo per quello mostrato.
+const PAIR = new Map();       // id del JPG -> {id, x} del RAW gemello
+// Pile (solo nelle raccolte): la copertina porta {id della pila, n foto}. Le informazioni
+// complete (componenti) si chiedono a /api/stacks/ID e restano in STACKINFO.
+const STACK = new Map(), STACKINFO = new Map();
+async function stackInfo(sid, fresh = false) {
+  if (!fresh && STACKINFO.has(sid)) return STACKINFO.get(sid);
+  const d = await api(`/api/stacks/${sid}`); STACKINFO.set(sid, d); return d;
+}
+const curCollection = () => { const [k, v] = S.scope.split(":"); return k === "collection" && S.tree.collections.find(c => c.id == v && !c.set); };
+// componenti delle pile selezionate (per togliere dalla raccolta la pila intera)
+async function withStacks(ids) {
+  const out = new Set(ids);
+  for (const id of ids) { const st = STACK.get(id); if (st) (await stackInfo(st.id)).photos.forEach(p => out.add(p.id)); }
+  return [...out];
+}
+const withPairs = ids => { const out = new Set(ids); for (const id of ids) { const p = PAIR.get(id); if (p) out.add(p.id); } return [...out]; };
+
 function params(extra = {}) {
   const [sort, dir] = $("#sort").value.split(":");
   const p = {scope: S.scope, deep: $("#deep").checked ? "1" : "0", q: $("#search").value,
     geo: S.geo ? `${S.geo.s},${S.geo.w},${S.geo.n},${S.geo.e}` : "", label: $("#f-label").value, flag: $("#f-flag").value,
-    year: $("#f-year").value, ext: $("#f-ext").value, sort, dir, ...extra};
+    year: $("#f-year").value, ext: $("#f-ext").value, sort, dir, pairs: S.pairs ? "1" : "", ...extra};
   return new URLSearchParams(Object.entries(p).filter(([, v]) => v !== "" && v != null)).toString();
 }
 
@@ -113,7 +135,8 @@ async function loadPage(p) {
     const data = await api(`/api/photos?${params({offset: p * PAGE, limit: PAGE})}`);
     if (v !== S.version) return;
     S.total = data.total;
-    for (const it of data.items) VERS.set(it.id, it.v);
+    for (const it of data.items) { VERS.set(it.id, it.v); if (it.p) PAIR.set(it.id, it.p); else PAIR.delete(it.id);
+      if (it.s) STACK.set(it.id, it.s); else STACK.delete(it.id); }
     S.pages.set(p, data.items);
     $("#view-count").textContent = `· ${data.total.toLocaleString("it-IT")} ${S.scope === "video" ? "video" : "foto"}`;
     layout();
@@ -123,7 +146,7 @@ async function loadPage(p) {
 
 async function reload(keepScroll = false) {
   S.version++;
-  S.pages.clear(); S.loading.clear();
+  S.pages.clear(); S.loading.clear(); STACKINFO.clear();
   for (const el of cells.values()) dropCell(el);
   cells.clear();
   if (!keepScroll) { S.sel.clear(); S.cursor = S.anchor = -1; scroller.scrollTop = 0; }
@@ -233,6 +256,11 @@ function dropCell(el) {
   el.remove();
 }
 
+// didascalia: il nome a sinistra (troncato se lungo), il formato sempre visibile a destra
+const splitName = n => { const k = n.lastIndexOf("."); return k > 0 ? [n.slice(0, k), n.slice(k + 1)] : [n, ""]; };
+const capName = n => `<span class="fn" title="${esc(n)}">${esc(splitName(n)[0])}</span>`;
+const capExt = n => { const x = splitName(n)[1]; return x ? `<span class="ext">${esc(x.toUpperCase())}</span>` : ""; };
+
 function makeCell(it, i) {
   const el = document.createElement("div");
   el.className = "cell"; el.dataset.i = i;
@@ -240,14 +268,14 @@ function makeCell(it, i) {
   el.draggable = true;
   if (it.f === -1) { el.classList.add("rejected"); el.title = "Scartata"; }
   if (it.l) el.classList.add("lab", "lab-" + it.l);
-  const ft = fileType(it.x);
-  const stars = it.r ? "★".repeat(it.r) : "";
+  // triangolino: blu per le pile, viola per JPG + RAW con lo stesso nome, altrimenti il formato
+  const ft = it.s ? ["stack", `Pila di ${it.s.n} foto`] : it.p ? ["pair", `${(it.x || "").toUpperCase()} + ${it.p.x.toUpperCase()} con lo stesso nome`] : fileType(it.x);
   const pending = it.th === 0 && !it.m;          // miniatura in preparazione (vedi wantThumbs)
   el.innerHTML = `<div class="im">${pending ? `<span class="ph wait">${esc(it.x || "")}</span>` : `<img loading="lazy" decoding="async" alt="" src="${thumbURL(it.id)}">`}</div>
     ${ft && ft[0] !== "video" ? `<span class="ftype ft-${ft[0]}" title="${ft[1]}"></span>` : ""}
-    <div class="tl${ft && ft[0] !== "video" ? " after-tri" : ""}">${ft && ft[0] === "video" ? `<span class="vbadge" title="${ft[1]}">▶ ${esc(it.x.toUpperCase())}</span>` : ""}${it.m ? '<span class="miss" title="File non trovato">⚠ mancante</span>' : ""}</div>
+    <div class="tl${ft && ft[0] !== "video" ? " after-tri" : ""}">${it.s ? `<span class="sbadge" title="Pila di ${it.s.n} foto">${ICON.stack}${it.s.n}</span>` : ""}${S.stackView && S.scope === "stack:" + S.stackView.id && it.id === S.stackView.cover ? `<span class="sbadge cover">Copertina</span>` : ""}${ft && ft[0] === "video" ? `<span class="vbadge" title="${ft[1]}">▶ ${esc(it.x.toUpperCase())}</span>` : ""}${it.m ? '<span class="miss" title="File non trovato">⚠ mancante</span>' : ""}</div>
     ${it.f === 1 ? `<span class="flag" title="Scelta">${ICON.flagOn}</span>` : ""}
-    <div class="cap"${it.l ? ` title="Etichetta ${LABELS[it.l] || ""}"` : ""}><span class="fn" title="${esc(it.n)}">${esc(it.n)}</span><span class="stars">${stars}</span></div>`;
+    <div class="cap"${it.l ? ` title="Etichetta ${LABELS[it.l] || ""}"` : ""}>${capName(it.n)}${capExt(it.n)}${it.p ? `<span class="ext alt" title="Anche in ${esc(it.p.x.toUpperCase())} con lo stesso nome">${esc(it.p.x.toUpperCase())}</span>` : ""}</div>`;
   const img = el.querySelector("img");
   if (!img) return el;
   img.draggable = false;
@@ -349,7 +377,7 @@ function patchItems(ids, patch) {
   const set = new Set(ids);
   for (const pg of S.pages.values()) for (const it of pg) if (set.has(it.id)) Object.assign(it, patch);
 }
-async function setMeta(patch, ids = [...S.sel]) {
+async function setMeta(patch, ids = selIds()) {
   if (!ids.length) return;
   await safe(async () => {
     await api("/api/meta", {ids, ...patch});
@@ -380,6 +408,7 @@ const ICON = {
   rotr: svg('<path d="M12.8 7.4A5 5 0 1 0 11.4 11.6"/><path d="M13 3.8v3.8H9.2"/>'),
   sync: svg('<path d="M12.9 6.4A5 5 0 0 0 3.6 5.3M3.1 9.6a5 5 0 0 0 9.3 1.1"/><path d="M3.4 2.8v2.7h2.7M12.6 13.2v-2.7H9.9"/>'),
   flag: svg('<path d="M4 13.5V2.8M4 3.2h7.5l-1.6 2.6 1.6 2.6H4"/>', "flag"),
+  stack: svg('<rect x="3" y="5.5" width="8.5" height="8" rx="1.2"/><path d="M5.5 3.5h7a1 1 0 0 1 1 1v6.5"/>', "stack"),
   flagOn: svg('<path d="M4 13.5V2.8"/><path d="M4 3.2h7.5l-1.6 2.6 1.6 2.6H4z" fill="currentColor"/>', "flag"),
   x: svg('<path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/>'),
   check: svg('<path d="M3.5 8.4l3 3 6-6.4"/>'),
@@ -413,14 +442,37 @@ async function loadTree() {
 function setScope(scope) {
   S.scope = scope; store.set("scope", scope);
   $("#view-title").textContent = scopeTitle(scope);
+  const back = $("#stack-back"), sv = scope.startsWith("stack:") && S.stackView;
+  back.hidden = !sv;
+  if (sv) back.innerHTML = `‹ ${esc(sv.collection_name)}`;
   $("#btn-convert-all").hidden = scope !== "toconvert";
   $("#btn-remove-missing").hidden = scope !== "missing";
   $("#btn-rename-all").hidden = scope !== "torename";
   $("#btn-delete-rejected").hidden = scope !== "rejected";
-  renderSidebar(); reload();
+  const keep = new Set(S.sel);
+  renderSidebar();
+  reload().then(() => keepSelection(keep));
 }
+// Cambiando cartella o raccolta restano selezionate le foto che ci sono anche nella vista
+// nuova (es. raccolta «Pippo» → cartella «Vacanza con Pippo»: si trovano già selezionate).
+async function keepSelection(keep) {
+  if (!keep.size || !S.total) return;
+  const v = S.version;
+  const r = await api(`/api/photos?${params({offset: 0, limit: 1000000, ids_only: 1})}`).catch(() => null);
+  if (!r || v !== S.version || S.sel.size) return;      // vista cambiata o selezione già nuova
+  let first = -1;
+  r.ids.forEach((id, i) => { if (keep.has(id)) { S.sel.add(id); if (first < 0) first = i; } });
+  if (first < 0) return;
+  S.cursor = S.anchor = first;
+  if (!itemAt(first)) await loadPage(Math.floor(first / PAGE));
+  if (v !== S.version) return;
+  ensureVisible(first); selChanged();
+}
+// torna alla raccolta con la copertina selezionata (keepSelection fa il resto)
+$("#stack-back").onclick = () => { const sv = S.stackView; if (!sv) return; S.sel.clear(); S.sel.add(sv.cover); setScope("collection:" + sv.collection); };
 function scopeTitle(scope) {
   const [k, v] = scope.split(":"); const t = S.tree; if (!t) return "";
+  if (k === "stack") { const d = S.stackView; return d && d.id == v ? `Pila: ${d.photos.find(p => p.id === d.cover)?.n || ""}` : "Pila"; }
   const fixed = {all: "Tutte le foto", nocoll: "Foto senza raccolta", toconvert: "Da convertire (non DNG, JPEG, HEIC, PSD o video)", video: "Video", torename: "Da rinominare (nomi della fotocamera)", rejected: "Scartate (bandierina ✕), in tutto il catalogo", missing: "File mancanti", recent: "Importazione più recente"};
   if (fixed[k]) return fixed[k];
   if (k === "collection") { const c = t.collections.find(c => c.id == v); return c ? (c.set ? "Set: " : "Raccolta: ") + c.name : "?"; }
@@ -680,9 +732,11 @@ async function removeFromCurrentCollection() {
   const [k, v] = S.scope.split(":");
   const c = k === "collection" && S.tree.collections.find(c => c.id == v);
   if (!c || c.set || !S.sel.size) return;
-  const f = await dialog("Togli dalla raccolta", `<p>Togliere ${S.sel.size} foto dalla raccolta «${esc(c.name)}»?</p><p>I file non vengono toccati.</p>`, "Togli");
+  const stacks = [...S.sel].filter(id => STACK.has(id)).length;
+  const f = await dialog("Togli dalla raccolta", `<p>Togliere ${S.sel.size} foto dalla raccolta «${esc(c.name)}»?</p>
+    ${stacks ? `<p>${stacks === 1 ? "La pila selezionata esce" : `Le ${stacks} pile selezionate escono`} dalla raccolta con tutte le sue foto.</p>` : ""}<p>I file non vengono toccati.</p>`, "Togli");
   if (!f) return;
-  await safe(async () => { await api(`/api/collections/${c.id}/remove`, {ids: [...S.sel]}); await loadTree(); reload(true); S.sel.clear(); selChanged(); });
+  await safe(async () => { await api(`/api/collections/${c.id}/remove`, {ids: await withStacks(selIds())}); await loadTree(); reload(true); S.sel.clear(); selChanged(); });
 }
 
 // ================================================================ pannello info
@@ -706,6 +760,8 @@ async function showInfo(refresh = false) {
     <div class="fname" title="Clic per rinominare">${esc(d.filename)}</div>
     <button class="path" data-act="copy-path" title="${esc(d.path)}
 Clic per copiare il percorso completo">${ICON.folder}<span>${esc(shortPath(d.path))}</span>${ICON.copy}</button>
+    ${pairRow(id)}
+    ${STACK.get(id) ? `<div class="stackbar" data-stack="${STACK.get(id).id}"></div>` : ""}
     ${rateBars(d.rating, d.label, d.flag)}
     ${actionRows(true)}
     <h4>Raccolte (${d.collections.length})</h4>
@@ -728,8 +784,24 @@ Clic per copiare il percorso completo">${ICON.folder}<span>${esc(shortPath(d.pat
       <tr><td>In catalogo dal</td><td>${fmtDate(d.added_at)}</td></tr>
       ${d.missing ? `<tr><td>Stato</td><td style="color:var(--red)">File non trovato</td></tr>` : ""}
     </table>`;
+  fillStackRow(box);
 }
 
+// pila: miniature dei componenti (clic: apri in Photoshop) e «Mostra le foto della pila»
+async function fillStackRow(box) {
+  const el = box.querySelector(".stackbar"); if (!el) return;
+  const d = await stackInfo(+el.dataset.stack).catch(() => null); if (!d) return;
+  el.innerHTML = `<div class="sb-head">${ICON.stack}<span>Pila di ${d.photos.length} foto</span>
+      <button class="link" data-stack-open="${d.id}">Mostra le foto della pila</button></div>
+    <div class="sb-thumbs">${d.photos.map(p => `<button data-ps="${p.id}" class="${p.id === d.cover ? "cover" : ""}" title="${esc(p.n)}${p.id === d.cover ? " (copertina)" : ""} — clic: apri in Photoshop"><img src="${thumbURL(p.id)}" alt="" onerror="this.remove()"></button>`).join("")}</div>`;
+}
+// gemello RAW di un JPG: si apre a parte (le altre operazioni valgono per tutti e due)
+function pairRow(id) {
+  const p = PAIR.get(id); if (!p) return "";
+  const x = esc(p.x.toUpperCase());
+  return `<div class="pairbar"><span class="ext alt">${x}</span><span>Anche in ${x}</span>
+    <button data-open-pair="photoshop" title="Apri il ${x} in Photoshop">Apri ${x}</button><button class="ico" data-open-pair="finder" title="Mostra il ${x} nel Finder">${ICON.finder}</button></div>`;
+}
 // pulsanti del pannello: Photoshop è l'azione principale, rotazioni come icone
 function actionRows(one) {
   const ps = `Apri in Photoshop${!one && S.sel.size > 50 ? " (prime 50)" : ""}`;
@@ -770,13 +842,13 @@ function fmtStamp(sec) {
 }
 
 function rateBars(r, l, f) {
-  return `<div class="row" style="justify-content:space-between;align-items:center">
-    <div class="ratebar">${[1, 2, 3, 4, 5].map(n => `<button data-rate="${n}" class="${n <= (r || 0) ? "on" : ""}" title="${n} stelle (tasto ${n})">★</button>`).join("")}
-      <button data-rate="0" class="ico" title="Nessuna stella (tasto 0)">${ICON.none}</button></div>
+  // niente stelle: l'utente non le usa (i valori importati da Lightroom restano nei dati).
+  // Etichette a sinistra e bandierine a destra, sulla stessa riga.
+  return `<div class="row markbar">
+    <div class="labelbar">${Object.entries(LABELS).map(([k, n]) => `<button data-label="${k}" class="lbl-${k}${l === k ? " on" : ""}" title="${n}"></button>`).join("")}
+      <button data-label="" class="none" title="Nessuna etichetta"></button></div>
     <div class="ratebar"><button data-flag="1" class="ico${f === 1 ? " on" : ""}" title="Scelta (P)">${ICON.flag}</button><button data-flag="-1" class="ico${f === -1 ? " on rej" : ""}" title="Scartata (X)">${ICON.x}</button></div>
-  </div>
-  <div class="labelbar">${Object.entries(LABELS).map(([k, n]) => `<button data-label="${k}" class="lbl-${k}${l === k ? " on" : ""}" title="${n}"></button>`).join("")}
-    <button data-label="" class="none${!l && l !== undefined ? "" : ""}" title="Nessuna etichetta"></button></div>`;
+  </div>`;
 }
 
 function showMulti(box) {
@@ -793,20 +865,23 @@ function showMulti(box) {
 }
 
 $("#info").addEventListener("click", async e => {
-  const t = e.target.closest("[data-rate],[data-flag],[data-label],[data-open],[data-act],[data-uncoll],[data-unkw],[data-goto],[data-rot]");
+  const so = e.target.closest("[data-stack-open],[data-ps]");
+  if (so) { e.preventDefault(); return so.dataset.stackOpen ? enterStack(+so.dataset.stackOpen) : safe(() => api("/api/open", {ids: [+so.dataset.ps], how: "photoshop"})); }
+  const t = e.target.closest("[data-open-pair],[data-rate],[data-flag],[data-label],[data-open],[data-act],[data-uncoll],[data-unkw],[data-goto],[data-rot]");
   if (!t) return;
   e.preventDefault();
-  const ids = [...S.sel];
+  const ids = selIds();
+  if (t.dataset.openPair) { const p = PAIR.get([...S.sel][0]); return p && safe(() => api("/api/open", {ids: [p.id], how: t.dataset.openPair})); }
   if (t.dataset.uncoll) { e.stopPropagation(); return safe(async () => { await api(`/api/collections/${t.dataset.uncoll}/remove`, {ids}); await loadTree(); if (S.scope === "collection:" + t.dataset.uncoll) reload(true); showInfo(true); }); }
   if (t.dataset.unkw) { e.stopPropagation(); return safe(async () => { await api("/api/keywords", {ids, remove: [+t.dataset.unkw]}); await loadTree(); showInfo(true); }); }
   if (t.dataset.goto) return setScope(t.dataset.goto);
   if (t.dataset.rate) return setMeta({rating: +t.dataset.rate});
   if (t.dataset.flag) { const cur = S.detail && S.sel.size === 1 ? S.detail.flag : null; return setMeta({flag: cur === +t.dataset.flag ? 0 : +t.dataset.flag}); }
   if (t.dataset.label !== undefined) return setMeta({label: t.dataset.label || null});
-  if (t.dataset.open) return safe(() => api("/api/open", {ids, how: t.dataset.open}));
+  if (t.dataset.open) return safe(() => api("/api/open", {ids: shownIds(), how: t.dataset.open}));
   if (t.dataset.rot) return rotate(+t.dataset.rot);
   if (t.dataset.act === "copy-path" && S.detail) return copyText(S.detail.path);
-  if (t.dataset.act === "export") return exportDialog(ids, ids.length === 1 ? "la foto selezionata" : `${ids.length.toLocaleString("it-IT")} foto selezionate`);
+  if (t.dataset.act === "export") return exportDialog(shownIds(), S.sel.size === 1 ? "la foto selezionata" : `${ids.length.toLocaleString("it-IT")} foto selezionate`);
   const act = t.dataset.act;
   if (act === "add-coll") return pickCollection(ids);
   if (act === "new-coll-sel") return newCollection(false, ids);
@@ -817,7 +892,7 @@ $("#info").addEventListener("keydown", e => { if (e.target.id === "kw-add" && e.
 async function addKeywords() {
   const inp = $("#kw-add"); const names = inp.value.split(",").map(s => s.trim()).filter(Boolean);
   if (!names.length) return;
-  await safe(async () => { await api("/api/keywords", {ids: [...S.sel], add: names}); inp.value = ""; await loadTree(); showInfo(true); toast("Parole chiave aggiunte"); });
+  await safe(async () => { await api("/api/keywords", {ids: selIds(), add: names}); inp.value = ""; await loadTree(); showInfo(true); toast("Parole chiave aggiunte"); });
 }
 
 // ================================================================ vista ingrandita (con zoom)
@@ -828,10 +903,22 @@ const L = {i: -1, id: null, fitW: 0, fitH: 0, bx: 0, by: 0, z: 1, tx: 0, ty: 0, 
 const stage = $("#loupe-stage"), limg = $("#loupe-img");
 let loupeIdx = -1;
 
-function openLoupe(i) {
+// alt = {id, n}: mostra un'altra foto al posto di quella della griglia: il RAW gemello
+// (pulsante JPG/DNG o tasto V) o un componente della pila (miniature nella barra)
+const pairAlt = it => it.p ? {id: it.p.id, n: splitName(it.n)[0] + "." + it.p.x} : null;
+function openLoupe(i, alt = null) {
   const it = itemAt(i); if (!it) return;
-  loupeIdx = i; S.cursor = i; S.sel.clear(); S.sel.add(it.id); selChanged();
-  Object.assign(L, {i, id: it.id, z: 1, tx: 0, ty: 0, natW: 0, full: "no", video: isVideo(it.x)});
+  if (loupeIdx !== i || $("#loupe").hidden) { loupeIdx = i; S.cursor = i; S.sel.clear(); S.sel.add(it.id); selChanged(); }
+  loupeIdx = i;
+  const showId = alt ? alt.id : it.id;
+  const showName = alt ? alt.n : it.n;
+  const raw = !!(alt && it.p && alt.id === it.p.id);
+  const pb = $("#loupe-pair");
+  pb.hidden = !it.p;
+  if (it.p) pb.innerHTML = `<span class="${raw ? "" : "on"}">${esc(it.x.toUpperCase())}</span><span class="${raw ? "on" : ""}">${esc(it.p.x.toUpperCase())}</span>`;
+  L.raw = raw;
+  loupeStackRow(it, showId);
+  Object.assign(L, {i, id: showId, z: 1, tx: 0, ty: 0, natW: 0, full: "no", video: isVideo(it.x)});
   stopVideo();
   limg.hidden = L.video;
   $("#loupe").classList.toggle("is-video", L.video);
@@ -839,7 +926,7 @@ function openLoupe(i) {
   $("#loupe-hint").textContent = L.video ? "spazio: avvia/ferma · ← → scorri · Esc chiudi"
     : "clic: adatta/100% · doppio clic: griglia · rotellina: zoom · ← →";
   if (L.video) {
-    $("#loupe-name").textContent = `${it.n} · ${fmtDate(it.t)} ${it.r ? "· " + "★".repeat(it.r) : ""}`;
+    $("#loupe-name").textContent = `${it.n} · ${fmtDate(it.t)}`;
     $("#loupe-zoom").textContent = "Video";
     $("#loupe").hidden = false;
     if (VIDEO_PLAYABLE.has(it.x.toLowerCase())) {
@@ -847,16 +934,18 @@ function openLoupe(i) {
       v.hidden = false; v.poster = previewURL(it.id); v.src = fullURL(it.id);
       v.onerror = () => { v.hidden = true; $("#loupe-novideo").hidden = false; };
     } else $("#loupe-novideo").hidden = false;
+    if (STRIP.open) stripRender();
     return;
   }
   limg.onload = () => loupeLayout();
-  limg.src = thumbURL(it.id);
+  limg.src = thumbURL(showId);
   const big = new Image();
-  big.onload = () => { if (L.id === it.id && L.full === "no") limg.src = big.src; };
-  big.src = previewURL(it.id);
-  $("#loupe-name").textContent = `${it.n} · ${fmtDate(it.t)} ${it.r ? "· " + "★".repeat(it.r) : ""}`;
+  big.onload = () => { if (L.id === showId && L.full === "no") limg.src = big.src; };
+  big.src = previewURL(showId);
+  $("#loupe-name").textContent = `${showName} · ${fmtDate(it.t)}`;
   $("#loupe").hidden = false;
   loupeLayout();
+  if (STRIP.open) stripRender();
 }
 // il testo di aiuto in basso a destra si attenua dopo qualche secondo (torna passandoci sopra)
 let hintT = null;
@@ -869,7 +958,86 @@ function stopVideo() {
   v.pause(); v.removeAttribute("src"); v.removeAttribute("poster"); v.load(); v.hidden = true;
   $("#loupe-novideo").hidden = true;
 }
-function closeLoupe() { stopVideo(); $("#loupe").hidden = true; L.id = null; setExpo(0); }
+function closeLoupe() { stopVideo(); $("#loupe").hidden = true; L.id = null; setExpo(0); stripHide(true); }
+
+// Striscia delle foto vicine: compare portando il mouse sulla barra in basso, permette di
+// saltare avanti o indietro di qualche foto in una serie e sparisce ~2,5 s dopo che il mouse
+// è tornato sulla foto. Mostra solo le foto attorno a quella aperta (STRIP_SPAN per lato):
+// le miniature fuori dalla striscia vengono tolte, così non restano in coda (vedi dropCell).
+const STRIP_SPAN = 60, STRIP_HIDE_MS = 2500;
+const STRIP = {open: false, timer: null, from: 0, to: -1, center: -1};
+const strip = $("#loupe-strip"), stripTrack = strip.querySelector(".strip-track");
+function stripShow() {
+  clearTimeout(STRIP.timer); STRIP.timer = null;
+  if (STRIP.open) return;
+  STRIP.open = true; strip.classList.add("open"); $("#loupe").classList.add("strip-open");
+  stripRender(true);
+}
+function stripHide(now = false) {
+  clearTimeout(STRIP.timer); STRIP.timer = null;
+  const go = () => { STRIP.open = false; strip.classList.remove("open"); $("#loupe").classList.remove("strip-open"); };
+  if (now) go(); else STRIP.timer = setTimeout(go, STRIP_HIDE_MS);
+}
+async function stripRender(instant = false) {
+  const c = loupeIdx; if (c < 0) return;
+  const from = Math.max(0, c - STRIP_SPAN), to = Math.min(S.total - 1, c + STRIP_SPAN);
+  // carica le pagine che servono (la striscia può scavalcare il confine di una pagina)
+  const need = new Set([Math.floor(from / PAGE), Math.floor(to / PAGE)].filter(p => !S.pages.has(p)));
+  if (need.size) { await Promise.all([...need].map(loadPage)); if (loupeIdx !== c) return; }
+  if (from !== STRIP.from || to !== STRIP.to) {
+    const keep = new Map();
+    for (const el of [...stripTrack.children]) {
+      const i = +el.dataset.i, it = itemAt(i);
+      if (i >= from && i <= to && it && +el.dataset.id === it.id) keep.set(i, el); else dropCell(el);
+    }
+    for (let i = from; i <= to; i++) {
+      let el = keep.get(i);
+      if (!el) {
+        const it = itemAt(i);
+        el = document.createElement("button");
+        el.className = "sthumb"; el.dataset.i = i; el.tabIndex = -1;
+        if (it) {
+          el.dataset.id = it.id; el.title = it.n;
+          if (it.f === -1) el.classList.add("rejected");
+          el.innerHTML = it.m ? `<span class="ph">${esc(it.x || "?")}</span>`
+            : `<img alt="" draggable="false" decoding="async" src="${thumbURL(it.id)}">${isVideo(it.x) ? `<span class="sv">▶</span>` : ""}`;
+          const img = el.querySelector("img");
+          if (img) img.onerror = () => img.replaceWith(Object.assign(document.createElement("span"), {className: "ph", textContent: it.x || "?"}));
+        }
+      }
+      stripTrack.appendChild(el);        // appendChild sposta quelli già presenti nell'ordine giusto
+    }
+    STRIP.from = from; STRIP.to = to;
+  }
+  for (const el of stripTrack.children) el.classList.toggle("cur", +el.dataset.i === c);
+  // la foto aperta al centro (scorrendo con le frecce la striscia la segue)
+  const cur = stripTrack.querySelector(".sthumb.cur");
+  if (cur) strip.scrollTo({left: cur.offsetLeft + cur.offsetWidth / 2 - strip.clientWidth / 2,
+                           behavior: instant || STRIP.center < 0 ? "auto" : "smooth"});
+  STRIP.center = c;
+}
+stripTrack.addEventListener("mousedown", e => e.preventDefault());   // niente focus: le frecce restano alla vista
+stripTrack.addEventListener("click", async e => {
+  const b = e.target.closest(".sthumb"); if (!b) return;
+  const i = +b.dataset.i;
+  if (i === loupeIdx) return;
+  if (!itemAt(i)) await loadPage(Math.floor(i / PAGE));
+  ensureVisible(i); openLoupe(i);
+});
+// rotellina verticale -> scorrimento orizzontale della striscia
+strip.addEventListener("wheel", e => {
+  if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { e.preventDefault(); strip.scrollLeft += e.deltaY; }
+}, {passive: false});
+// zona sensibile: la barra in basso apre la striscia; tornando sulla foto si chiude dopo un po'
+$("#loupe").addEventListener("mousemove", e => {
+  const bar = $("#loupe-bar").getBoundingClientRect();
+  if (e.clientY >= bar.top - 6) return stripShow();
+  if (!STRIP.open) return;
+  const sr = strip.getBoundingClientRect();
+  if (e.clientY >= sr.top - 8) { clearTimeout(STRIP.timer); STRIP.timer = null; }
+  else if (!STRIP.timer) stripHide();
+});
+$("#loupe").addEventListener("mouseleave", () => { if (STRIP.open && !STRIP.timer) stripHide(); });
 
 // Esposizione solo a video (il file non cambia). Uno stop in più raddoppia la luce lineare,
 // che nei valori sRGB (gamma ~2,2) equivale a moltiplicare per 2^(EV/2,2): è brightness().
@@ -949,6 +1117,23 @@ async function loupeStep(d) {
   if (!itemAt(i)) await loadPage(Math.floor(i / PAGE));
   ensureVisible(i); openLoupe(i);
 }
+$("#loupe-pair").onclick = e => { e.currentTarget.blur(); const it = itemAt(loupeIdx); openLoupe(loupeIdx, L.raw ? null : pairAlt(it)); };
+// miniature della pila nella barra della vista ingrandita
+async function loupeStackRow(it, showId) {
+  const row = $("#loupe-stack");
+  if (!it.s) { row.hidden = true; row.innerHTML = ""; return; }
+  const d = await stackInfo(it.s.id).catch(() => null);
+  if (!d || itemAt(loupeIdx) !== it) return;
+  row.hidden = false;
+  row.innerHTML = d.photos.map(p => `<button data-alt="${p.id}" class="${p.id === showId ? "on" : ""}${p.id === d.cover ? " cover" : ""}" title="${esc(p.n)}"><img src="${thumbURL(p.id)}" alt=""></button>`).join("");
+}
+$("#loupe-stack").addEventListener("mousedown", e => e.preventDefault());
+$("#loupe-stack").addEventListener("click", e => {
+  const b = e.target.closest("[data-alt]"); if (!b) return;
+  const it = itemAt(loupeIdx), d = it && it.s && STACKINFO.get(it.s.id); if (!d) return;
+  const p = d.photos.find(p => p.id === +b.dataset.alt);
+  openLoupe(loupeIdx, p.id === it.id ? null : {id: p.id, n: p.n});
+});
 $("#loupe-prev").onclick = () => loupeStep(-1);
 $("#loupe-next").onclick = () => loupeStep(1);
 
@@ -1020,25 +1205,26 @@ document.addEventListener("keydown", async e => {
   if (loupe && !mod && !L.video) {
     const kz = e.key.toLowerCase();
     if (kz === "z") { e.preventDefault(); return loupeToggle(stage.clientWidth / 2, stage.clientHeight / 2); }
+    if (kz === "v" && itemAt(loupeIdx)?.p) { e.preventDefault(); return openLoupe(loupeIdx, L.raw ? null : pairAlt(itemAt(loupeIdx))); }
     if (e.key === "+" || e.key === "=") { e.preventDefault(); return loupeKeyZoom(1.5); }
     if (e.key === "-") { e.preventDefault(); return loupeKeyZoom(1 / 1.5); }
   }
   if (loupe && !mod && (e.key === "ArrowRight" || e.key === "ArrowLeft")) { e.preventDefault(); return loupeStep(e.key === "ArrowRight" ? 1 : -1); }
   const shortcut = mod && (e.shiftKey && e.key.toLowerCase() === "e" ? "exportSel" :
-    {a: "selectAll", e: "photoshop", r: "finder", k: "keywords", d: "selectNone", backspace: "deleteFiles",
+    {a: "selectAll", e: "photoshop", r: "finder", k: "keywords", d: "selectNone", backspace: "deleteFiles", g: "stack",
+     z: e.shiftKey ? "redo" : "undo",
      "[": "rotateLeft", "]": "rotateRight", arrowleft: "rotateLeft", arrowright: "rotateRight"}[e.key.toLowerCase()]);
   // nell'app per Mac queste scorciatoie arrivano dalla barra dei menu
   if (shortcut && !NATIVE) { e.preventDefault(); return COMMANDS[shortcut](); }
   if (mod) return;
   // ogni tasto gestito va "consumato" (preventDefault), altrimenti il Mac emette il suono d'avviso
-  if (/^[0-5]$/.test(e.key)) { e.preventDefault(); return setMeta({rating: +e.key}); }
   const lab = {"6": "red", "7": "yellow", "8": "green", "9": "blue"}[e.key];
   if (lab) { e.preventDefault(); const cur = S.sel.size === 1 && S.detail ? S.detail.label : null; return setMeta({label: cur === lab ? null : lab}); }
   const k = e.key.toLowerCase();
   if (k === "p") { e.preventDefault(); return setMeta({flag: 1}); }
   if (k === "x") { e.preventDefault(); return setMeta({flag: -1}); }
   if (k === "u") { e.preventDefault(); return setMeta({flag: 0}); }
-  if (k === "c" || k === "b") { e.preventDefault(); return pickCollection([...S.sel]); }
+  if (k === "c" || k === "b") { e.preventDefault(); return pickCollection(selIds()); }
   if (e.key === "F2" && !NATIVE) { e.preventDefault(); return COMMANDS.renameSel(); }   // nell'app: menu Foto
   if (e.key === "Enter" || e.key === " ") { if (S.cursor >= 0) { e.preventDefault(); loupe ? closeLoupe() : openLoupe(S.cursor); } return; }
   if (e.key === "Backspace" || e.key === "Delete") {
@@ -1090,13 +1276,46 @@ async function addFolderDialog() {
 
 async function importLrDialog() {
   const f = await dialog("Importa catalogo Lightroom", `
-    <p>Importa da un catalogo Lightroom Classic (<code>.lrcat</code>): cartelle, foto, <b>raccolte e set di raccolte</b>, parole chiave, stelle, etichette colore e bandierine.</p>
+    <p>Importa da un catalogo Lightroom Classic (<code>.lrcat</code>): cartelle, foto, <b>raccolte e set di raccolte</b>, parole chiave, etichette colore e bandierine.</p>
     <p><b>Chiudi Lightroom</b> prima di importare. Il catalogo di Lightroom viene solo letto, mai modificato.
     Le raccolte smart non vengono importate.</p>
     <label>File catalogo</label><div class="pickrow"><input type="text" name="path" required placeholder="/Users/…/Lightroom Catalog.lrcat"><button type="button" data-pick>Scegli…</button></div>`,
     "Importa", form => { form.querySelector("[data-pick]").onclick = () => pickInto(form.path, "file"); });
   if (!f) return;
   await safe(async () => { await api("/api/import/lightroom", {path: f.path.value}); toast("Importazione avviata"); pollJobs(); });
+}
+
+// Esportazione verso Lightroom: le foto le importa Lightroom stesso (catalogo nuovo,
+// «Aggiungi»); Provinia riporta poi nel suo catalogo stelle, etichette, bandierine,
+// rotazioni, parole chiave, raccolte e set (vedi export_lrcat in lightroom.py).
+async function exportLrDialog() {
+  const f = await dialog("Esporta nel catalogo Lightroom", `
+    <p>Riporta in un catalogo di Lightroom Classic quello che hai organizzato in Provinia: <b>etichette colore, bandierine,
+    rotazioni, parole chiave, raccolte e set di raccolte</b>.</p>
+    <ol class="steps">
+      <li>In Lightroom crea un catalogo nuovo (<i>File › Nuovo catalogo</i>) e importa le cartelle del NAS con <b>Aggiungi</b> (le foto restano dove sono).</li>
+      <li>Aspetta la fine dell'importazione e <b>chiudi Lightroom</b>.</li>
+      <li>Scegli qui quel catalogo: Provinia ne fa prima una copia di sicurezza accanto, poi lo aggiorna.</li>
+    </ol>
+    <p>Cartelle di Provinia da aggiungere in Lightroom (con le sottocartelle):</p>
+    <ul class="lr-roots">${(S.tree.roots || []).map(r => `<li><span class="dot ${r.online ? "on" : "off"}"></span><code>${esc(r.path)}</code></li>`).join("") || "<li>nessuna</li>"}</ul>
+    <p class="note">Si può ripetere quando vuoi: le foto aggiunte nel frattempo vanno prima importate in Lightroom.
+    I file delle foto non vengono toccati.</p>
+    <label>File catalogo</label><div class="pickrow"><input type="text" name="path" required placeholder="/Users/…/Lightroom Catalog.lrcat"><button type="button" data-pick>Scegli…</button></div>`,
+    "Esporta", form => { form.querySelector("[data-pick]").onclick = () => pickInto(form.path, "file"); });
+  if (!f) return;
+  await safe(async () => { await api("/api/export/lightroom", {path: f.path.value}); toast("Esportazione verso Lightroom avviata"); pollJobs(); });
+}
+function lrExportSummary(r) {
+  const n = v => v.toLocaleString("it-IT");
+  const dirs = r.cartelle_non_trovate.map(([d, c]) => `<li><code>…/${esc(d.split("/").filter(Boolean).slice(-3).join("/"))}</code> · ${n(c)}</li>`).join("");
+  dialog("Esportazione verso Lightroom completata", `<table>
+    <tr><td>Foto aggiornate</td><td>${n(r.aggiornate)}</td></tr>
+    <tr><td>Parole chiave nuove</td><td>${n(r.parole_chiave)}</td></tr>
+    <tr><td>Raccolte nuove</td><td>${n(r.raccolte)}</td></tr><tr><td>Set nuovi</td><td>${n(r.set)}</td></tr></table>
+    ${r.non_trovate ? `<p><b>${n(r.non_trovate)} foto</b> di Provinia non sono nel catalogo di Lightroom: importa le loro cartelle in Lightroom e ripeti l'esportazione.</p>
+      <ul class="dirs">${dirs}</ul>` : ""}
+    <p class="note">Copia di sicurezza del catalogo com'era prima: <code>${esc(r.copia.split("/").pop())}</code></p>`, null);
 }
 
 async function relocateDialog() {
@@ -1125,18 +1344,18 @@ function helpDialog() {
     ["Selezionare e spostarsi", [
       ["Clic", "Seleziona una foto"], ["⌘ clic", "Aggiunge o toglie dalla selezione"], ["⇧ clic", "Seleziona un intervallo"],
       ["⌘A", "Seleziona tutte le foto della vista"], ["⌘D · Esc", "Deseleziona"], ["Frecce", "Spostati tra le foto"]]],
-    ["Valutare", [
-      ["0 – 5", "Stelle"], ["6 · 7 · 8 · 9", "Etichetta rossa, gialla, verde, blu"],
+    ["Etichette e bandierine", [
+      ["6 · 7 · 8 · 9", "Etichetta rossa, gialla, verde, blu"],
       ["P · X · U", "Scelta · Scartata · Togli bandierina"]]],
     ["Raccolte e parole chiave", [
       ["C · B", "Aggiungi a raccolta…"], ["⌫", "Togli dalla raccolta corrente"], ["⌘K", "Aggiungi parole chiave"]]],
     ["Aprire e modificare", [
       ["⌘E", "Apri in Photoshop"], ["⌘R", "Mostra nel Finder"], ["⌘C", "Copia le foto (da incollare nel Finder o in un'altra app)"],
       ["⌘← · ⌘→", "Ruota a sinistra · a destra"], ["F2", "Rinomina"], ["⇧⌘E", "Esporta in JPEG…"],
-      ["⌘⌫", "Elimina il file dal disco…"], ["⌥⌘M", "Mappa dei luoghi"]]],
+      ["⌘⌫", "Elimina il file dal disco…"], ["⌥⌘M", "Mappa dei luoghi"], ["⌘Z · ⇧⌘Z", "Annulla · Ripeti"]]],
     ["Vista ingrandita", [
       ["Invio · Spazio", "Apre e chiude la vista ingrandita (anche doppio clic)"], ["Clic · Z", "Adatta allo schermo · 100%"],
-      ["Rotellina · + −", "Zoom (trascina per spostarti)"], ["← →", "Foto precedente · successiva"], ["Doppio clic · Esc", "Torna alla griglia"]]],
+      ["Rotellina · + −", "Zoom (trascina per spostarti)"], ["← →", "Foto precedente · successiva"], ["V", "JPG ↔ RAW con lo stesso nome"], ["Doppio clic · Esc", "Torna alla griglia"]]],
   ];
   const keys = k => k.split(" · ").map(x => `<kbd>${esc(x)}</kbd>`).join('<span class="or">o</span>');
   dialog("Scorciatoie da tastiera", `<div class="help">${groups.map(([g, rows]) =>
@@ -1151,6 +1370,8 @@ $("#menu-library").addEventListener("click", e => {
   const a = e.target.closest("[data-act]")?.dataset.act;
   if (a === "add-folder") addFolderDialog();
   if (a === "import-lr") importLrDialog();
+  if (a === "export-lr") exportLrDialog();
+  if (a === "pairs") { S.pairs = !S.pairs; store.set("pairs", S.pairs); e.target.closest("[data-act]").classList.toggle("checked", S.pairs); reload(true); }
   if (a === "relocate") relocateDialog();
   if (a === "help") helpDialog();
   if (a === "pregen") COMMANDS.pregen();
@@ -1161,17 +1382,82 @@ $("#menu-library").addEventListener("click", e => {
 // ================================================================ comandi (tastiera, menu dell'app, tasto destro)
 const NATIVE = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.fc);
 if (NATIVE) document.documentElement.classList.add("native");
-const selIds = () => [...S.sel];
+const selIds = () => withPairs([...S.sel]);     // con i RAW gemelli
+const shownIds = () => [...S.sel];              // solo le foto mostrate (aprire, esportare)
 const needSel = fn => () => S.sel.size ? fn() : toast("Seleziona prima una o più foto");
-const openWith = how => needSel(() => safe(() => api("/api/open", {ids: selIds(), how})));
+// ⌘Z / ⇧⌘Z: annulla o ripete (il motore tiene le ultime 50, vedi annulla.py). Si torna nella
+// cartella o raccolta in cui era stata fatta l'operazione, con le foto interessate selezionate.
+let undoBusy = false;
+async function undoRedo(redo = false) {
+  if (undoBusy) return;
+  undoBusy = true;
+  try {
+    const r = await api(redo ? "/api/redo" : "/api/undo", {});
+    if (!r.label) return toast(redo ? "Niente da ripetere" : "Niente da annullare");
+    toast(`${redo ? "Ripetuto" : "Annullato"}: ${r.label}`);
+    STACKINFO.clear();
+    if (r.job) pollJobs();                       // file: si rinominano o spostano di nuovo
+    await loadTree();
+    const w = r.where || {}, ids = (w.ids || []).filter(Boolean);
+    let scope = w.scope || S.scope;
+    const [k, v] = scope.split(":");
+    if (k === "collection" && !S.tree.collections.find(c => c.id == v)) scope = "all";      // raccolta sparita
+    if (k === "folder" && !S.tree.folders.find(f => f.id == v)) scope = "all";
+    if (scope !== S.scope || ids.length) {
+      S.sel.clear(); ids.forEach(id => S.sel.add(id));
+      setScope(scope);                           // keepSelection riseleziona le foto presenti
+    } else { await reload(true); showInfo(true); }
+  } catch (e) { toast(e.message, true); }
+  finally { undoBusy = false; }
+}
+// pila dalle foto selezionate nella raccolta aperta; copertina: il JPG (o quella sotto il cursore)
+async function createStack() {
+  const c = curCollection();
+  if (!c) return toast("Le pile si creano dentro una raccolta");
+  const ids = [...S.sel];
+  if (ids.length < 2) return toast("Seleziona almeno due foto: il JPG del montaggio e le foto di partenza");
+  const items = [];
+  for (const pg of S.pages.values()) for (const it of pg) if (S.sel.has(it.id)) items.push(it);
+  const cur = itemAt(S.cursor);
+  const jpgs = items.filter(it => /^jpe?g$/i.test(it.x || ""));
+  const cover = cur && S.sel.has(cur.id) && (jpgs.length !== 1 || jpgs[0].id === cur.id) ? cur.id : (jpgs[0] || items[0] || {id: ids[0]}).id;
+  // entrano anche i RAW gemelli e i componenti di pile già esistenti
+  const all = await withStacks(withPairs(ids));
+  await safe(async () => {
+    await api("/api/stacks/create", {collection: c.id, ids: all, cover});
+    S.sel.clear(); S.sel.add(cover); await reload(true); selChanged();
+    toast(`Pila di ${all.length} foto creata`);
+  });
+}
+async function stackAction(kind, sid, cover) {
+  await safe(async () => {
+    if (kind === "dissolve") { await api(`/api/stacks/${sid}/dissolve`, {}); toast("Pila sciolta"); }
+    if (kind === "cover") { await api(`/api/stacks/${sid}/cover`, {cover}); toast("Copertina cambiata"); }
+    STACKINFO.delete(sid);
+    if (S.scope === "stack:" + sid) {
+      if (kind === "dissolve") return setScope("collection:" + S.stackView.collection);
+      return enterStack(sid);
+    }
+    if (kind === "cover") { S.sel.clear(); S.sel.add(cover); }
+    await reload(true); selChanged();
+  });
+}
+// «Mostra le foto della pila»: la pila come una piccola raccolta, con «← Torna a …»
+async function enterStack(sid) {
+  const d = await safe(() => stackInfo(sid, true)); if (!d) return;
+  S.stackView = d; setScope("stack:" + sid);
+}
+const openWith = how => needSel(() => safe(() => api("/api/open", {ids: shownIds(), how})));
 
 const COMMANDS = {
-  addFolder: addFolderDialog, importLr: importLrDialog, relocate: relocateDialog, help: helpDialog,
+  addFolder: addFolderDialog, importLr: importLrDialog, exportLr: exportLrDialog, relocate: relocateDialog, help: helpDialog,
   pregen: () => safe(async () => {
     await api("/api/thumbs/pregenerate", Object.fromEntries(new URLSearchParams(params())));
     toast("Generazione anteprime avviata in background"); pollJobs();
   }),
   newColl: () => newCollection(false, selIds()), newSet: () => newCollection(true),
+  stack: () => createStack(),
+  undo: () => undoRedo(false), redo: () => undoRedo(true),
   selectAll: () => {
     const a = document.activeElement;
     if (a && a.matches("input, textarea")) return a.select();
@@ -1193,7 +1479,7 @@ const COMMANDS = {
   renameNum: needSel(() => renameDialog(selIds())),
   moveSel: needSel(() => moveDialog(selIds())),
   rotateLeft: needSel(() => rotate(-90)), rotateRight: needSel(() => rotate(90)),
-  exportSel: needSel(() => exportDialog(selIds(), S.sel.size === 1 ? "la foto selezionata" : `${S.sel.size.toLocaleString("it-IT")} foto selezionate`)),
+  exportSel: needSel(() => exportDialog(shownIds(), S.sel.size === 1 ? "la foto selezionata" : `${S.sel.size.toLocaleString("it-IT")} foto selezionate`)),
   findDups: () => openDuplicates(),
   lockCatalog: () => lockCatalog(),
   zoomIn: () => { $("#zoom").value = +$("#zoom").value + 40; $("#zoom").dispatchEvent(new Event("input")); },
@@ -1216,6 +1502,12 @@ window.fc = {
     // mentre si scrive, ⌘← ⌘→ ⌘⌫ agiscono sul testo, non sulle foto
     if (document.activeElement?.matches("input, textarea") && ["rotateLeft", "rotateRight", "deleteFiles"].includes(name)) return;
     COMMANDS[name]?.();
+  },
+  // ⌘Z dal menu dell'app: true se tocca a Provinia (non si sta scrivendo in un campo di testo)
+  undoHere() {
+    const a = document.activeElement;
+    if ($("#dlg").open || !$("#catscreen").hidden) return false;
+    return !(a && a.matches("input, textarea, select"));
   },
   // ⌘C dal menu dell'app: le foto selezionate da copiare, oppure null se si sta copiando del testo
   copyIds() {
@@ -1375,9 +1667,13 @@ async function photoMenu() {
     recent.length && {label: "Aggiungi a raccolta recente", sub: recent.map(c => ({label: c.name, run: () => addToCollection(c.id, selIds())}))},
     {label: `Nuova raccolta con ${one ? "questa foto" : "queste foto"}…`, run: () => newCollection(false, selIds())},
     cur && {label: `Togli da «${cur.name}»`, key: "⌫", run: COMMANDS.removeFromColl},
+    cur && n > 1 && {label: "Crea pila", key: "⌘G", run: createStack},
+    cur && one && STACK.get([...S.sel][0]) && {label: "Mostra le foto della pila", run: () => enterStack(STACK.get([...S.sel][0]).id)},
+    cur && one && STACK.get([...S.sel][0]) && {label: "Sciogli pila", run: () => stackAction("dissolve", STACK.get([...S.sel][0]).id)},
+    k === "stack" && one && S.stackView && S.stackView.cover !== [...S.sel][0] && {label: "Usa come copertina della pila", run: () => stackAction("cover", S.stackView.id, [...S.sel][0])},
+    k === "stack" && S.stackView && {label: "Sciogli pila", run: () => stackAction("dissolve", S.stackView.id)},
     d && d.collections.length && {label: `Raccolte di questa foto (${d.collections.length})`, sub: d.collections.map(c => ({label: c.name, run: () => setScope("collection:" + c.id)}))},
     "-",
-    {label: "Valutazione", sub: [0, 1, 2, 3, 4, 5].map(r => ({label: r ? "★".repeat(r) : "Nessuna stella", key: String(r), checked: d && d.rating === r, run: () => setMeta({rating: r})}))},
     {label: "Etichetta colore", sub: [...Object.entries(LABELS).map(([lk, name], i) => ({label: name, swatch: lk, key: i < 4 ? String(6 + i) : "", checked: d && d.label === lk, run: () => setMeta({label: lk})})),
       "-", {label: "Nessuna etichetta", checked: d && !d.label, run: () => setMeta({label: null})}]},
     {label: "Bandierina", sub: [{label: "Scelta", key: "P", checked: d && d.flag === 1, run: () => setMeta({flag: 1})},
@@ -1630,7 +1926,7 @@ async function convertDng(ids) {
   const f = await dialog("Converti", `
     <p>Verranno convertiti:</p><ul>${lines}</ul>
     <p>Ogni nuovo file viene salvato nella stessa cartella e <b>prende il posto dell'originale nel catalogo</b>,
-    mantenendo raccolte, parole chiave, stelle ed etichette.</p>
+    mantenendo raccolte, parole chiave ed etichette.</p>
     <p class="warn">Dopo una conversione riuscita e verificata, l'originale (e il suo eventuale .xmp)
     viene <b>cancellato</b>: sul NAS finisce nel cestino di rete, se attivo.</p>
     <p>Puoi interrompere in qualsiasi momento dalla barra in basso.</p>`, "Converti");
@@ -1751,7 +2047,7 @@ function dupPlan() {
   return {plan, files, bytes};
 }
 function memberHTML(m, keep) {
-  const info = [m.nc && `${m.nc} raccolte`, m.nk && `${m.nk} parole chiave`, m.rating && "★".repeat(m.rating)].filter(Boolean).join(" · ");
+  const info = [m.nc && `${m.nc} raccolte`, m.nk && `${m.nk} parole chiave`].filter(Boolean).join(" · ");
   return `<div class="dup-m ${keep ? "keep" : "del"}" data-pick="${m.id}" title="${esc(m.path)}">
     <div class="dup-th"><img loading="lazy" src="${thumbURL(m.id)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'ph',textContent:'${m.size ? "" : "vuoto"}'}))"></div>
     <div class="dup-tag">${keep ? "✓ TIENI" : "ELIMINA"}</div>
@@ -1790,7 +2086,7 @@ function renderDup() {
     <div class="dup-pref"><span>Cartella preferita:</span>
       <input id="dup-pref" value="${esc(DUP.pref)}" placeholder="nessuna: si tiene la copia con più informazioni di catalogo; a parità, quella nella cartella più recente">
       <button data-pickpref>Scegli…</button>${DUP.pref ? "<button data-nopref>✕</button>" : ""}</div>
-    <p class="small">Clic su una copia per tenerla. Prima di eliminare, raccolte, parole chiave, stelle ed etichette
+    <p class="small">Clic su una copia per tenerla. Prima di eliminare, raccolte, parole chiave ed etichette
       delle copie eliminate vengono riunite su quella che resta.</p>
     ${tabs}<div class="dup-list">${body}</div>
     <div class="dup-foot"><span>Verranno eliminati <b>${files.toLocaleString("it-IT")}</b> file${bytes ? ` (${fmtBytes(bytes)})` : ""}.
@@ -1928,7 +2224,8 @@ function startInlineRename(id) {
 }
 async function renameOne(id, name) {
   try {
-    const r = await api("/api/rename/one", {id, name});
+    const pair = PAIR.get(id);
+    const r = await api("/api/rename/one", {id, name, with: pair ? [pair.id] : []});
     patchItems([id], {n: r.filename, x: r.ext});
     if (S.detail && S.detail.id === id) showInfo(true);
     loadTree();                                     // conteggio «Da rinominare»
@@ -1947,7 +2244,7 @@ async function renameOneDialog(id) {
     for (const [k, el] of cells) if (itemAt(k)?.id === id) el._key = null;
     render();
     const it = itemAt(L.i);
-    if (!$("#loupe").hidden && it && it.id === id) $("#loupe-name").textContent = `${it.n} · ${fmtDate(it.t)} ${it.r ? "· " + "★".repeat(it.r) : ""}`;
+    if (!$("#loupe").hidden && it && it.id === id) $("#loupe-name").textContent = `${it.n} · ${fmtDate(it.t)}`;
   }
 }
 $("#info").addEventListener("click", e => { if (e.target.closest(".fname") && S.sel.size === 1) startInlineRename(selIds()[0]); });
@@ -2017,7 +2314,7 @@ async function renameDialog(ids) {
     <label class="check"><input type="checkbox" name="lower_ext" ${o.lower_ext ? "checked" : ""}> Estensione in minuscolo (.ARW → .arw)</label>
     <label class="check"><input type="checkbox" name="keep_pairs" ${o.keep_pairs ? "checked" : ""}> File con lo stesso nome (es. RAW + JPEG) ricevono lo stesso numero</label>
     <h4>Anteprima</h4><div class="list" id="ren-prev"><div class="small">…</div></div>
-    <p class="small">Anche gli eventuali file .xmp vengono rinominati. Raccolte, parole chiave e stelle restano.</p>`,
+    <p class="small">Anche gli eventuali file .xmp vengono rinominati. Raccolte, parole chiave ed etichette restano.</p>`,
     "Rinomina", form => {
       form.sep.value = o.sep === "" ? "none" : o.sep; form.order.value = o.order;
       const ok_btn = form.querySelector("button.primary");
@@ -2048,7 +2345,7 @@ async function moveDialog(ids) {
   const f = await dialog(`Sposta ${ids.length === 1 ? "la foto" : ids.length.toLocaleString("it-IT") + " foto"}`, `
     <input type="text" name="q" placeholder="Cerca cartella…" autocomplete="off" autofocus>
     <div class="list" id="mv-list"></div>
-    <p class="small">I file vengono spostati sul disco (con i loro .xmp); raccolte, parole chiave e stelle restano.
+    <p class="small">I file vengono spostati sul disco (con i loro .xmp); raccolte, parole chiave ed etichette restano.
     Puoi anche trascinare le foto su una cartella nella barra a sinistra.</p>`, "Sposta", form => {
       const draw = () => {
         const q = form.q.value.trim().toLowerCase();
@@ -2072,6 +2369,7 @@ function startMove(ids, fid) {
   return safe(async () => { await api("/api/move", {ids, folder: fid}); toast("Spostamento avviato"); pollJobs(); });
 }
 function fileOpSummary(r) {
+  if (r.annullata && !(r.saltate || []).length && !(r.errori || []).length) return;     // annulla/ripeti: basta l'avviso
   const msg = r.moved ? `Spostate ${r.spostate.toLocaleString("it-IT")} foto in «${r.dest}»` : `Rinominati ${r.rinominate.toLocaleString("it-IT")} file`;
   const rows = [...(r.saltate || []), ...(r.errori || [])];
   if (!rows.length && !r.interrotta) return toast(msg);
@@ -2109,7 +2407,7 @@ const folderTree = $("#folder-tree");
 // Nell'app per Mac le foto si trascinano come file veri (S.nativeDrag, vedi dragstart):
 // se il trascinamento l'abbiamo iniziato noi, i "Files" sono le nostre foto.
 const isInternal = dt => [...dt.types].includes("application/x-fc-photos") || !!(S.nativeDrag && [...dt.types].includes("Files"));
-const dragIds = dt => { const j = dt.getData("application/x-fc-photos"); return j ? JSON.parse(j) : (S.nativeDrag || []); };
+const dragIds = dt => { const j = dt.getData("application/x-fc-photos"); return withPairs(j ? JSON.parse(j) : (S.nativeDrag || [])); };
 const hasFiles = dt => !isInternal(dt) && [...dt.types].includes("Files");
 function folderDropTarget(e) {
   const li = e.target.closest("li[data-folder]"); if (!li) return null;
@@ -2132,7 +2430,7 @@ folderTree.addEventListener("drop", async e => {
   if (!ids.length) return toast(`Trascinamento non riconosciuto (contenuto: ${[...e.dataTransfer.types].join(", ") || "vuoto"})`, true);
   const fo = S.tree.folders.find(x => x.id === fid);
   const d = await dialog("Sposta", `<p>Spostare ${ids.length === 1 ? "la foto" : ids.length.toLocaleString("it-IT") + " foto"}
-    in «${esc(folderLabel(fo))}»?</p><p class="small">I file vengono spostati sul disco; raccolte, parole chiave e stelle restano.</p>`, "Sposta");
+    in «${esc(folderLabel(fo))}»?</p><p class="small">I file vengono spostati sul disco; raccolte, parole chiave ed etichette restano.</p>`, "Sposta");
   if (d) startMove(ids, fid);
 });
 // file dal Finder sulla griglia: si importano nella cartella che stai guardando
@@ -2247,7 +2545,10 @@ $("#f-geo").onclick = () => openMap();
 $("#search").addEventListener("input", () => { markFilters(); clearTimeout(searchT); searchT = setTimeout(() => reload(), 300); });
 for (const id of ["#f-label", "#f-flag", "#f-year", "#f-ext", "#sort", "#deep"])
   $(id).addEventListener("change", () => { if (id === "#sort") store.set("sort", $("#sort").value); markFilters(); reload(); });
+S.pairs = store.get("pairs", true);
+$("#menu-library [data-act=pairs]").classList.toggle("checked", S.pairs);
 $("#sort").value = store.get("sort", "date:asc");
+if (!$("#sort").value) $("#sort").value = "date:asc";      // ordinamento non più disponibile (es. Valutazione)
 
 // ================================================================ cartelle raggiungibili
 // Il pallino verde/rosso si aggiorna da solo: ogni 8 secondi (e quando si torna sulla finestra)
@@ -2322,6 +2623,7 @@ async function onJobDone(j) {
   if (r.dng) { await loadTree(); reload(true); return dngSummary(r); }
   if (r.export) return exportSummary(r);
   if (r.saved) return saveSummary(r);
+  if (r.lrexport) return lrExportSummary(r.lrexport);
   if (r.gps) return;
   if (r.moved || r.renamed) { await loadTree(); reload(true); showInfo(true); return fileOpSummary(r); }
   if (r.duplicates) {
@@ -2358,6 +2660,7 @@ async function onJobDone(j) {
   document.title = CAT.name;
   updateCatalogButton();
   S.scope = store.get("scope", "all");
+  if (S.scope.startsWith("stack:")) S.scope = "all";        // la vista di una pila non si riapre all'avvio
   S.expanded = new Set(store.get("expanded", []));
   $("#zoom").value = store.get("zoom", 180);
   for (const j of await api("/api/jobs").catch(() => [])) if (j.status !== "running") seenDone.add(j.id);

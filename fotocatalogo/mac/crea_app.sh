@@ -1,12 +1,26 @@
 #!/bin/bash
 # Costruisce Provinia.app e (se vuoi) la copia in Applicazioni.
-# Uso: ./crea_app.sh            (chiede se installare)
-#      ./crea_app.sh --installa (installa senza chiedere)
+# Uso: ./crea_app.sh                  (chiede se installare)
+#      ./crea_app.sh --installa       (installa senza chiedere)
+#      ./crea_app.sh --senza-domande  (crea e basta: per la costruzione automatica su GitHub)
+#      ./crea_app.sh --python DIR     (mette dentro l'app il Python della cartella DIR, così
+#                                      funziona anche sui Mac senza strumenti per sviluppatori)
+# L'app è solo per Mac con processore Apple (M1 e successivi).
 set -euo pipefail
 cd "$(dirname "$0")"
 SRC="$(cd .. && pwd)"
 BUILD="$SRC/build"
 APP="$BUILD/Provinia.app"
+INSTALL=""; ASK=1; PYDIR=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --installa) INSTALL="--installa";;
+    --senza-domande) ASK=0;;
+    --python) PYDIR="$2"; shift;;
+  esac
+  shift
+done
+TARGET="arm64-apple-macos12.3"
 
 if ! command -v swiftc >/dev/null 2>&1 || ! xcrun --find swiftc >/dev/null 2>&1; then
   echo "Servono gli strumenti per sviluppatori di Apple (gratuiti)."
@@ -18,15 +32,25 @@ fi
 echo "› Compilo l'app…"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/app/static"
-swiftc -O -swift-version 5 -o "$APP/Contents/MacOS/Provinia" Provinia.swift \
+swiftc -O -swift-version 5 -target "$TARGET" -o "$APP/Contents/MacOS/Provinia" Provinia.swift \
   -framework Cocoa -framework WebKit
 mkdir -p "$APP/Contents/Resources/bin"
-swiftc -O -swift-version 5 -o "$APP/Contents/Resources/bin/fcimg" fcimg.swift
+swiftc -O -swift-version 5 -target "$TARGET" -o "$APP/Contents/Resources/bin/fcimg" fcimg.swift
 
 echo "› Copio il motore e l'interfaccia…"
 cp "$SRC"/*.py "$APP/Contents/Resources/app/"
 cp -R "$SRC/dati" "$APP/Contents/Resources/app/"   # località per i nomi dei luoghi
 cp "$SRC"/static/* "$APP/Contents/Resources/app/static/"   # anche il font Inter (inter.woff2)
+
+if [ -n "$PYDIR" ]; then
+  echo "› Python dentro l'app…"
+  ditto "$PYDIR" "$APP/Contents/Resources/python"
+  # parti di Python che Provinia non usa (test, editor, interfacce Tk)
+  for d in test idlelib turtledemo tkinter ensurepip lib2to3; do
+    rm -rf "$APP/Contents/Resources/python/lib/python3."*/"$d"
+  done
+  "$APP/Contents/Resources/python/bin/python3" -c "import sqlite3, zlib, json; print('  Python', __import__('sys').version.split()[0])"
+fi
 
 echo "› Icona…"
 cp Provinia.icns "$APP/Contents/Resources/AppIcon.icns"
@@ -65,7 +89,7 @@ codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || echo "  (firma non ri
 
 echo "✓ App pronta: $APP"
 
-INSTALL="${1:-}"
+[ "$ASK" = 1 ] || exit 0
 if [ "$INSTALL" != "--installa" ]; then
   read -r -p "Copiarla nella cartella Applicazioni? [S/n] " ans
   case "${ans:-s}" in [sSyY]*) INSTALL="--installa";; esac
