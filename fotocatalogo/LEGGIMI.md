@@ -101,6 +101,7 @@ in Lightroom. Le regolazioni dello Sviluppo non ci sono (Provinia non le conserv
 | Togliere foto dalla raccolta aperta | **⌫ Backspace** |
 | Etichette / bandierine | **6 7 8 9** / **P X U** |
 | Vista ingrandita | doppio clic, **Spazio** o **Invio**, poi **← →** |
+| Ritrovare le foto scelte in un'altra cartella o raccolta | seleziona le foto e clicca su un'altra cartella o raccolta: restano selezionate quelle presenti anche lì (es. raccolta «Pippo» → cartella «Vacanza con Pippo») |
 | Saltare a una foto vicina | nella vista ingrandita porta il mouse sulla barra in basso: compare la **striscia delle foto vicine** (rotellina per scorrerla, clic per aprire). Tornando sulla foto sparisce dopo un paio di secondi |
 | Zoom nella vista ingrandita | **clic** (o **Z**): adatta ↔ 100% · **doppio clic** o **Esc**: torna alla griglia · **rotellina** o pizzico sul trackpad · **+ −** · trascina per spostarti |
 | Selezionare tutto | **⌘A** |

@@ -240,6 +240,10 @@ sincronizzazione rapida). Le colonne nuove si aggiungono con `ALTER TABLE` in
   Lo schema è stato ricavato da due cataloghi di prova dell'utente (LrC 16.0.1, catalogo
   vuoto e catalogo con 6 foto). Anche l'importazione ora riconosce le etichette italiane e salta
   la «quick collection» (`systemOnly`).
+- **Selezione che segue il cambio di vista** (`keepSelection` in `app.js`): `setScope` ricorda la
+  selezione, dopo `reload()` chiede gli id della vista nuova (`ids_only`, con i filtri attivi) e
+  riseleziona quelli in comune, con il cursore sul primo. Non agisce se nel frattempo la vista è
+  cambiata (`S.version`) o l'utente ha già selezionato altro. Ricerca e filtri non la usano.
 - **Lavori in background**: `start_job`, con avanzamento in `/api/jobs`.
   `job.cancellable` mostra «Interrompi»; `job.quick` (sincronizzazione rapida) si
   ferma da solo al cambio di catalogo. L'interfaccia reagisce ai risultati in

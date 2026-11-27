@@ -421,7 +421,24 @@ function setScope(scope) {
   $("#btn-remove-missing").hidden = scope !== "missing";
   $("#btn-rename-all").hidden = scope !== "torename";
   $("#btn-delete-rejected").hidden = scope !== "rejected";
-  renderSidebar(); reload();
+  const keep = new Set(S.sel);
+  renderSidebar();
+  reload().then(() => keepSelection(keep));
+}
+// Cambiando cartella o raccolta restano selezionate le foto che ci sono anche nella vista
+// nuova (es. raccolta «Pippo» → cartella «Vacanza con Pippo»: si trovano già selezionate).
+async function keepSelection(keep) {
+  if (!keep.size || !S.total) return;
+  const v = S.version;
+  const r = await api(`/api/photos?${params({offset: 0, limit: 1000000, ids_only: 1})}`).catch(() => null);
+  if (!r || v !== S.version || S.sel.size) return;      // vista cambiata o selezione già nuova
+  let first = -1;
+  r.ids.forEach((id, i) => { if (keep.has(id)) { S.sel.add(id); if (first < 0) first = i; } });
+  if (first < 0) return;
+  S.cursor = S.anchor = first;
+  if (!itemAt(first)) await loadPage(Math.floor(first / PAGE));
+  if (v !== S.version) return;
+  ensureVisible(first); selChanged();
 }
 function scopeTitle(scope) {
   const [k, v] = scope.split(":"); const t = S.tree; if (!t) return "";
